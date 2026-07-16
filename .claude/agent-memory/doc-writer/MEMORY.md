@@ -1,0 +1,1 @@
+- [lap-in-the-loop harness proposal is unratified](project_lap-in-the-loop-harness-proposal.md) — frame as proposed/pending until owner confirms; MVP vs target-harness split.
