@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 import respx
-from httpx import Response
-
 from canvus_sdk import Client
 from canvus_sdk.extras import (
     ExportedWidgetSet,
@@ -16,6 +14,7 @@ from canvus_sdk.extras import (
     WidgetExporter,
     WidgetImporter,
 )
+from httpx import Response
 
 
 @pytest.mark.asyncio

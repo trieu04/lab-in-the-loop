@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "entries": {
+    "PCR": ["Polymerase Chain Reaction"],
+    "DNA": ["Deoxyribonucleic Acid"],
+    "RNA": ["Ribonucleic Acid"],
+    "ELISA": ["Enzyme-Linked Immunosorbent Assay"],
+    "QC": ["Quality Control"],
+    "CT": ["Computed Tomography", "Cycle Threshold"]
+  }
+}

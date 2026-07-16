@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 
 import pytest
-
 from canvus_sdk.extras.geometry import (
     Point,
     Rectangle,

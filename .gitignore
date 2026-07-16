@@ -29,6 +29,19 @@ downloads/
 outputs/
 .trash/
 
+# lab-agent durable harness: local SQLite WAL ledger, backups, restore drills.
+# Does NOT match migrations/*.sql (versioned schema, must stay tracked).
+.state/
+*.state.db
+*.state.db-wal
+*.state.db-shm
+*.db
+*.db-wal
+*.db-shm
+*.db.bak
+*.db-backup
+!apps/lab-agent/lab_agent/migrations/*.sql
+
 # Editor / OS
 .vscode/
 .idea/

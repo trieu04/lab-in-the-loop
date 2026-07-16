@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from canvus_sdk.extras.warnings import (
     WARNING_TABLE_GRID_SIZE_IMMUTABLE,
     disable_api_warnings,

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import pytest
 import respx
-from httpx import Response
-
 from canvus_sdk import Client
 from canvus_sdk.extras import CrossCanvasSearch, find_widgets_by_text, find_widgets_by_type
 from canvus_sdk.extras.geometry import Rectangle
 from canvus_sdk.extras.search import find_widgets_across_canvases, find_widgets_in_area
+from httpx import Response
 
 
 @pytest.mark.asyncio

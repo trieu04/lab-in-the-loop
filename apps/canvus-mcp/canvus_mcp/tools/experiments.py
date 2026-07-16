@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from canvus_mcp import experiments as exp
@@ -20,6 +21,15 @@ def _markers() -> exp.ExpMarkers:
         setup=cfg.mcp_exp_setup_marker,
         result=cfg.mcp_exp_result_marker,
         idea=cfg.mcp_idea_marker,
+        closed=cfg.mcp_exp_closed_marker,
+        needs_input=cfg.mcp_exp_needs_input_marker,
+        validation=cfg.mcp_exp_validation_marker,
+        scientist_review=cfg.mcp_exp_scientist_review_marker,
+        lab_lead_approval=cfg.mcp_exp_lab_lead_approval_marker,
+        execution=cfg.mcp_exp_execution_marker,
+        analysis=cfg.mcp_exp_analysis_marker,
+        knowledge=cfg.mcp_exp_knowledge_marker,
+        conflict=cfg.mcp_exp_conflict_marker,
     )
 
 
@@ -29,7 +39,11 @@ async def _build_index(canvas_id: str) -> ConnectorIndex:
     return ConnectorIndex.build(widgets, get_settings().mcp_ragcluster_marker)
 
 
-def register(mcp: FastMCP) -> None:
+def register(
+    mcp: FastMCP,
+    *,
+    classification_for_canvas: Callable[[str], str],
+) -> None:
     """Attach experiment-workflow tools to ``mcp``."""
 
     @mcp.tool()
@@ -51,14 +65,38 @@ def register(mcp: FastMCP) -> None:
         """Snapshot the whole experiment workflow on a canvas.
 
         Returns classified nodes (``ragclusters``, ``ideas``, ``setups``,
-        ``results``, ``robots``), the pending forward triggers
-        (``ideas_needing_setup`` — an idea connected from a RagCluster with no
-        setup yet; ``setups_needing_run`` — a setup wired to a robot with no
-        result yet, each carrying its ``robot_id``), and detected ``loops``.
+        ``results``, ``robots``, ``closeds``, ``needs_inputs``), the pending
+        forward triggers (``ideas_needing_setup`` — an idea connected from a
+        RagCluster with no setup yet; ``setups_needing_run`` — a setup wired
+        to a robot with no result yet), pending validation/review requests,
+        and detected ``loops``. Gate markers are non-authorizing metadata:
+        their presence never establishes an actor, role, decision, or approval.
+        ``closeds``/``needs_inputs`` make terminal
+        ``[EXP:Closed]`` and generated ``[EXP:Needs Input]`` widgets enumerable
+        the same way ``setups``/``results`` are, so a caller can recover a
+        prior run's widget by its idempotency tag without depending on any
+        connector having been drawn yet.
         One call gives an agent everything it needs to drive the next step.
         """
         index = await _build_index(canvas_id)
         result = exp.scan_workflow(index, _markers())
+        data_classification = classification_for_canvas(canvas_id)
+        for bucket in (
+            "ideas_needing_setup",
+            "mode_errors",
+            "setups_needing_run",
+            "setups_needing_validation",
+            "validations_needing_scientist_review",
+            "scientist_reviews_needing_lab_lead_approval",
+            "executions",
+            "analyses",
+            "knowledge",
+            "conflicts",
+            "loops",
+        ):
+            result[bucket] = [
+                {**item, "data_classification": data_classification} for item in result[bucket]
+            ]
         result["canvas_id"] = canvas_id
         return result
 

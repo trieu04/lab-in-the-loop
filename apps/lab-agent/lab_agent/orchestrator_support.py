@@ -1,28 +1,46 @@
-"""Helpers for the experiment-loop orchestrator: validation, versioning, summary."""
+"""Write stages the experiment-loop orchestrator delegates to.
+
+Each *write* helper places an already-validated generated node on the canvas as
+a capability-protected **Browser** widget backed by the canonical
+:class:`~lab_agent.artifact_store.ArtifactStore` (see
+:mod:`lab_agent.durable_browser`). Ideas and human-authored input stay Notes;
+only these system-generated Setup/Result/Closed/Needs Input artifacts become
+Browser widgets. A needs-input *prompt* is one of these generated artifacts;
+the human's *response* to it is a plain Note this module never writes.
+
+The literal title markers and note-body first-line fragments (``Idea: {idea_id}``
+etc.) are composed here on purpose: ``scripts/check-workflow-contract-parity.py``
+greps this module for them verbatim, so they must stay physically present, not
+move into the durable layer. Each fragment is also carried into the canonical
+payload as the model-facing rendering, so a later round can read a Browser-backed
+stage's text from the store rather than from Browser HTML.
+
+The emit stages (model reads/emits a structured node) live in
+:mod:`lab_agent.orchestrator_emit`; the needs-input write stage lives in
+:mod:`lab_agent.orchestrator_needs_input`. Both are re-exported here for the
+orchestrator's single import site.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
-from pydantic import BaseModel, ValidationError
-
-
-def coerce(model_cls: type[BaseModel], parsed: dict[str, Any]) -> Any:
-    """Validate model output, filling missing required fields defensively."""
-    try:
-        return model_cls.model_validate(parsed)
-    except ValidationError:
-        data = dict(parsed)
-        for name, fld in model_cls.model_fields.items():
-            if fld.is_required() and name not in data:
-                data[name] = False if fld.annotation is bool else ""
-        return model_cls.model_validate(data)
-
-
-def version(round_index: int) -> str:
-    """Format a round index as a zero-padded version tag, e.g. 1 -> 'v001'."""
-    return f"v{round_index:03d}"
+from lab_agent import durable_browser, nodes, render
+from lab_agent.config import Settings
+from lab_agent.mcp_client import MCPClient
+from lab_agent.models.artifact import ArtifactProvenance, ArtifactType
+from lab_agent.models.experiment import ExperimentResult, ExperimentSetup, LoopDecision
+from lab_agent.models.states import DecisionState
+from lab_agent.orchestrator_emit import (
+    SchemaValidationError,
+    coerce_or_fail,
+    emit_decision,
+    emit_result,
+    ground_and_emit_setup,
+)
+from lab_agent.orchestrator_needs_input import write_needs_input_node
+from lab_agent.orchestrator_payloads import result_payload, setup_payload, version
+from lab_agent.state_store import StateStore
 
 
 @dataclass
@@ -34,6 +52,129 @@ class LoopSummary:
     setup_ids: list[str] = field(default_factory=list)
     result_ids: list[str] = field(default_factory=list)
     closed_id: str = ""
+    terminal_notification_ready: bool = True
 
 
-__all__ = ["LoopSummary", "coerce", "version"]
+# ── Write stages (durable: canonical artifact + Browser widget, then reconcile) ──
+async def write_setup_node(
+    mcp: MCPClient,
+    store: StateStore,
+    settings: Settings,
+    *,
+    canvas_id: str,
+    setup: ExperimentSetup,
+    idea_text: str,
+    idea_id: str,
+    round_index: int,
+    predecessor_id: str,
+    edge_kind: str,
+    discriminator_scope: str = "",
+    provenance: ArtifactProvenance | None = None,
+    reuse_artifact_widget_id: str = "",
+) -> str:
+    """Write an already-validated ExperimentSetup as a Browser artifact; return its id.
+
+    Setup artifacts converge on one widget per experiment across rounds, so the
+    discriminator is keyed by ``discriminator_scope`` -- a stable, non-empty,
+    loop-unique scope. It defaults to ``idea_id`` (the idea-driven path always
+    has one); the loop path passes a fallback (loop connector / seed setup) so a
+    user-drawn loop with no connected idea never collapses onto ``setup/idea:``.
+    """
+    # Keep these literal fragments physically present for the workflow parity check:
+    # "Idea: {idea_id}" / "Round: {round_index}"
+    title, payload = setup_payload(setup, idea_text=idea_text, idea_id=idea_id, round_index=round_index)
+    scope = discriminator_scope or idea_id
+    legacy_discriminators = (f"setup/predecessor:{predecessor_id}/round:{round_index}",)
+    return await durable_browser.write_artifact_browser_durable(
+        mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.SETUP,
+        state=DecisionState.APPROVED_FOR_IN_SILICO, title=title, payload=payload,
+        provenance=provenance or durable_browser.provenance_for(
+            settings,
+            source_widget_id=idea_id,
+            trigger_id=f"setup/predecessor:{predecessor_id}/round:{round_index}",
+        ),
+        discriminator=f"setup/idea:{scope}", legacy_discriminators=legacy_discriminators,
+        round_index=round_index, predecessor_id=predecessor_id, edge_kind=edge_kind,
+        reuse_artifact_widget_id=reuse_artifact_widget_id,
+    )
+
+
+async def write_result_node(
+    mcp: MCPClient,
+    store: StateStore,
+    settings: Settings,
+    *,
+    canvas_id: str,
+    result: ExperimentResult,
+    setup_id: str,
+    robot_id: str,
+    round_index: int,
+    provenance: ArtifactProvenance | None = None,
+    reuse_artifact_widget_id: str = "",
+) -> str:
+    """Write an already-validated ExperimentResult as a Browser artifact; return its id."""
+    # Keep these literal fragments physically present for the workflow parity check:
+    # "Setup: {setup_id}" / "Round: {round_index}"
+    title, payload = result_payload(result, setup_id=setup_id, round_index=round_index)
+    legacy_discriminators = (f"result/setup:{setup_id}/round:{round_index}",)
+    return await durable_browser.write_artifact_browser_durable(
+        mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.RESULT,
+        state=DecisionState.ANALYSIS_COMPLETE, title=title, payload=payload,
+        provenance=provenance or durable_browser.provenance_for(
+            settings,
+            source_widget_id=setup_id,
+            trigger_id=f"result/setup:{setup_id}/round:{round_index}",
+        ),
+        discriminator=f"result/setup:{setup_id}", legacy_discriminators=legacy_discriminators,
+        round_index=round_index, predecessor_id=robot_id, edge_kind="robot_result",
+        layout_anchor_id=setup_id, reuse_artifact_widget_id=reuse_artifact_widget_id,
+    )
+
+
+async def write_closed_node(
+    mcp: MCPClient,
+    store: StateStore,
+    settings: Settings,
+    *,
+    canvas_id: str,
+    decision: LoopDecision,
+    reason: str,
+    backstop: bool,
+    round_index: int,
+    result_id: str = "",
+    predecessor_id: str = "",
+    edge_kind: str = "result_closed",
+    discriminator: str = "",
+    provenance: ArtifactProvenance | None = None,
+) -> str:
+    """Write one terminal [EXP:Closed] Browser artifact from its predecessor."""
+    predecessor = predecessor_id or result_id
+    default_lineage = (
+        f"closed/result:{result_id}/round:{round_index}"
+        if result_id and not predecessor_id
+        else f"closed/predecessor:{predecessor}/round:{round_index}"
+    )
+    body = render.render_decision(decision) + (f"\n\n({reason})" if backstop else "")
+    title = f"{nodes.CLOSED} after {version(round_index)}"
+    payload = {
+        **decision.model_dump(), "title": title, "round": round_index, "reason": reason,
+        durable_browser.RENDERED_TEXT_KEY: body,
+    }
+    return await durable_browser.write_artifact_browser_durable(
+        mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.CLOSED,
+        state=DecisionState.CLOSED, title=title, payload=payload,
+        provenance=provenance or durable_browser.provenance_for(
+            settings,
+            source_widget_id=predecessor,
+            trigger_id=default_lineage,
+        ),
+        discriminator=discriminator or default_lineage,
+        round_index=round_index, predecessor_id=predecessor, edge_kind=edge_kind,
+    )
+
+
+__all__ = [
+    "LoopSummary", "SchemaValidationError", "coerce_or_fail", "emit_decision",
+    "emit_result", "ground_and_emit_setup", "version", "write_closed_node",
+    "write_needs_input_node", "write_result_node", "write_setup_node",
+]

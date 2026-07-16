@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 import pytest
-
 from canvus_sdk import Client
 
 

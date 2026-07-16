@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 import respx
-from httpx import Response
-
 from canvus_sdk import Client
 from canvus_sdk.extras import (
     BatchConfig,
@@ -13,6 +11,7 @@ from canvus_sdk.extras import (
     BatchProcessor,
     summarize,
 )
+from httpx import Response
 
 
 @pytest.mark.asyncio

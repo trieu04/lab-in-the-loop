@@ -12,14 +12,37 @@ def _bullets(label: str, items: list[str]) -> str:
     return f"{label}:\n{lines}\n"
 
 
+def _citation_lines(s: ExperimentSetup) -> str:
+    items = [c.source_id + (f" ({c.note})" if c.note else "") for c in s.citations]
+    return _bullets("Citations", items)
+
+
+def _ambiguity_lines(s: ExperimentSetup) -> str:
+    items = [
+        f"{f.term} -> {f.expansion}" if f.resolved and f.expansion else f"{f.term} (unresolved)"
+        for f in s.ambiguity_flags
+    ]
+    return _bullets("Ambiguity flags", items)
+
+
 def render_setup(s: ExperimentSetup) -> str:
+    hypothesis = f"Hypothesis: {s.hypothesis}\n\n" if s.hypothesis else ""
+    evidence = f"Evidence status: {s.evidence_status.value}\n\n" if s.evidence_status else ""
+    confidence = f"Confidence: {s.confidence}\n\n" if s.confidence is not None else ""
     return (
+        f"{hypothesis}"
         f"Rationale: {s.rationale}\n\n"
+        f"{evidence}"
+        f"{confidence}"
         f"{_bullets('Inputs', s.inputs)}"
         f"{_bullets('Conditions', s.conditions)}"
         f"{_bullets('Steps', s.steps)}"
         f"{_bullets('Parameters', s.parameters)}"
         f"{_bullets('Expected readouts', s.expected_readouts)}"
+        f"{_bullets('Success criteria', s.success_criteria)}"
+        f"{_bullets('Constraints', s.constraints)}"
+        f"{_citation_lines(s)}"
+        f"{_ambiguity_lines(s)}"
     )
 
 

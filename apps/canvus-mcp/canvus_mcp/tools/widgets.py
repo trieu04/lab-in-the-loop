@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from mcp.server.fastmcp import Context
+
+from canvus_mcp.access_control import AccessDenied
 from canvus_mcp.client import get_client
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
+
+    from canvus_mcp.access_control import AccessPolicy
 
 
 def _dump(model: Any) -> dict[str, Any]:
@@ -17,10 +24,22 @@ def _dump(model: Any) -> dict[str, Any]:
     return dict(model) if isinstance(model, dict) else {"value": model}
 
 
-def register(mcp: FastMCP) -> None:
-    """Attach widget-creation tools to ``mcp``."""
+def register(mcp: FastMCP, *, policy: AccessPolicy | None = None) -> None:
+    """Attach widget-creation tools to ``mcp`` with optional central guarding."""
+
+    def guard(action: str) -> Callable[[Any], Any]:
+        if policy is not None:
+            return policy.guarded(action)
+
+        def deny(function: Any) -> Any:
+            @wraps(function)
+            async def fail_closed(*args: Any, **kwargs: Any) -> Any:
+                raise AccessDenied()
+            return fail_closed
+        return deny
 
     @mcp.tool()
+    @guard("create_note")
     async def create_note(
         canvas_id: str,
         text: str,
@@ -31,6 +50,7 @@ def register(mcp: FastMCP) -> None:
         title: str | None = None,
         background_color: str | None = None,
         text_color: str | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create a Note widget at ``(x, y)`` on a canvas.
 
@@ -50,6 +70,7 @@ def register(mcp: FastMCP) -> None:
         return _dump(note)
 
     @mcp.tool()
+    @guard("create_browser")
     async def create_browser(
         canvas_id: str,
         url: str,
@@ -57,15 +78,59 @@ def register(mcp: FastMCP) -> None:
         y: float = 0.0,
         width: float | None = None,
         height: float | None = None,
+        title: str | None = None,
+        transparent_mode: bool | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a Browser widget pointed at ``url`` at ``(x, y)``."""
+        """Create a Browser widget at ``url`` and ``(x, y)``."""
         payload: dict[str, Any] = {"url": url, "location": {"x": x, "y": y}}
         if width is not None and height is not None:
             payload["size"] = {"width": width, "height": height}
+        if title is not None:
+            payload["title"] = title
+            payload["name"] = title
+        if transparent_mode is not None:
+            payload["transparent_mode"] = transparent_mode
         browser = await get_client().widgets.browsers.create(canvas_id, payload)
         return _dump(browser)
 
     @mcp.tool()
+    @guard("update_browser")
+    async def update_browser(
+        canvas_id: str,
+        browser_id: str,
+        url: str | None = None,
+        title: str | None = None,
+        transparent_mode: bool | None = None,
+        x: float | None = None,
+        y: float | None = None,
+        width: float | None = None,
+        height: float | None = None,
+        ctx: Context | None = None,
+    ) -> dict[str, Any]:
+        """Update a Browser widget while preserving its id and canvas position."""
+        payload: dict[str, Any] = {}
+        if url is not None:
+            payload["url"] = url
+        if title is not None:
+            payload["title"] = title
+            payload["name"] = title
+        if transparent_mode is not None:
+            payload["transparent_mode"] = transparent_mode
+        if x is not None and y is not None:
+            payload["location"] = {"x": x, "y": y}
+        if width is not None and height is not None:
+            payload["size"] = {"width": width, "height": height}
+        if not payload:
+            raise ValueError(
+                "update_browser requires at least one of: url, title, "
+                "transparent_mode, x+y, width+height"
+            )
+        browser = await get_client().widgets.browsers.update(canvas_id, browser_id, payload)
+        return _dump(browser)
+
+    @mcp.tool()
+    @guard("create_image")
     async def create_image(
         canvas_id: str,
         file_path: str,
@@ -73,6 +138,7 @@ def register(mcp: FastMCP) -> None:
         y: float = 0.0,
         title: str | None = None,
         content_type: str = "application/octet-stream",
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
         """Create an Image widget by uploading a local file.
 
@@ -97,6 +163,7 @@ def register(mcp: FastMCP) -> None:
         return _dump(image)
 
     @mcp.tool()
+    @guard("create_connector")
     async def create_connector(
         canvas_id: str,
         src_widget_id: str,
@@ -106,14 +173,9 @@ def register(mcp: FastMCP) -> None:
         connector_type: str | None = None,
         src_tip: str | None = None,
         dst_tip: str | None = None,
+        ctx: Context | None = None,
     ) -> dict[str, Any]:
-        """Create a Connector widget linking two widgets.
-
-        Draws from ``src_widget_id`` to ``dst_widget_id``. Direction matters for
-        RagCluster flows (e.g. PDF/Note → RagCluster). ``*_tip`` set arrowheads
-        (e.g. ``"solid-equilateral-triangle"`` / ``"none"``); ``connector_type``
-        is one of ``curve`` / ``line``.
-        """
+        """Create a directed Connector widget between two widgets."""
         payload: dict[str, Any] = {
             "src": {"id": src_widget_id, "auto_location": True},
             "dst": {"id": dst_widget_id, "auto_location": True},
