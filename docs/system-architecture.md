@@ -14,7 +14,7 @@ The design deliberately separates reads from writes:
 
 ## Current MVP vs. target harness (status note)
 
-Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), OpenAI/Claude adapter-factory model choices, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, and a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history (see "Durable harness core (Phase 2)" and "Generated artifact Browser service (Phase 3 implementation)" below).
+Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), OpenAI/Claude adapter-factory model choices, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, and a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history (see "Durable harness core (Phase 2)", "Generated artifact Browser service (Phase 3 implementation)", and "Grounding/evidence gate (Phase 4)" below).
 
 A 2026-07-16 architecture-recovery review (recovered from a separate `rag-canvus` session; see [project changelog](project-changelog.md)) recommends evolving this into an **independent, provider-neutral harness/orchestrator**, with the Claude Code skill/MCP registration as an optional developer/operator/demo interface rather than the runtime or source of truth for workflow logic, policy, grounding, and schemas. That recommendation is the session's final conclusion but was **not explicitly ratified by the project owner** — the architecture-choice prompt that would have confirmed it was interrupted. Treat it as **proposed direction**, not an implemented architecture. See "Target harness boundary (proposed)" below and the [roadmap](development-roadmap.md) for the phases this implies.
 
@@ -37,7 +37,8 @@ apps/canvus-mcp
 apps/lab-agent
   ├─ polls scan_experiment_workflow
   ├─ dispatches pending workflow steps, leased via a durable SQLite ledger
-  ├─ grounds model using read-only tools
+  ├─ grounds model using read-only tools and a per-run evidence ledger
+  ├─ validates citations, sufficiency, and ambiguity before setup writes
   ├─ writes setup/result/closed and generated needs-input nodes as crash-safe Browser artifacts
   ├─ serves capability-protected artifact HTML
   └─ decides continue/stop through the configured model adapter
@@ -84,15 +85,20 @@ Key modules:
 | `lab_agent/config.py` | MCP URL, provider, model, bounds |
 | `lab_agent/mcp_client.py` | MCP transport client |
 | `lab_agent/watch.py` | Poll loop and pending-trigger dispatcher |
-| `lab_agent/orchestrator.py` | Setup generation, mock robot result, loop continuation/closure |
+| `lab_agent/orchestrator.py` | Mock robot result, loop continuation/closure, and next-round setup grounding via `orchestrator_setup.generate_setup` |
+| `lab_agent/orchestrator_setup.py` | Idea/next-focus → setup entry point; creates a fresh `EvidenceLedger`, evaluates grounding with original idea text, writes setup only when executable, writes Needs Input for insufficient evidence/ambiguity, and leaves invalid citations retryable with no write |
+| `lab_agent/grounding.py` | Phase 4 grounding gate: evidence sufficiency, citation membership, dictionary-backed acronym boundary scan, durable grounding audit, and Needs Input dispatch |
+| `lab_agent/evidence.py` | Per-run bounded evidence ledger with deterministic source ids, bounded excerpts, citation validation, and minimal audit rows |
+| `lab_agent/acronyms.py` | Approved acronym dictionary loader and acronym-like term detection; unknown/colliding terms stay unresolved |
+| `lab_agent/models/evidence.py` | `EvidenceCitation`, `AcronymFlag`, `EvidenceStatus`, `GroundingDecision` |
 | `lab_agent/orchestrator_support.py` | Stage helpers/re-export surface the orchestrator delegates to: fail-closed schema validation (`coerce_or_fail`/`SchemaValidationError`, `_emit_validated` — never fabricates missing fields), per-stage emit (`ground_and_emit_setup`, `emit_result`, `emit_decision`) and write (`write_setup_node`, `write_result_node`, `write_closed_node`, re-exported `write_needs_input_node`) helpers, round→version formatting (`version`), `LoopSummary`; generated writes delegate to Browser artifact durable writes |
-| `lab_agent/orchestrator_needs_input.py` | On-demand `[EXP:Needs Input]` write stage; writes only the generated prompt/status Browser artifact with `NEEDS_REVIEW` artifact state. The human response remains a separate Note |
+| `lab_agent/orchestrator_needs_input.py` | On-demand `[EXP:Needs Input]` write stage; writes only the generated prompt/status Browser artifact with `NEEDS_REVIEW` artifact state, deduplicated by predecessor plus reason hash. The human response remains a separate Note |
 | `lab_agent/nodes.py` | Canvas write surface: `create_node`, `create_artifact_widget`, `update_artifact_widget`, `connect`, `read_note_text` — user/legacy Notes use `create_note`; generated artifacts use `create_browser`/`update_browser`; write helpers raise `MCPToolError` on malformed/error/missing-id responses so failed writes are retried, not recorded as phantom successes |
-| `lab_agent/tool_bridge.py` | Selects read-only tools exposed to the model |
-| `lab_agent/loop.py` | Tool-use loop and structured-output emission |
-| `lab_agent/prompts.py` | System prompts for setup/result/decision phases |
+| `lab_agent/tool_bridge.py` | Selects read-only tools exposed to the model, executes allowed reads, wraps successful results as `untrusted_data`, and records them in the ledger; write tools are rejected |
+| `lab_agent/loop.py` | Tool-use loop and structured-output emission, threading the evidence ledger through setup grounding |
+| `lab_agent/prompts.py` | System prompts for setup/result/decision phases, including untrusted-data and citation requirements for setup |
 | `lab_agent/render.py` | Renders structured models into canvas-note text |
-| `lab_agent/models/experiment.py` | `ExperimentSetup`, `ExperimentResult`, `LoopDecision` |
+| `lab_agent/models/experiment.py` | `ExperimentSetup`, `ExperimentResult`, `LoopDecision`; setup includes additive Phase 4 evidence/citation/ambiguity fields with legacy-safe defaults |
 | `lab_agent/models/states.py` | `DecisionState` enum (UC §12 lifecycle: `DRAFT` … `CLOSED`/`REJECTED`) written into note bodies as a `Status:` line |
 | `lab_agent/adapters/*` | OpenAI and Claude model adapters; `factory.py` selects by `settings.model_provider` |
 | `lab_agent/runtime.py` | Process-wide `RuntimeContext` (durable `StateStore` + a fresh-per-process `runtime_instance_id`), built once at CLI startup; fails closed on any integrity/audit-chain problem before canvas work starts |
@@ -114,6 +120,18 @@ Key modules:
 ### Durable harness core (Phase 2)
 
 `lab-agent` now persists workflow progress to a local SQLite (WAL-mode) ledger instead of relying solely on in-memory state or canvas re-scanning. Scope: **local disk, single host, single active writer per canvas** — see "Local-disk, single-host scope" below for what this does and does not cover.
+
+### Grounding/evidence gate (Phase 4)
+
+Setup generation now fails visible before canvas writes instead of trusting prompt wording alone:
+
+- `tool_bridge.READ_TOOLS` is the only model-facing tool set; successful reads are wrapped as `untrusted_data` and captured in a fresh per-run `EvidenceLedger`. The ledger derives stable source ids from tool name, canonical arguments, and content hash, keeps bounded excerpts in memory, and is discarded after the grounding decision.
+- `ExperimentSetup` gained additive, defaulted fields: `hypothesis`, `success_criteria`, `constraints`, `confidence`, `citations`, `evidence_status`, and `ambiguity_flags`. Defaults preserve legacy parsing; the grounding gate, not the schema, decides executability.
+- `evaluate_grounding` requires `evidence_status='sufficient'`, validates all citation ids against the current ledger, and scans original idea text, emitted setup fields, and all bounded evidence excerpts against the approved acronym dictionary. Unknown or colliding acronym-like terms are Needs Input, never guessed.
+- Insufficient evidence or blocking ambiguity writes one `[EXP:Needs Input]` Browser artifact with `NEEDS_REVIEW` state, deduplicated by `(canvas, predecessor_id, reason_hash)`. Invalid citations write no setup/connector and remain retryable/backoff/quarantine-eligible.
+- Durable grounding audit stores only decision, truncated reason, and evidence ids/tool/content hashes. It uses the same 4096-byte payload cap as the audit store and deterministically trims newest evidence rows to fit; raw excerpts, tool arguments, credentials, and capability URLs are not persisted.
+
+Future wiki/KG/vector sources can feed this boundary as retrieval adapters or external gates. They are not current hard dependencies, and no real external integrations or wet-lab autonomy are claimed.
 
 ### Generated artifact Browser service (Phase 3 implementation)
 
@@ -164,10 +182,14 @@ scan_experiment_workflow reports `ideas_needing_setup`
 lab-agent reads idea + RagCluster connections
         │
         ▼
-model emits ExperimentSetup
+model emits ExperimentSetup with citations/evidence status
         │
         ▼
-lab-agent creates `[EXP:Setup v001]` Browser artifact and connector idea → setup
+lab-agent validates per-run ledger citations + dictionary ambiguity scan
+        │
+        ├─ executable → create `[EXP:Setup v001]` Browser artifact and connector idea → setup
+        ├─ insufficient/ambiguous → create deduplicated `[EXP:Needs Input]` Browser artifact
+        └─ invalid citation/schema → write nothing; durable attempt can retry
 ```
 
 ### Setup to mock robot result
@@ -219,7 +241,8 @@ The canvas remains the source of *workflow* state — the agent treats connector
 | Artifact capability URLs | Bearer URL leakage or cross-canvas access | High-entropy tokens stored only as hashes; no access logs; no token in audit/model context; artifact/canvas scope checks; revocation/rotation; private bind by default |
 | Artifact HTML rendering | XSS or remote asset leakage | Escaped structured rendering, same-origin CSS/JS only, CSP, no third-party assets |
 | Downloaded PDFs/images | Sensitive data | Written to ignored `downloads/`; bytes not in model context by default |
-| Model output | Hallucinated domain facts | Ground via RagCluster; flag ambiguous terms; structured schemas |
+| Retrieved evidence text | Prompt injection or data leakage | Read results wrapped as `untrusted_data`; model has no write tools; durable audit stores ids/hashes/reasons only |
+| Model output | Hallucinated domain facts, fabricated citations, guessed acronyms | Ground via RagCluster/read tools; validate citations against per-run ledger; scan idea/setup/evidence excerpts with approved dictionary; structured schemas |
 | Loop autonomy | Runaway rounds | Model stop decision plus `LAB_AGENT_LOOP_MAX_ROUNDS` backstop |
 
 ## Integration boundary with `rag-canvus`
@@ -246,8 +269,8 @@ It is optional and separate from the primary `canvus-mcp` + `lab-agent` loop. Th
 - A durable workflow state machine, with idempotency, retry, resume, failure recovery, and audit/version history (today: **implemented for local-disk, single-host scope** — see "Durable harness core (Phase 2)" above; a shared/replicated store for multi-host deployment remains future, see "Local-disk, single-host scope" above).
 - Policy and approval gates (today: none — mock robot only, no human-approval gate in code).
 - Token/resource budgets, model routing, cost thresholds, loop limits, and stop conditions (today: only `LAB_AGENT_LOOP_MAX_ROUNDS` as a runaway backstop, plus the model's own `LoopDecision`).
-- Retrieval/grounding against internal wiki, knowledge graph, acronym dictionary, documents, and experiment history (today: RagCluster connector context only, no KG/wiki/vector DB).
-- Context packaging and evidence tracking, model adapter/router selection, and structured-output validation (today: adapter factory + fail-closed `orchestrator_support.coerce_or_fail`/`_emit_validated`, provider-specific but not policy-aware).
+- Retrieval/grounding against internal wiki, knowledge graph, documents, and experiment history (today: RagCluster/read-tool context plus an approved acronym dictionary; no KG/wiki/vector DB integration).
+- Context packaging and evidence tracking, model adapter/router selection, and structured-output validation (today: per-run evidence ledger + citation/ambiguity gate, adapter factory, and fail-closed `orchestrator_support.coerce_or_fail`/`_emit_validated`; provider-specific but not policy-aware).
 - Tool/action routing to Canvus, Flywheel, in-silico simulation, and robotic/human lab execution (today: mock only; no Flywheel/in-silico wiring).
 - Async, chunked, cached, resumable multimodal ingestion rather than one model call per document (today: whole-file downloads via `canvus_mcp/downloads.py`; no chunking/caching/resume).
 
@@ -256,7 +279,7 @@ Under this proposal, the Claude Code skill/MCP registration becomes an **optiona
 ## Current limitations
 
 - Robot execution is mock only.
-- Retrieval is canvas/RagCluster-oriented, not a full vector DB or knowledge graph runtime.
+- Retrieval is canvas/RagCluster/read-tool-oriented with a local approved acronym dictionary; future wiki/KG/vector sources are adapters or external gates, not a full vector DB or knowledge graph runtime today.
 - Flywheel/in-silico gates are represented in docs and roadmap, not implemented as live integrations.
 - The durable harness is local-disk, single-host, single-active-writer-per-canvas scoped (SQLite WAL) — not a shared/replicated store; see "Local-disk, single-host scope" above for the Postgres/multi-host migration trigger.
 - External live Canvus reachability to the artifact public base URL and production TLS/private-ingress verification remain operational gates; this repository documents the requirement but does not prove deployment.

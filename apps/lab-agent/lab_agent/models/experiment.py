@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from lab_agent.models.evidence import AcronymFlag, EvidenceCitation, EvidenceStatus
+
 
 class ExperimentSetup(BaseModel):
     """A runnable experiment setup derived from an idea + internal knowledge."""
@@ -30,6 +32,26 @@ class ExperimentSetup(BaseModel):
     expected_readouts: list[str] = Field(
         default_factory=list,
         description="Measurements the run should produce.",
+    )
+    # ── Phase 4: grounding/evidence fields (additive, all defaulted so legacy
+    # fixtures/artifacts still parse; the grounding gate -- not this schema --
+    # decides sufficiency, so an empty default is never treated as sufficient) ──
+    hypothesis: str = Field(default="", description="The testable hypothesis this setup evaluates.")
+    success_criteria: list[str] = Field(
+        default_factory=list, description="Criteria that would count the result a success."
+    )
+    constraints: list[str] = Field(default_factory=list, description="Known constraints/limits to respect.")
+    confidence: float | None = Field(
+        default=None, ge=0.0, le=1.0, description="Model's self-reported confidence, if given."
+    )
+    citations: list[EvidenceCitation] = Field(
+        default_factory=list, description="Evidence sources (ledger source ids) this setup cites."
+    )
+    evidence_status: EvidenceStatus | None = Field(
+        default=None, description="Explicit sufficiency assertion; None is never treated as sufficient."
+    )
+    ambiguity_flags: list[AcronymFlag] = Field(
+        default_factory=list, description="Acronym-like terms flagged, resolved or not."
     )
 
 

@@ -5,9 +5,33 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from lab_agent.adapters.base import AdapterResponse, Message, ToolSpec
+from lab_agent.adapters.base import AdapterResponse, Message, ToolCall, ToolSpec
+from lab_agent.evidence import compute_source_id
 from lab_agent.tool_bridge import READ_TOOLS
 from tests import canvus_detector_bridge as detector
+
+#: The one deterministic grounding tool call :class:`ScriptedAdapter` auto-
+#: simulates on a fresh turn -- ``FakeMCP.call_tool`` always returns the same
+#: content for it regardless of arguments, so its evidence ``source_id`` is a
+#: precomputable constant, reusable across the whole test suite.
+GROUND_TOOL = "check_ragcluster_connections"
+GROUND_ARGS: dict[str, Any] = {}
+GROUND_CONTENT = json.dumps({"clusters": []})
+GROUNDED_SOURCE_ID = compute_source_id(GROUND_TOOL, GROUND_ARGS, GROUND_CONTENT)
+
+
+def grounded_setup(overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A minimal ``ExperimentSetup`` payload that passes the grounding gate:
+    sufficient evidence, one citation resolving to :data:`GROUNDED_SOURCE_ID`."""
+    base: dict[str, Any] = {
+        "rationale": "because",
+        "steps": ["mix A and B"],
+        "inputs": ["A", "B"],
+        "evidence_status": "sufficient",
+        "citations": [{"source_id": GROUNDED_SOURCE_ID}],
+    }
+    base.update(overrides or {})
+    return base
 
 
 class FakeMCP:
@@ -151,6 +175,13 @@ class ScriptedAdapter:
         schema_name: str = "result",
     ) -> AdapterResponse:
         if response_schema is None:
+            # Auto-simulate exactly one deterministic grounding read on a fresh
+            # turn (a tool loop always starts with the last message being the
+            # user's), then stop -- gives every grounding call in the suite a
+            # populated, precomputable ledger without per-test wiring.
+            if tools and messages and messages[-1]["role"] == "user":
+                call = ToolCall(id="ground1", name=GROUND_TOOL, arguments=dict(GROUND_ARGS))
+                return AdapterResponse(text="", tool_calls=[call])
             return AdapterResponse(text="grounded summary", tool_calls=[])
         self.schema_calls.append(schema_name)
         value = self._structured[schema_name]

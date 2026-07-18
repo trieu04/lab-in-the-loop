@@ -20,7 +20,7 @@ from lab_agent.config import Settings
 from lab_agent.durable_browser import ArtifactUrlError
 from lab_agent.models.artifact import ArtifactType
 from lab_agent.models.states import DecisionState
-from lab_agent.orchestrator_needs_input import write_needs_input_node
+from lab_agent.orchestrator_needs_input import compute_reason_hash, write_needs_input_node
 from lab_agent.recovery import idempotency_key
 from lab_agent.state_store import StateStore
 from tests.fakes import FakeMCP
@@ -127,8 +127,9 @@ async def test_restart_converges_on_prior_browser_and_repairs_stale_url(store):
     prompt landed on the canvas (tagged), but crashed before the local
     mapping/connector were recorded. Recovery must converge on that widget,
     repair its stale capability URL, and draw exactly one connector."""
-    canvas_id, predecessor_id, round_index = "c", "setup1", 1
-    discriminator = f"needs_input/predecessor:{predecessor_id}/round:{round_index}"
+    canvas_id, predecessor_id = "c", "setup1"
+    reason_hash = compute_reason_hash("ambiguous grounding")
+    discriminator = f"needs_input/predecessor:{predecessor_id}/reason:{reason_hash}"
     browser_key = idempotency_key(canvas_id, "create_browser", f"browser/needs_input/{discriminator}")
     prior_title = tagged_title("[EXP:Needs Input] round 1", browser_key)
     mcp = FakeMCP(

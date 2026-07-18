@@ -12,11 +12,15 @@ from __future__ import annotations
 import pytest
 
 from lab_agent.state_store import StateStore
+from tests.fakes import grounded_setup
 
 # Shared scenario fixtures for the durable-harness integration tests. A valid
-# ``ExperimentSetup`` payload, a malformed one (missing the required
-# ``rationale``), and a single idea-needing-setup workflow snapshot.
-SETUP = {"rationale": "because", "steps": ["mix A and B"], "inputs": ["A", "B"]}
+# ``ExperimentSetup`` payload (grounded: sufficient evidence + a citation that
+# resolves in the deterministic ledger the ``ScriptedAdapter`` populates, so it
+# clears the Phase 4 grounding gate and reaches the Browser write path these
+# tests exercise), a malformed one (missing the required ``rationale``), and a
+# single idea-needing-setup workflow snapshot.
+SETUP = grounded_setup()
 MALFORMED_SETUP = {"steps": ["mix A and B"]}
 IDEA_WORKFLOW = {
     "ideas_needing_setup": [{"widget_id": "idea1", "ragcluster_id": "rag1"}],

@@ -12,9 +12,10 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 | `canvus-mcp` migration | Complete | Source/tests/docs copied, generated artifacts excluded |
 | `lab-agent` migration | Complete | Source/tests/docs copied, generated artifacts excluded |
 | Full docs initialization | Complete | README + architecture/workflow/setup/integration/standards/changelog |
-| Test verification | Complete for recorded local gates | Phase 1/2 baselines remain recorded below. The 2026-07-18 Phase 3 final temper/review records `canvus-mcp` 37/37 and `lab-agent` 256/256 tests passed (293 total), `ruff`/`mypy` clean, workflow parity clean, and reviewer score 9.6/10 SEALED. Live external Canvus/TLS gates remain pending. |
+| Test verification | Complete for recorded local gates | Phase 1/2 baselines remain recorded below. The 2026-07-18 Phase 4 final temper/review records `lab-agent` 314/314 tests passed, focused `canvus-mcp` marker tests 8/8 passed, `ruff`/`mypy` clean, workflow parity clean, and reviewer score 9.6/10 SEALED. Live external Canvus/TLS gates remain pending. |
 | Durable harness core (local-disk, single-host) | Complete | SQLite WAL ledger: attempts/retry/quarantine, single-writer canvas leases, side-effect intent recovery, hash-chained audit log, operator commands; see Phase 3 below and [system architecture](system-architecture.md) → "Durable harness core" |
 | Generated artifact Browser service | Delivered for local/source gates; deployment gates pending | Setup/Result/Closed and generated Needs Input status/prompt artifacts use Browser widgets backed by `ArtifactStore`; legacy Notes stay readable. Formal temper/review is sealed; live external reachability and production TLS/private-ingress validation remain operational gates. |
+| Grounding/evidence gate | Complete | Per-run bounded evidence ledger, deterministic source ids, citation validation before writes, untrusted-data envelope, approved acronym dictionary scan across idea/setup/evidence excerpts, explicit Needs Input for insufficient evidence/ambiguity, and metadata-only durable audit. Future wiki/KG/vector sources remain adapters/external gates. |
 | Real robot integration | Future | Mock-only for now |
 | Flywheel/in-silico gates | Future | Documented, not implemented |
 
@@ -146,22 +147,29 @@ Success criteria:
 
 ## Phase 4 — Stronger grounding
 
-**Status:** Future
+**Status:** Complete — sealed 2026-07-18 (314/314 `lab-agent` tests; focused `canvus-mcp` marker tests 8/8; reviewer score 9.6/10 SEALED)
 
-Goal: improve scientific context quality before setup generation, moving from canvas/RagCluster-only context toward internal wiki/knowledge-graph/acronym grounding.
+Goal: improve scientific context quality before setup generation using the current RagCluster/read-tool boundary, without requiring future wiki/KG/vector integrations.
 
-Tasks:
+Completed:
 
-- Add richer RagCluster feeder summarization.
-- Support PDF excerpt selection and citation in setup artifacts.
-- Add acronym/term uncertainty section to setup output.
-- Track knowledge source ids in setup/result artifacts.
-- Integrate an internal wiki/knowledge-graph retrieval source and an acronym dictionary so the model is not limited to canvas-local context; enforce that ambiguous domain terms are looked up rather than guessed (UC §9.1, §13.2).
+- Added a bounded per-run `EvidenceLedger` around successful read-tool results with deterministic source ids, content hashes, bounded in-memory excerpts, and citation membership validation.
+- Wrapped retrieved content in an explicit `untrusted_data` envelope and kept model-facing tools read-only; writes remain orchestrator-owned.
+- Extended `ExperimentSetup` additively with `hypothesis`, `success_criteria`, `constraints`, `confidence`, citations, evidence status, and ambiguity flags while preserving legacy parsing defaults.
+- Validated evidence before setup writes: insufficient evidence becomes Needs Input; invalid/fabricated citations write nothing and remain retryable.
+- Scanned original idea text, emitted setup fields, and all bounded evidence excerpts against an approved acronym dictionary; unknown/colliding terms are surfaced instead of guessed.
+- Wrote explicit insufficient-evidence/ambiguity `[EXP:Needs Input]` Browser artifacts deduplicated by predecessor plus reason hash.
+- Kept durable audit metadata-only (decision/reason/source ids/tool/hash), capped to the store's 4096-byte payload limit by trimming evidence rows.
 
-Success criteria:
+Deferred/future:
 
-- Every setup can cite the internal notes/PDFs/widgets it used.
-- Ambiguous terms are visible, not silently guessed.
+- Internal wiki, knowledge graph, and vector retrieval sources are future adapters or external gates, not current hard dependencies.
+- Acronym dictionary curation remains an operational/domain-owner concern before live scientific use.
+
+Success criteria (met):
+
+- Setups either cite internal notes/PDFs/widgets through valid ledger source ids or produce an explicit Needs Input/invalid-citation outcome before any setup write.
+- Ambiguous terms are visible through Needs Input, not silently guessed.
 
 ## Phase 4b — Token/resource governance and model routing
 

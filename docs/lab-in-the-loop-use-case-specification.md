@@ -106,7 +106,7 @@ Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-a
 | ACT-LITL-06 | AI harness/orchestrator (`lab-agent`) | Orchestrate loop, call model, write canvas | `[MVP]` | `system-architecture.md` "Runtime apps" |
 | ACT-LITL-07 | Model provider (Claude/OpenAI/Ollama/vLLM/internal) | Generate setup/result/decision | `[MVP partial]` only 2 named adapters `openai`/`claude`; Ollama/vLLM only via `LAB_AGENT_OPENAI_BASE_URL` under `openai` provider | `lab_agent/adapters/factory.py` |
 | ACT-LITL-08 | Canvus (canvas server) | Durable state store, source of truth for workflow | `[MVP]` | `system-architecture.md` § "State and idempotency" |
-| ACT-LITL-09 | Internal knowledge sources (wiki/KG/vector DB/acronym dict) | Grounding context | `[Future]`; currently only `RagCluster` connector graph | `canvus_mcp/ragcluster.py` |
+| ACT-LITL-09 | Internal knowledge sources (wiki/KG/vector DB/acronym dict) | Grounding context | `[MVP partial]`; RagCluster/read tools plus approved acronym dictionary exist; wiki/KG/vector DB are future adapters/external gates | `canvus_mcp/ragcluster.py`, `lab_agent/evidence.py`, `lab_agent/acronyms.py` |
 | ACT-LITL-10 | In-silico / digital-twin service | Validate design before wet lab | `[Future]` | Original UC §8; roadmap Phase 5 |
 | ACT-LITL-11 | Robotic/wet-lab system | Execute real experiments | `[Future]`; currently `Robot_` is only a mock widget | roadmap "Real robot integration: Future" |
 | ACT-LITL-12 | Flywheel / imaging analysis platform | Auto-run analysis gear (e.g., lung fibrosis quantification) | `[Future]`, no wrapper | Original UC §9.4; roadmap Phase 6 |
@@ -141,11 +141,11 @@ Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-a
 - Model adapter (`openai` or `claude`) must be available; OpenAI-compatible endpoint (`LAB_AGENT_OPENAI_BASE_URL`) used for Ollama/vLLM/internal model `[MVP partial]`.
 - Durable local operation depends on the SQLite WAL ledger at `LAB_AGENT_STATE_DB_PATH`; it is local-disk/single-host scoped and must be backed up/restored intentionally. The same DB contains generated-artifact records, versions, token hashes, and Browser widget mappings.
 - Browser artifact writes depend on a configured `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` reachable by intended Canvus clients; production requires HTTPS/private ingress. Live external reachability/TLS verification is a deployment gate, not proven by this repo.
-- Target components (Flywheel, in-silico, knowledge/versioning service) are **not yet in existence** — all use cases involving them are `[Future]`.
+- Target components (Flywheel, in-silico, knowledge/versioning service, wiki/KG/vector retrieval services) are **not yet in existence** — all use cases involving them are `[Future]`. The current grounding gate accepts future retrieval sources only as adapters/external gates.
 
 **Constraints**
 
-- Model receives only read tools (`READ_TOOLS` in `lab_agent/tool_bridge.py`); all writes go through orchestrator (`lab_agent/nodes.py`) — strict read/write separation.
+- Model receives only read tools (`READ_TOOLS` in `lab_agent/tool_bridge.py`); successful reads are wrapped as `untrusted_data` and captured in a per-run evidence ledger; all writes go through orchestrator (`lab_agent/nodes.py`) — strict read/write separation.
 - Must not hard-code dependence on any specific provider (`code-standards.md` § "Provider and harness boundaries").
 - `LAB_AGENT_LOOP_MAX_ROUNDS` is the only loop backstop currently available — no real cost/token threshold yet.
 - Durable idempotency and artifact storage are scoped to one local host and one active writer per canvas; multi-host/shared-store deployment is a future Postgres-or-equivalent migration trigger.
@@ -182,8 +182,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 | ID | Requirement | Priority | Status |
 |---|---|---|---|
-| FR-LITL-001 | Knowledge grounding from internal knowledge scope before design generation | Must | `[MVP partial]` — only RagCluster context, no real wiki/KG/vector DB |
-| FR-LITL-002 | AI generates experiment design (`ExperimentSetup`) from idea + context | Must | `[MVP]` |
+| FR-LITL-001 | Knowledge grounding from internal knowledge scope before design generation | Must | `[MVP partial]` — RagCluster/read-tool context with per-run evidence ledger; no real wiki/KG/vector DB |
+| FR-LITL-002 | AI generates experiment design (`ExperimentSetup`) from idea + context | Must | `[MVP]` — setup writes are gated by evidence/citation/ambiguity validation |
 | FR-LITL-003 | Validate design via in-silico/digital-twin before permitting wet lab | Must (safety) | `[Future]` |
 | FR-LITL-004 | Scientist review/approval gate for experiment design | Must (safety) | `[Future]` — no approve/reject button in code |
 | FR-LITL-005 | Lab-lead approval gate for resource/budget before wet lab | Must (safety) | `[Future]` |
@@ -196,8 +196,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | FR-LITL-012 | Decide to continue/stop loop (`LoopDecision`) | Must | `[MVP]` |
 | FR-LITL-013 | Backstop to prevent infinite loop (max round, cost threshold) | Must (safety) | `[MVP partial]` — only `LAB_AGENT_LOOP_MAX_ROUNDS`, no real cost/token threshold |
 | FR-LITL-014 | Operate model-provider-agnostic (Claude/OpenAI/Ollama/vLLM/internal) | Must | `[MVP partial]` — 2 named adapters; others via OpenAI-compatible `base_url` |
-| FR-LITL-015 | Respond explicitly when internal evidence is insufficient ("insufficient evidence") | Should | `[Future]` |
-| FR-LITL-016 | Handle ambiguous acronyms: detect → retrieve dict → ask confirmation | Should | `[Future]` — currently only "don't guess, lower confidence" rule |
+| FR-LITL-015 | Respond explicitly when internal evidence is insufficient ("insufficient evidence") | Should | `[MVP]` — writes deduplicated `[EXP:Needs Input]`; executable setup remains pending |
+| FR-LITL-016 | Handle ambiguous acronyms: detect → approved dictionary → ask confirmation | Should | `[MVP partial]` — local approved dictionary and Needs Input exist; external wiki/KG/vector lookup remains Future |
 | FR-LITL-017 | Handle Flywheel job failure: show failed, preserve data path, allow rerun | Should | `[Future]` |
 | FR-LITL-018 | Create conflict note when new data contradicts old knowledge | Should | `[Future]` |
 | FR-LITL-019 | Idempotency: no duplicate setup/result/closed/connector loop-processing | Must | `[MVP]` — durable local SQLite attempts + side-effect intents/outbox; local-disk, single-host scope |
@@ -237,8 +237,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 | # | Step | Status | Notes |
 |---|---|---|---|
-| 1 | Knowledge grounding — retrieve wiki + historical data by context | `[MVP partial]` | Only RagCluster context; no real wiki/KG/vector DB |
-| 2 | Experiment design — AI generates proposal | `[MVP]` | `lab-agent` creates `[EXP:Setup vNNN]` |
+| 1 | Knowledge grounding — retrieve wiki + historical data by context | `[MVP partial]` | RagCluster/read tools with per-run evidence ledger; no real wiki/KG/vector DB |
+| 2 | Experiment design — AI generates proposal | `[MVP]` | `lab-agent` creates `[EXP:Setup vNNN]` only after citation/evidence/ambiguity gates pass |
 | 3 | In-silico validation — predict outcome, uncertainty, risk, recommendation | `[Future]` | No in-silico service or output schema |
 | 4 | Scientist review — read in-silico results and approve/revise/reject | `[Future]` | No approval UI/transition logic |
 | 5 | Lab-lead approval — review resource, budget, safety before wet lab | `[Future]` | No resource/budget gate |
@@ -257,8 +257,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 | Exception | Vision requirement | Current status |
 |---|---|---|
-| Experiment design has insufficient evidence | Return reason + suggestion for in-silico/retrieve more | `[Future]` — no explicit "cannot recommend" response schema |
-| Ambiguous acronym (e.g., `BIA`) | Detect → retrieve dict → ask confirm → regenerate | `[Future]` — only "don't guess, lower confidence" rule |
+| Experiment design has insufficient evidence | Return reason + suggestion for in-silico/retrieve more | `[MVP]` — explicit Needs Input Browser artifact; no executable setup write |
+| Ambiguous acronym (e.g., `BIA`) | Detect → retrieve dict → ask confirm → regenerate | `[MVP partial]` — approved local dictionary scan and Needs Input exist; external retrieval-backed dictionary remains Future |
 | Flywheel job fails | Show failed, preserve data path, allow rerun, don't update KB | `[Future]` — Flywheel doesn't exist |
 | New data conflicts old knowledge | Create conflict note, keep both hypotheses | `[Future]` — no knowledge store |
 | Infinite loop | Max iteration, stop condition, cost threshold | `[MVP partial]` — only `LAB_AGENT_LOOP_MAX_ROUNDS`, no cost/plateau threshold |
@@ -305,26 +305,26 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 **Trigger:** User selects knowledge scope on canvas and asks "Design the next experiment." (vision §4); currently realized `[MVP]` as note `{idea: ...}` connected from `RAGCluster_`.
 
-**Preconditions:** Knowledge scope exists (RagCluster + feeder) `[MVP]`; optional constraints (budget/assay type/disease area/available equipment) `[Vision]` — confirmed **no corresponding fields** in current `ExperimentSetup` (see §13.4 and §18).
+**Preconditions:** Knowledge scope exists (RagCluster + feeder) `[MVP]`; optional constraints can be emitted as setup `constraints` strings `[MVP partial]`, while typed budget/assay/disease/equipment subfields remain `[Future]` (see §13.4 and §18).
 
 **Minimal guarantee:** If context is insufficient, system does not create unsupported design (caution principle in `code-standards.md`).
 
-**Success guarantee (postconditions):** `[EXP:Setup vNNN]` created and connector attached from idea `[MVP]`.
+**Success guarantee (postconditions):** `[EXP:Setup vNNN]` created and connector attached from idea when the grounding gate is executable `[MVP]`; otherwise a Needs Input artifact is created for insufficient evidence/ambiguity, or invalid citations write nothing and remain retryable.
 
 **Main success flow:**
 1. User selects knowledge scope on canvas `[MVP]`.
 2. User asks (via note `{idea: ...}`) "Design the next experiment" `[MVP]`.
-3. System retrieves internal wiki + relevant documents `[MVP partial — only RagCluster]`.
-4. Model creates experiment proposal (`ExperimentSetup`) `[MVP]`.
-5. System attaches proposal to canvas as Experiment Design Node (`[EXP:Setup vNNN]`) `[MVP]`.
+3. System retrieves internal context through RagCluster/read tools and records successful reads in a per-run evidence ledger `[MVP partial — no wiki/KG/vector DB]`.
+4. Model creates experiment proposal (`ExperimentSetup`) with citations/evidence status/ambiguity flags `[MVP]`.
+5. System validates citations and ambiguity before attaching proposal to canvas as Experiment Design Node (`[EXP:Setup vNNN]`) `[MVP]`.
 6. Optional preliminary scientist screening may request revise/reject before in-silico `[Future — no approve/reject button]`.
 7. Proposal moves to UC-LITL-03 for in-silico validation; preliminary screening is not wet-lab authorization `[Future]`.
 
-**Alternate/Exception flows:** Insufficient context found → return "insufficient internal evidence" `[Future]` (see FR-LITL-015).
+**Alternate/Exception flows:** Insufficient context or unresolved ambiguity → write deduplicated `[EXP:Needs Input]` Browser artifact `[MVP]`; invalid/fabricated citations → write nothing and keep the attempt retryable (see FR-LITL-015/016).
 
 **Business rules reference:** BR-LITL-001, BR-LITL-005.
 
-**Data inputs/outputs:** Input = knowledge scope id, query text, optional constraints `[Vision]`. Output = `ExperimentSetup` with `rationale`, `inputs`, `conditions`, `steps`, `parameters`, `expected_readouts` (actual schema — see §13); vision requires explicit `hypothesis`/`risk`/`success-criteria`/`recommended-analysis-pipeline` — these fields **don't have separate names** in current schema (see gap at §13.3).
+**Data inputs/outputs:** Input = knowledge scope id, query text, optional constraints `[Vision]`, and retrieved evidence ledger `[MVP]`. Output = `ExperimentSetup` with `rationale`, `inputs`, `conditions`, `steps`, `parameters`, `expected_readouts`, plus additive grounding fields `hypothesis`, `success_criteria`, `constraints`, `confidence`, `citations`, `evidence_status`, and `ambiguity_flags` (actual schema — see §13). Vision fields for recommended analysis pipeline and typed budget/platform constraints remain gaps.
 
 **Approval points:** Preliminary design screening may allow revise/reject before in-silico `[Future]`, but does not authorize wet lab. Wet-lab authorization occurs only after UC-LITL-03, scientist review of in-silico results, and lab-lead approval.
 
@@ -336,7 +336,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 |---|---|---|
 | AC-UC-LITL-01-001 | User asks → receive `[EXP:Setup vNNN]` with complete rationale/inputs/conditions/steps/parameters/expected_readouts structure | `[MVP]` code path exists and local tests pass; live Canvus E2E verification pending |
 | AC-UC-LITL-01-002 | Clear approve button/track before moving to execution | `[Future]` not achieved |
-| AC-UC-LITL-01-003 | System returns "insufficient internal evidence" when context is inadequate | `[Future]` not achieved |
+| AC-UC-LITL-01-003 | System returns "insufficient internal evidence" when context is inadequate | `[MVP]` local tests pass; writes Needs Input instead of executable setup |
 
 ---
 
@@ -476,9 +476,9 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 |---|---|---|---|
 | BR-LITL-001 | Model read-only (`READ_TOOLS`); only orchestrator writes (`create_note`, `create_browser`/`update_browser`, `create_connector`) — strict separation | `[MVP]` | `lab_agent/tool_bridge.py`, `lab_agent/nodes.py` |
 | BR-LITL-002 | Idempotency: idea processed only if setup doesn't exist; setup runs only if result doesn't exist; every derived trigger is completed/failed/quarantined in the durable local ledger | `[MVP]` durable local/single-host | `experiment-workflow.md` § Idempotency; `lab_agent/state_store.py` |
-| BR-LITL-003 | Don't self-generate acronyms/domain terms without retrieving internal context; if ambiguous, lower confidence instead of guessing | `[MVP partial]` | `code-standards.md` § "Grounding and scientific caution" |
+| BR-LITL-003 | Don't self-generate acronyms/domain terms without approved evidence; unresolved terms across idea/setup/evidence excerpts trigger Needs Input instead of guessing | `[MVP]` for local dictionary scan; external dictionary sources remain Future | `code-standards.md` § "Grounding and scientific caution"; `lab_agent/grounding.py` |
 | BR-LITL-004 | Mock results always clearly labeled as mock | `[MVP]` | `lab_agent/prompts.py` (RESULT_SYSTEM), render output |
-| BR-LITL-005 | Proposal must contain complete structure: rationale, inputs, conditions, steps, parameters, expected_readouts (actual current schema) | `[MVP]` | `lab_agent/models/experiment.py` |
+| BR-LITL-005 | Proposal must contain complete structure plus evidence/citation status before writes: rationale, inputs, conditions, steps, parameters, expected_readouts, grounding fields | `[MVP]` | `lab_agent/models/experiment.py`, `lab_agent/grounding.py` |
 | BR-LITL-006 | Don't auto-send to wet lab without approval; orchestrator doesn't auto-route to real wet lab | `[Future]` — because no wet-lab integration exists to gate | vision §9.3, roadmap Phase 6 |
 | BR-LITL-007 | Don't send every experiment directly to wet lab — must validate via in-silico first (Professor Do's proposal, consensus to include in SOW) | `[Future]` | vision §8 |
 | BR-LITL-008 | Don't overwrite old knowledge version; always create new version with metadata (`version_id`, `source_experiment_id`, ...) | `[Future]` | vision §9.5 |
@@ -498,6 +498,15 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 | `steps` | `list[str]` | No | Protocol steps in order |
 | `parameters` | `list[str]` | No | Tunable parameters, as strings `'name=value'` |
 | `expected_readouts` | `list[str]` | No | Measurements this run should produce |
+| `hypothesis` | `str` | No (default `""`) | Testable hypothesis this setup evaluates |
+| `success_criteria` | `list[str]` | No | Criteria that would count the result a success |
+| `constraints` | `list[str]` | No | Known constraints/limits to respect |
+| `confidence` | `float | None` | No | Model self-reported confidence, bounded 0.0–1.0 when present |
+| `citations` | `list[EvidenceCitation]` | No (gate requires for executable writes) | Ledger source ids supporting setup claims |
+| `evidence_status` | `EvidenceStatus | None` | No (gate treats `None` as not sufficient) | Explicit sufficiency assertion; only `sufficient` can pass |
+| `ambiguity_flags` | `list[AcronymFlag]` | No | Acronym-like terms and dictionary resolution status |
+
+Additive Phase 4 fields are defaulted for legacy parsing. Defaults do not make a setup executable; `lab_agent/grounding.py` must validate evidence sufficiency, citations, and ambiguity before writes.
 
 ### 13.2 `ExperimentResult` (actual schema)
 
@@ -518,18 +527,15 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 
 ### 13.4 Gap versus target/vision schema `[Future]`
 
-Fields **required by vision but with no separate field name** in current schema — don't confuse with "already implemented":
+Fields still required by the full vision but not yet implemented as separate typed contracts — don't confuse with the Phase 4 additive fields above:
 
 | Target field (vision) | In actual schema? | Notes |
 |---|---|---|
-| `hypothesis` (explicit, separate from `rationale`) | No | Vision §4 requires separate hypothesis; currently merged into free-text `rationale` |
-| Evidence citations (internal sources used) | No | Roadmap Phase 4: "Every setup can cite the internal notes/PDFs/widgets it used" — not achieved |
-| `risk_flags` / explicit risk-uncertainty | No | Have `expected_readouts` but no separate risk field |
-| `success_criteria` | No | Vision §4 requires; no field |
-| `constraints` (budget/assay/disease area/equipment) | No | Vision §9.2 requires; no field in `ExperimentSetup` |
+| `risk_flags` / explicit risk-uncertainty | No | Have `expected_readouts`, `constraints`, and ambiguity flags, but no separate risk field |
+| `constraints.budget_limit`, `assay_type`, `disease_area`, `available_platforms` | Partial | `constraints` is a free-text list, not typed structured subfields |
+| Recommended analysis pipeline | No | Vision §4/§9.4; no Flywheel/HPC wrapper |
 | In-silico output (`predicted_outcome`, `confidence`, `key_assumptions`, `risk_flags`, `recommended_changes`, `decision`) | No | 100% Future — see UC-LITL-03 |
 | Audit/version metadata (`version_id`, `source_experiment_id`, `input_data_ids`, `analysis_job_ids`, `created_at`) | No | Vision §9.5; no Knowledge Update Service/Versioning Service |
-| `confidence` (number, at `ExperimentSetup` level) | No | Vision §9.2 model output has `confidence: 0.68`; actual schema has no field |
 
 ### 13.5 Canvas generated artifacts (Browser current, Note legacy)
 
@@ -549,7 +555,7 @@ Fields **required by vision but with no separate field name** in current schema 
 | NFR-LITL-001 | Security: Canvus credential only in `.env` git-ignored; model receives only read tools; downloaded bytes don't enter model context by default | No credential/secret leaks to canvas or model context | `[MVP]` |
 | NFR-LITL-002 | Data locality: some data must not be sent to external provider | TBD (no per-provider/endpoint control yet) | `[Future]` — roadmap Phase 4b |
 | NFR-LITL-003 | Model independence: not Claude-only | 3+ providers run same workflow, no code changes | `[MVP partial]` — only 2 named adapters; Ollama/vLLM/internal via OpenAI-compatible `base_url` |
-| NFR-LITL-004 | Traceability: each setup cites internal sources used | 100% of setups have citation | `[Future]` — roadmap Phase 4, not achieved |
+| NFR-LITL-004 | Traceability: each setup cites internal sources used | 100% of executable setup writes have valid ledger citations or no write occurs | `[MVP]` local Phase 4 tests pass; future external retrieval adapters remain Future |
 | NFR-LITL-005 | Reproducibility/versioning: knowledge version never overwrites | Each update creates new version with full metadata | `[Future]` — no Versioning Service |
 | NFR-LITL-006 | Reliability: retry/resume, idempotency durable across restart | Idempotency survives watcher restart | `[MVP]` — local SQLite WAL ledger with attempts/leases/intents/audit; multi-host/shared-store durability remains `[Future]` |
 | NFR-LITL-007 | Performance/scalability: chunking/caching/resumable for large multimodal | Large ingest case (e.g., ~4 days) resumes after interruption | `[Future]` — roadmap Phase 4c |
@@ -566,8 +572,9 @@ Fields **required by vision but with no separate field name** in current schema 
 | Canvus credentials | Secret leak | Keep in `apps/canvus-mcp/.env`, git-ignored | `[MVP]` |
 | MCP write tools | Unintended canvas mutation | Only orchestrator calls write tool; model receives only read tools | `[MVP]` |
 | Downloaded PDF/image | Sensitive data | Write to `downloads/` directory ignored; bytes don't enter model context by default | `[MVP]` |
+| Retrieved evidence excerpts | Prompt injection or sensitive-data leakage | Successful read results are `untrusted_data`; durable audit stores ids/hashes/reasons only and trims rows to payload cap | `[MVP]` |
 | Artifact Browser URLs | Bearer capability leak or cross-canvas access | Private bind by default; reachable public base URL through HTTPS/private ingress in production; tokens stored as hashes; no access logs/full URL output; artifact/canvas scope checks; strict CSP/same-origin assets | `[MVP infrastructure]` — live reachability/TLS verification pending |
-| Model output | Domain fact hallucination | Ground with RagCluster; flag ambiguous term; schema is structured | `[MVP partial]` |
+| Model output | Domain fact hallucination, fabricated citations, guessed acronyms | Ground with RagCluster/read tools; validate citations against per-run ledger; scan idea/setup/evidence excerpts against approved dictionary; schema is structured | `[MVP partial]` |
 | Loop autonomy | Runaway execution | Model stop decision + `LAB_AGENT_LOOP_MAX_ROUNDS` backstop | `[MVP partial]` |
 | Wet-lab authorization | Unapproved experiment execution | 5-step canonical chain (below) + Gate 1-5 | `[Future]` — no gate code |
 
@@ -593,7 +600,7 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 | §5 (Close the loop) | UC-LITL-02, FR-LITL-001…013 | `lab_agent/orchestrator.py`, `lab_agent/watch.py` |
 | §7 (Node types) | §11.3 mapping table | Full mapping table in vision §7 lines 278-292 |
 | §8 (In silico) | UC-LITL-03, FR-LITL-003 | No module — 100% Future |
-| §9.1 (Knowledge Retrieval) | FR-LITL-001 | `canvus_mcp/ragcluster.py` (RagCluster graph only) |
+| §9.1 (Knowledge Retrieval) | FR-LITL-001 | `canvus_mcp/ragcluster.py` plus `lab_agent/evidence.py` ledger; wiki/KG/vector DB remain Future |
 | §9.4 (Flywheel) | FR-LITL-008, FR-LITL-017 | None — distinct from `{exp:}` integration in `integrations/canvus-serving-experiment-prepare/`, unrelated to Flywheel |
 | §10 (Model-agnostic) | FR-LITL-014, NFR-LITL-003 | `lab_agent/adapters/factory.py`, `openai_adapter.py`, `claude_adapter.py` |
 | §12 (Gates/decision states) | §11 Workflow state model | `lab_agent/models/states.py` (enum has all 9, 6/9 lack transition) |
@@ -610,7 +617,7 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 | Phase 1 | Local verification (test/lint/mypy) | Complete — original stabilization baseline passed; see [development roadmap](development-roadmap.md) Phase 1 | — |
 | Phase 2 | Demo canvas operation (end-to-end mock loop) | Pending | UC-LITL-02 happy path |
 | Phase 3 | Harness contracts, persistent loop state, generated Browser artifacts | Partially complete — durable local state and generated Browser artifact infrastructure shipped; cross-implementation harness contracts and live public-base/TLS deployment gates remain Future/Pending | FR-LITL-019, FR-LITL-021, NFR-LITL-006, NFR-LITL-010 |
-| Phase 4 | Stronger grounding (wiki/KG/acronym) | Future | FR-LITL-001, FR-LITL-016, NFR-LITL-004 |
+| Phase 4 | Stronger grounding (ledger/citations/acronym/Needs Input) | Complete — 314/314 `lab-agent` tests, focused `canvus-mcp` marker tests 8/8, reviewer score 9.6/10 SEALED; wiki/KG/vector sources remain Future adapters | FR-LITL-001, FR-LITL-015, FR-LITL-016, NFR-LITL-004 |
 | Phase 4b | Token/resource governance, model routing | Future | FR-LITL-013, NFR-LITL-002, NFR-LITL-009 |
 | Phase 4c | Async multimodal ingestion | Future | FR-LITL-020, NFR-LITL-007 |
 | Phase 5 | In-silico validation gate | Future | UC-LITL-03, FR-LITL-003 |
@@ -629,11 +636,11 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 
 ## 18. Unresolved decisions
 
-1. Should `ExperimentSetup` schema (`lab_agent/models/experiment.py`) add fields to match all 10 items in vision §4 Output (e.g., `hypothesis`, `success_criteria`, `constraints.budget_limit`, `available_platforms`)? Planner/implementer should cross-check field-level when detailed design planning begins.
+1. Should `ExperimentSetup` add typed subfields for constraints/risk/analysis planning (e.g., `constraints.budget_limit`, `available_platforms`, recommended analysis pipeline), beyond the Phase 4 free-text `constraints` and grounding fields?
 2. Actor "Administrator/auditor" (ACT-LITL-13) is inferred from §15 Audit Log + roadmap Phase 7, not explicitly named in original vision. Owner should confirm whether this is a real human actor or just an implementation artifact (audit log) requiring no separate actor.
 3. Target-harness architectural direction (`system-architecture.md` § "Target harness boundary", roadmap Phase 3-7) is **`[Proposed]`, not yet ratified by project owner**. This document describes it as part of target vision but does not treat it as approved.
 4. Original vision places a scientist design-approval gate before in-silico, while canonical authorization chain places scientist review after in-silico. This spec treats pre-silico step as optional preliminary screening not authorizing wet lab and post-silico review as mandatory gate; owner should confirm this standardization before designing state machine/approval UI.
-5. Vision §9.2 describes agent output with `confidence` number at `ExperimentSetup` level; actual schema currently has no such field. Decide whether to add when implementing Phase 4/5.
+5. Acronym dictionary ownership and update cadence need a named domain owner before live scientific use; the current seed dictionary is intentionally conservative.
 
 ---
 

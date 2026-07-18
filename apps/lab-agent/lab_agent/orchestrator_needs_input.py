@@ -9,6 +9,7 @@ ideas/human input stay Notes).
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from lab_agent import durable_browser, nodes
@@ -17,6 +18,17 @@ from lab_agent.mcp_client import MCPClient
 from lab_agent.models.artifact import ArtifactType
 from lab_agent.models.states import DecisionState
 from lab_agent.state_store import StateStore
+
+
+def compute_reason_hash(reason: str) -> str:
+    """A stable, short id for a needs-input ``reason`` string.
+
+    Used as the dedup identity alongside ``(canvas, predecessor)`` so a
+    restart/repeat with the *same* reason converges on one artifact/widget/
+    connector, while a genuinely *different* reason gets its own -- the
+    round only affects title/layout, never identity (plan item 8).
+    """
+    return hashlib.sha256(reason.encode("utf-8")).hexdigest()[:12]
 
 
 async def write_needs_input_node(
@@ -47,8 +59,9 @@ async def write_needs_input_node(
     """
     body = f"{message}\n\n({reason})" if reason else message
     title = f"{nodes.EXP_NEEDS_INPUT} round {round_index}"
+    reason_hash = compute_reason_hash(reason)
     payload = {
-        "message": message, "reason": reason, "context": context or {},
+        "message": message, "reason": reason, "reason_hash": reason_hash, "context": context or {},
         "title": title, "round": round_index,
         durable_browser.RENDERED_TEXT_KEY: body,
     }
@@ -58,11 +71,11 @@ async def write_needs_input_node(
         provenance=durable_browser.provenance_for(
             settings,
             source_widget_id=predecessor_id,
-            trigger_id=f"needs_input/predecessor:{predecessor_id}/round:{round_index}",
+            trigger_id=f"needs_input/predecessor:{predecessor_id}/reason:{reason_hash}",
         ),
-        discriminator=f"needs_input/predecessor:{predecessor_id}/round:{round_index}",
+        discriminator=f"needs_input/predecessor:{predecessor_id}/reason:{reason_hash}",
         round_index=round_index, predecessor_id=predecessor_id, edge_kind=edge_kind,
     )
 
 
-__all__ = ["write_needs_input_node"]
+__all__ = ["compute_reason_hash", "write_needs_input_node"]

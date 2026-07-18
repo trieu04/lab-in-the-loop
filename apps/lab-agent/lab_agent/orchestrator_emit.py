@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 from lab_agent import prompts
 from lab_agent.adapters.base import Message, ModelAdapter
 from lab_agent.config import Settings
+from lab_agent.evidence import EvidenceLedger
 from lab_agent.loop import emit_structured, run_tool_loop
 from lab_agent.mcp_client import MCPClient
 from lab_agent.models.experiment import ExperimentResult, ExperimentSetup, LoopDecision
@@ -73,8 +74,13 @@ async def ground_and_emit_setup(
     idea_text: str,
     ragcluster_id: str,
     prior: str = "",
+    ledger: EvidenceLedger | None = None,
 ) -> ExperimentSetup | None:
-    """Ground on the RagCluster + idea and emit an ExperimentSetup (no write)."""
+    """Ground on the RagCluster + idea and emit an ExperimentSetup (no write).
+
+    ``ledger``, if given, records every successful read the model performs so
+    the grounding gate can validate the setup's citations against it.
+    """
     read_tools = select_read_tools(await mcp.list_tools())
     hint = f" Knowledge scope RagCluster id: {ragcluster_id}." if ragcluster_id else ""
     user = f"Canvas id: {canvas_id}.{hint}\n\nExperiment idea: {idea_text}"
@@ -84,7 +90,7 @@ async def ground_and_emit_setup(
         {"role": "system", "content": prompts.SETUP_SYSTEM},
         {"role": "user", "content": user},
     ]
-    await run_tool_loop(adapter, mcp, messages, read_tools, settings.max_tool_steps)
+    await run_tool_loop(adapter, mcp, messages, read_tools, settings.max_tool_steps, ledger)
     return await _emit_validated(adapter, messages, ExperimentSetup, "setup")
 
 

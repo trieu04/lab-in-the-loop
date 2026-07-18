@@ -14,7 +14,7 @@ from lab_agent.config import Settings
 from lab_agent.orchestrator import run_loop
 from lab_agent.state_store import StateStore
 from lab_agent.watch import process_once
-from tests.fakes import FakeMCP, ScriptedAdapter
+from tests.fakes import FakeMCP, ScriptedAdapter, grounded_setup
 
 RUNTIME_ID = "test-runtime"
 
@@ -26,7 +26,7 @@ RUNTIME_ID = "test-runtime"
 def _settings(**kw):
     return Settings(artifact_public_base_url="https://lab.test", **kw)  # type: ignore[call-arg]
 
-SETUP = {"rationale": "because", "steps": ["mix A and B"], "inputs": ["A", "B"]}
+SETUP = grounded_setup()
 RESULT = {"summary": "A+B reduced marker 30%", "metrics": ["reduction=0.30"]}
 
 LOOP = {

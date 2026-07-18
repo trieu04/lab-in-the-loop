@@ -66,7 +66,7 @@ Writes are controlled by application code (`lab_agent/nodes.py`):
 
 Write helpers fail closed: `lab_agent/nodes.py` raises `MCPToolError` when write tools return malformed JSON, an explicit `error`, or no non-empty `id`. Do not treat an empty id as a successful canvas mutation.
 
-Do not let an unconstrained model decide arbitrary write tool calls.
+Do not let an unconstrained model decide arbitrary write tool calls. Successful read-tool results that enter the model transcript must be labelled as untrusted data and recorded only in a per-run evidence ledger; blocked/error calls are not evidence.
 
 ## Generated artifact Browser standards
 
@@ -98,9 +98,13 @@ The enforcement path is `lab_agent/orchestrator_support.py:coerce_or_fail` plus 
 ## Grounding and scientific caution
 
 - Do not invent domain facts.
-- Do not guess acronym meanings.
-- State uncertainty in generated setup/result artifacts.
-- Prefer lower confidence over unsupported specificity.
+- Do not guess acronym meanings; only an approved acronym dictionary can resolve a term.
+- Setup generation must use a bounded, per-run evidence ledger with deterministic source ids derived from read tool, canonical arguments, and content hash.
+- Validate evidence before writes: `evidence_status` must be `sufficient`, every citation must resolve in the current ledger, and unresolved acronym-like terms across original idea text, emitted setup fields, and all bounded retrieved evidence excerpts must produce Needs Input.
+- Invalid citations are fail-closed: write no setup/connector, keep the durable attempt retryable/backoff/quarantine-eligible.
+- Needs Input artifacts are explicit Browser request/status artifacts for insufficient evidence or ambiguity, deduplicated by predecessor plus reason hash.
+- Durable audits store ids/hashes/status/reason only, cap payloads at 4096 bytes, and trim evidence rows to fit; never persist raw excerpts, tool arguments, credentials, or capability URLs.
+- Future wiki/KG/vector sources are retrieval adapters or external gates, not current hard dependencies.
 - Mock robot results must be clearly mock.
 - Future wet-lab integrations require explicit human approval and safety gates.
 
@@ -138,6 +142,7 @@ Update docs when changing:
 - provider configuration;
 - safety/idempotency behavior;
 - generated artifact storage/rendering, capability URL handling, artifact service deployment, or migration behavior;
+- evidence/citation validation, acronym dictionary behavior, untrusted-data boundaries, or durable audit payload policy;
 - any future real lab/Flywheel integration.
 
 Docs to keep in sync:

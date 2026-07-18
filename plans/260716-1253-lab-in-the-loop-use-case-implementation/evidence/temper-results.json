@@ -1,67 +1,53 @@
 {
   "commands": [
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q",
+      "command": "git diff --check",
       "exitCode": 0,
       "status": "pass",
-      "summary": "canvus-mcp pytest: 37 passed in 0.28s",
-      "ts": "2026-07-18T11:27:00Z"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run ruff check canvus_mcp tests",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "canvus-mcp ruff: all checks passed",
-      "ts": "2026-07-18T11:27:01Z"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run mypy canvus_mcp",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "canvus-mcp mypy: no issues in 14 source files",
-      "ts": "2026-07-18T11:27:02Z"
+      "summary": "No trailing whitespace or formatting issues detected",
+      "ts": "2026-07-18T21:53:00Z"
     },
     {
       "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
       "exitCode": 0,
       "status": "pass",
-      "summary": "lab-agent pytest: 256 passed, 1 deprecation warning in 3.04s",
-      "ts": "2026-07-18T11:27:03Z"
+      "summary": "314 passed, 1 warning in 2.64s (305 baseline + 9 new D1/D2 regression tests)",
+      "ts": "2026-07-18T21:53:05Z"
     },
     {
       "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
       "exitCode": 0,
       "status": "pass",
-      "summary": "lab-agent ruff: all checks passed",
-      "ts": "2026-07-18T11:27:04Z"
+      "summary": "All checks passed (0 issues)",
+      "ts": "2026-07-18T21:53:10Z"
     },
     {
       "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
       "exitCode": 0,
       "status": "pass",
-      "summary": "lab-agent mypy: no issues in 53 source files",
-      "ts": "2026-07-18T11:27:05Z"
+      "summary": "Success: no issues found in 58 source files",
+      "ts": "2026-07-18T21:53:15Z"
     },
     {
-      "command": "python3 scripts/check-workflow-contract-parity.py --self-test",
+      "command": "uv run python scripts/check-workflow-contract-parity.py",
       "exitCode": 0,
       "status": "pass",
-      "summary": "workflow contract parity self-test: OK (detector validates marker mismatch)",
-      "ts": "2026-07-18T11:27:06Z"
+      "summary": "self-test OK, parity OK (canvus-mcp markers, lab-agent markers, and docs aligned)",
+      "ts": "2026-07-18T21:53:20Z"
     },
     {
-      "command": "python3 scripts/check-workflow-contract-parity.py",
+      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q tests/test_experiment_widgets.py",
       "exitCode": 0,
       "status": "pass",
-      "summary": "workflow contract parity: OK (canvus-mcp, lab-agent, docs markers aligned)",
-      "ts": "2026-07-18T11:27:07Z"
+      "summary": "8 passed in 0.01s (needs-input marker tests)",
+      "ts": "2026-07-18T21:53:25Z"
     },
     {
-      "command": "git diff --check",
+      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest tests/test_grounding_acronym_boundary.py tests/test_grounding_audit_overflow.py -v",
       "exitCode": 0,
       "status": "pass",
-      "summary": "git diff --check: no trailing whitespace or mixed line endings",
-      "ts": "2026-07-18T11:27:08Z"
+      "summary": "7 passed in 0.09s (D1 + D2 focused regression tests: acronym boundary + audit overflow)",
+      "ts": "2026-07-18T21:53:30Z"
     }
   ]
 }

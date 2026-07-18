@@ -21,18 +21,17 @@ _LABELS = {
 }
 _BASELINE = (TabKey.OVERVIEW, TabKey.DETAILS, TabKey.EVIDENCE, TabKey.METADATA, TabKey.AUDIT)
 _SECTION_KEYS = {
-    TabKey.OVERVIEW: ("title", "summary", "rationale", "status", "decision", "reason"),
-    TabKey.EVIDENCE: ("evidence", "evidence_refs", "sources", "references", "citations"),
-    TabKey.VALIDATION: ("validation", "validations", "quality_flags", "approval", "approval_status"),
+    TabKey.OVERVIEW: ("title", "summary", "rationale", "hypothesis", "status", "decision", "reason"),
+    TabKey.EVIDENCE: (
+        "evidence", "evidence_refs", "sources", "references", "citations",
+        "evidence_status", "ambiguity_flags",
+    ),
+    TabKey.VALIDATION: (
+        "validation", "validations", "quality_flags", "approval", "approval_status", "confidence",
+    ),
     TabKey.EXECUTION: (
-        "execution",
-        "inputs",
-        "conditions",
-        "steps",
-        "parameters",
-        "expected_readouts",
-        "observations",
-        "metrics",
+        "execution", "inputs", "conditions", "steps", "parameters",
+        "expected_readouts", "observations", "metrics", "success_criteria", "constraints",
     ),
     TabKey.ANALYSIS: (
         "analysis",

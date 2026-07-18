@@ -44,9 +44,10 @@ Agent action:
 
 1. Read idea note.
 2. Check RagCluster feeders and outputs.
-3. Let the model use read-only tools for grounding.
-4. Create `[EXP:Setup v001]` as a generated Browser artifact backed by `ArtifactStore`.
-5. Connect idea → setup Browser widget.
+3. Let the model use only read tools for grounding; successful reads are captured in a per-run `EvidenceLedger` with deterministic source ids.
+4. Validate the emitted setup before any write: evidence must be `sufficient`, citations must resolve to the current ledger, and the approved acronym dictionary must clear the original idea text, emitted setup fields, and all bounded evidence excerpts.
+5. If executable, create `[EXP:Setup v001]` as a generated Browser artifact backed by `ArtifactStore` and connect idea → setup.
+6. If evidence is insufficient or ambiguity remains, create one deduplicated `[EXP:Needs Input]` Browser artifact instead; invalid citations write nothing and stay retryable.
 
 ### 2. Setup to robot
 
@@ -146,13 +147,15 @@ Closed artifacts are classified in `scan_experiment_workflow`'s `closeds` bucket
 
 ### Needs Input artifact
 
-`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, optional context, round, and `NEEDS_REVIEW` artifact state. This is infrastructure for a request/status marker only. The implementation does not yet provide future approval workflow transitions, approve/reject buttons, or wet-lab gate enforcement; the human-authored response remains a separate Note.
+`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, reason hash, optional context, round, and `NEEDS_REVIEW` artifact state. Grounding uses it for explicit insufficient-evidence or unresolved-ambiguity outcomes, keyed by `(canvas, predecessor_id, reason_hash)` so repeated polls for the same reason converge on one Browser artifact and connector. This is infrastructure for a request/status marker only. The implementation does not yet provide future approval workflow transitions, approve/reject buttons, or wet-lab gate enforcement; the human-authored response remains a separate Note.
 
 ## Grounding rules
 
-- Ground setups in retrieved internal knowledge: RagCluster feeders, notes, PDFs, widget context.
-- Do not invent domain-specific meanings for ambiguous acronyms.
-- If a term is unclear, state uncertainty and lower confidence.
+- Ground setups in retrieved internal knowledge: RagCluster feeders, notes, PDFs, widget context. Future wiki/KG/vector sources are adapters or external gates, not current hard dependencies.
+- Successful model-facing read-tool results are wrapped as `untrusted_data` and recorded in a bounded, per-run `EvidenceLedger`; the model never receives write tools.
+- Setups may be written only after citation ids resolve against the current ledger; fabricated, missing, or mixed-invalid citations write nothing and remain retryable.
+- Do not invent domain-specific meanings for ambiguous acronyms. The deterministic scan checks the original idea, emitted setup fields, and every bounded retrieved evidence excerpt against the approved dictionary.
+- If evidence is insufficient or ambiguity remains, create an explicit Needs Input artifact; do not silently lower confidence and proceed.
 - Internet/general knowledge is not a substitute for internal context.
 - Mock robot results must be labelled as mock and remain consistent with the setup.
 
@@ -192,7 +195,9 @@ Use `lab-agent once` for smoke tests or scripted operation.
 | Canvus transient API error | watcher logs warning and continues next cycle |
 | Model cannot emit schema | current run writes nothing; the attempt is durably failed/backed off and can retry while canvas state remains pending |
 | MCP write tool returns error payload or no id | write helper raises `MCPToolError`; the side-effect intent is marked failed and the workflow attempt remains retryable/quarantine-eligible |
-| Ambiguous domain input | setup/result includes caveat rather than invented fact |
+| Evidence not asserted sufficient | write one deduplicated `[EXP:Needs Input]` Browser artifact; executable setup remains pending |
+| Ambiguous domain term/acronym | deterministic dictionary-backed scan over idea + setup + evidence excerpts writes Needs Input; no guessed expansion is accepted |
+| Invalid/fabricated citation | setup writes nothing; attempt remains retryable/backoff/quarantine-eligible |
 | Loop keeps continuing | `LAB_AGENT_LOOP_MAX_ROUNDS` closes via backstop reason |
 
 ## Example happy path
@@ -238,4 +243,4 @@ Two different layers call `canvus-mcp` tools, and they are not the same tool set
 
 `canvus-mcp` also exposes `create_image`; it remains available for direct/manual use and is not part of the automated generated-artifact write path.
 
-The model-facing tool loop receives only the read-tool allowlist above; it never receives write tools. The orchestrator is the only caller of write tools.
+The model-facing tool loop receives only the read-tool allowlist above; it never receives write tools. Successful read results are returned to the model inside an `untrusted_data` envelope with `tool`, `source_id`, and `content`; blocked/error results are not captured as evidence. The orchestrator is the only caller of write tools.

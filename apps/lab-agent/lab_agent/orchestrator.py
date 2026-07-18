@@ -19,8 +19,16 @@ import structlog
 from lab_agent import durable_browser, nodes, render
 from lab_agent.adapters.base import ModelAdapter
 from lab_agent.config import Settings
+from lab_agent.evidence import EvidenceLedger
+from lab_agent.grounding import (
+    evaluate_grounding,
+    record_grounding_audit,
+    write_needs_input_for_verdict,
+)
 from lab_agent.mcp_client import MCPClient
-from lab_agent.models.experiment import ExperimentResult, ExperimentSetup
+from lab_agent.models.evidence import GroundingDecision
+from lab_agent.models.experiment import ExperimentResult
+from lab_agent.orchestrator_setup import generate_setup
 from lab_agent.orchestrator_support import (
     LoopSummary,
     emit_decision,
@@ -33,37 +41,6 @@ from lab_agent.orchestrator_support import (
 from lab_agent.state_store import StateStore
 
 log = structlog.get_logger(__name__)
-
-
-async def generate_setup(
-    mcp: MCPClient,
-    adapter: ModelAdapter,
-    settings: Settings,
-    store: StateStore,
-    *,
-    canvas_id: str,
-    idea_text: str,
-    idea_id: str,
-    ragcluster_id: str,
-    round_index: int,
-    prior: str = "",
-) -> tuple[str, ExperimentSetup | None]:
-    """Ground on the RagCluster + idea and emit an ExperimentSetup node.
-
-    Fail-closed: a malformed emit writes nothing and returns ``("", None)``; the
-    caller must not retry within this cycle.
-    """
-    setup = await ground_and_emit_setup(
-        mcp, adapter, settings, canvas_id=canvas_id, idea_text=idea_text,
-        ragcluster_id=ragcluster_id, prior=prior,
-    )
-    if setup is None:
-        return "", None
-    setup_id = await write_setup_node(
-        mcp, store, settings, canvas_id=canvas_id, setup=setup, idea_text=idea_text, idea_id=idea_id,
-        round_index=round_index, predecessor_id=idea_id, edge_kind="idea_setup",
-    )
-    return setup_id, setup
 
 
 async def run_on_robot(
@@ -92,9 +69,9 @@ async def run_on_robot(
     return result_id, result
 
 
-def _fail_closed(summary: LoopSummary) -> LoopSummary:
-    """Mark the loop stopped by a schema-validation failure (already logged)."""
-    summary.stopped_reason = "schema_validation_failed"
+def _fail_closed(summary: LoopSummary, reason: str = "schema_validation_failed") -> LoopSummary:
+    """Mark the loop stopped by a fail-closed condition (already logged/audited)."""
+    summary.stopped_reason = reason
     return summary
 
 
@@ -145,12 +122,27 @@ async def run_loop(
         # a result-stage failure must not strand an unpaired setup note that gets
         # rewritten every poll (AC-UC-LITL-02-004 / FR-LITL-019). One attempt per
         # schema this poll; no immediate retry.
+        ledger = EvidenceLedger()
         next_setup = await ground_and_emit_setup(
             mcp, adapter, settings, canvas_id=canvas_id, idea_text=next_idea_text,
-            ragcluster_id=ragcluster_id, prior=prior,
+            ragcluster_id=ragcluster_id, prior=prior, ledger=ledger,
         )
         if next_setup is None:
             return _fail_closed(summary)
+
+        verdict = evaluate_grounding(next_setup, ledger, idea_text=next_idea_text)
+        record_grounding_audit(store, canvas_id, verdict, ledger)
+
+        if verdict.decision is GroundingDecision.NEEDS_INPUT:
+            await write_needs_input_for_verdict(
+                mcp, store, settings, canvas_id=canvas_id, verdict=verdict, round_index=round_index,
+                predecessor_id=result_id, edge_kind="result_setup",
+            )
+            summary.stopped_reason = f"needs_input:{verdict.reason}"
+            return summary
+        if verdict.decision is GroundingDecision.INVALID_CITATION:
+            return _fail_closed(summary, "invalid_citation")
+
         next_result = await emit_result(adapter, render.render_setup(next_setup))
         if next_result is None:
             return _fail_closed(summary)

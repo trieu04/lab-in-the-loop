@@ -8,6 +8,12 @@ recomputing the chain from the genesis hash.
 Payloads must be small (ids/hashes/reasons only -- never full document text
 or credentials, per docs/code-standards.md's audit policy); this module
 enforces that with a byte-size cap rather than trusting every caller.
+
+``MAX_PAYLOAD_BYTES`` and :func:`payload_size_bytes` are the one authoritative
+size contract for a durable audit payload; callers that must fit several
+pieces (e.g. evidence rows plus a reason) into one payload should size
+against these rather than guessing or duplicating the limit (see
+:mod:`lab_agent.grounding`).
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ from typing import Any
 from lab_agent.state.models import AuditEvent, Clock
 
 _GENESIS_HASH = "0" * 64
-_MAX_PAYLOAD_BYTES = 4096
+MAX_PAYLOAD_BYTES = 4096
 
 
 class AuditPayloadTooLargeError(RuntimeError):
@@ -35,6 +41,14 @@ class AuditChainTamperError(RuntimeError):
 
 def _canonical_json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def payload_size_bytes(payload: dict[str, Any]) -> int:
+    """Byte size of ``payload`` under the same canonical encoding
+    :func:`append_event` checks against :data:`MAX_PAYLOAD_BYTES` -- callers
+    can use this to size a payload *before* appending it, instead of
+    discovering it is too large via :class:`AuditPayloadTooLargeError`."""
+    return len(_canonical_json(payload).encode("utf-8"))
 
 
 def _hash_event(sequence: int, canvas_id: str, event: str, payload_json: str, previous_hash: str) -> str:
@@ -71,9 +85,9 @@ def append_event(
     """Append one hash-chained event; raises :class:`AuditPayloadTooLargeError`
     if ``payload`` serializes past the size cap."""
     payload_json = _canonical_json(payload)
-    if len(payload_json.encode("utf-8")) > _MAX_PAYLOAD_BYTES:
+    if len(payload_json.encode("utf-8")) > MAX_PAYLOAD_BYTES:
         raise AuditPayloadTooLargeError(
-            f"audit payload for {event!r} exceeds {_MAX_PAYLOAD_BYTES} bytes; "
+            f"audit payload for {event!r} exceeds {MAX_PAYLOAD_BYTES} bytes; "
             "store ids/hashes/reasons, not full bodies"
         )
     now = clock()
@@ -128,9 +142,11 @@ def list_events(conn: sqlite3.Connection, *, canvas_id: str | None = None) -> li
 
 
 __all__ = [
+    "MAX_PAYLOAD_BYTES",
     "AuditChainTamperError",
     "AuditPayloadTooLargeError",
     "append_event",
     "list_events",
+    "payload_size_bytes",
     "verify_chain",
 ]

@@ -4,14 +4,14 @@ description: "Milestone-gated blueprint to build the full Lab-in-the-Loop closed
 status: in-progress
 priority: P1
 effort: "55d core + real adapters TBD after API discovery"
-branch: feat/phase-03-durable-browser-artifacts
+branch: feat/phase-04-grounding-evidence
 tags: [lab-in-the-loop, harness, workflow, safety-gates, drug-discovery]
 blockedBy: []
 blocks: []
 work_type: feature
 spec_waived: "SDD mode disabled (takumi.sddMode: off)"
 created: 2026-07-16
-progress: "Phase 3 of 9 complete (16d delivered, 39d remaining)"
+progress: "Phase 4 of 9 complete (21d delivered, 34d remaining)"
 ---
 
 # Lab-in-the-Loop Use-Case Implementation
@@ -26,7 +26,7 @@ Contracts stay additive and MVP-compatible; generated artifacts become dynamic H
 | 1 | [Verify & stabilize MVP](phase-01-verify-and-stabilize-mvp.md) | 3d | complete | FR-019, BR-002/003, AC-02-004 + correctness fixes |
 | 2 | [Durable harness core](phase-02-establish-durable-harness-core.md) | 6d | complete | FR-019, NFR-006/008 |
 | 3 | [HTML Browser artifact widgets](phase-03-upgrade-generated-artifacts-to-browser-widgets.md) | 7d | complete | FR-002/009/010/021, NFR-004/005/008/010 |
-| 4 | [Grounding & evidence](phase-04-strengthen-grounding-and-evidence.md) | 5d | pending | FR-001/015/016, NFR-004, BR-003 |
+| 4 | [Grounding & evidence](phase-04-strengthen-grounding-and-evidence.md) | 5d | complete | FR-001/015/016, NFR-004, BR-003 |
 | 5 | [Governance & model routing](phase-05-add-governance-and-model-routing.md) | 5d | pending | FR-013/014, NFR-002/003/009 |
 | 6 | [Resumable multimodal ingestion](phase-06-build-resumable-multimodal-ingestion.md) | 6d | pending | FR-020, NFR-007 |
 | 7 | [In-silico & approval gates](phase-07-implement-in-silico-and-approval-gates.md) | 8d | pending | UC-03, FR-003/004/005, BR-006/007/009 |

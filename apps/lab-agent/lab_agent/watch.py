@@ -2,17 +2,13 @@
 
 One ``scan_experiment_workflow`` call per poll surfaces the pending forward
 triggers (ideas needing a setup, setups needing a robot run) and any detected
-loops; this module dispatches each to the orchestrator. Trigger idempotency
-is durable, not in-memory: every trigger (idea/setup/loop connector) owns a
+loops; this module dispatches each to the orchestrator. Trigger idempotency is
+durable, not in-memory: every trigger (idea/setup/loop connector) owns a
 ``workflow_attempts`` row (see ``lab_agent.state_store``), leased for the
-duration of its processing and marked completed/failed/quarantined afterward
--- surviving a restart, unlike the Phase 1 in-memory ``processed_loops`` set
-it replaces.
+duration of its processing and marked completed/failed/quarantined afterward.
 
-A single-writer canvas lease is acquired/renewed once per cycle; a live
-foreign owner causes a safe skip (no write), not a crash. A trigger's
-failure is persisted durably before the next trigger runs -- one bad emit
-must never abort the rest of the poll or the watch loop.
+A single-writer canvas lease is acquired/renewed once per cycle; a live foreign owner causes a safe skip (no write), not a crash. A trigger's failure is
+persisted durably before the next trigger runs -- one bad emit must never abort the rest of the poll.
 """
 
 from __future__ import annotations
@@ -28,6 +24,7 @@ from lab_agent import durable_browser, nodes
 from lab_agent.adapters.base import ModelAdapter
 from lab_agent.config import Settings
 from lab_agent.mcp_client import MCPClient
+from lab_agent.models.evidence import GroundingDecision
 from lab_agent.orchestrator import generate_setup, run_loop, run_on_robot
 from lab_agent.runtime import release_lease_with_audit
 from lab_agent.state_store import AttemptStatus, LeaseHeldByOtherError, StateStore
@@ -58,9 +55,8 @@ async def _process_trigger(
 ) -> bool:
     """Lease ``trigger_id`` if due, run ``work``, and durably record the outcome.
 
-    Returns ``True`` iff due and ``work`` succeeded; a non-due attempt
-    (completed, leased elsewhere, or not yet past backoff) returns ``False``
-    without running ``work``.
+    Returns ``True`` iff due and ``work`` succeeded; a non-due attempt returns
+    ``False`` without running ``work``.
     """
     store.ensure_attempt(canvas_id, trigger_id)
     ttl = settings.attempt_lease_ttl_seconds
@@ -119,14 +115,17 @@ async def process_once(
 
         async def setup_work(idea_id: str = idea_id, idea: dict = idea) -> tuple[bool, str]:
             idea_text = await nodes.read_note_text(mcp, canvas_id, idea_id)
-            setup_id, setup = await generate_setup(
+            outcome = await generate_setup(
                 mcp, adapter, settings, store, canvas_id=canvas_id, idea_text=idea_text,
                 idea_id=idea_id, ragcluster_id=idea.get("ragcluster_id", ""), round_index=1,
             )
-            if setup is None:
-                return False, "schema_validation_failed"
-            log.info("setup_generated", canvas_id=canvas_id, idea_id=idea_id, setup_id=setup_id)
-            return True, ""
+            if outcome.decision is GroundingDecision.EXECUTABLE:
+                log.info("setup_generated", canvas_id=canvas_id, idea_id=idea_id, setup_id=outcome.setup_id)
+                return True, ""
+            if outcome.decision is GroundingDecision.NEEDS_INPUT:
+                return True, f"needs_input:{outcome.reason}"[:200]
+            reason = "invalid_citation" if outcome.decision is GroundingDecision.INVALID_CITATION else "schema_validation_failed"
+            return False, reason
 
         if await _process_trigger(
             store, canvas_id=canvas_id, trigger_id=f"idea_setup:{idea_id}",
@@ -161,8 +160,8 @@ async def process_once(
 
         async def loop_work(loop: dict = loop) -> tuple[bool, str]:
             summary = await run_loop(mcp, adapter, settings, store, canvas_id=canvas_id, loop=loop)
-            if summary.stopped_reason == "schema_validation_failed":
-                return False, "schema_validation_failed"
+            if summary.stopped_reason in ("schema_validation_failed", "invalid_citation"):
+                return False, summary.stopped_reason
             log.info("loop_processed", canvas_id=canvas_id, rounds=summary.rounds, reason=summary.stopped_reason)
             return True, ""
 

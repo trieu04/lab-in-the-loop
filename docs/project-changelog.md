@@ -1,5 +1,31 @@
 # Project Changelog
 
+## 2026-07-18 — Phase 4: grounded setup evidence and ambiguity gates
+
+### Added
+
+- Per-run bounded evidence ledger for setup grounding: successful read-tool results get deterministic source ids, content hashes, and bounded in-memory excerpts; durable audit records only ids/tool/hash plus decision/reason.
+- Additive `ExperimentSetup` fields: `hypothesis`, `success_criteria`, `constraints`, `confidence`, `citations`, `evidence_status`, and `ambiguity_flags`, all defaulted for legacy parsing.
+- Explicit grounding outcomes before setup writes: executable, Needs Input for insufficient evidence/ambiguity, invalid citation, or schema failure.
+- Dictionary-backed acronym boundary scan over original idea text, emitted setup fields, and every bounded retrieved evidence excerpt; unknown or colliding acronym-like terms are not guessed.
+
+### Changed
+
+- The model-facing tool loop now receives only read tools and wraps successful read results as `untrusted_data`; write tools stay orchestrator-only.
+- Setup writes now require `evidence_status='sufficient'` and citations that resolve against the current run's ledger. Invalid/fabricated citations write nothing and remain retryable/backoff/quarantine-eligible.
+- Insufficient-evidence and unresolved-ambiguity cases create one `[EXP:Needs Input]` Browser artifact, deduplicated by predecessor plus reason hash.
+- Grounding audit uses the same 4096-byte payload cap as the store and trims newest evidence rows to fit; raw excerpts, tool arguments, credentials, and capability URLs are not persisted.
+
+### Verified
+
+- Final Phase 4 temper/review sealed on 2026-07-18: `lab-agent` 314/314 tests passed, focused `canvus-mcp` Needs Input marker suite 8/8 passed, `ruff`/`mypy` clean, workflow contract parity clean, and reviewer score 9.6/10 SEALED.
+
+### Not claimed
+
+- No real wiki, knowledge-graph, vector DB, Flywheel, in-silico, robot, or wet-lab integration is claimed. Future retrieval sources are adapters or external gates.
+- No autonomous wet-lab execution or approval workflow transition is implemented.
+- Acronym dictionary completeness remains an operational/domain-owner responsibility before live scientific use.
+
 ## 2026-07-18 — Phase 3: generated artifacts use Browser widgets
 
 ### Added

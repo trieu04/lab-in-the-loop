@@ -21,7 +21,12 @@ from typing import Any
 
 from lab_agent.state import attempts, attempts_retry, audit, connection, edges, intents, leases
 from lab_agent.state.attempts_retry import AttemptNotQuarantinedError, StaleLeaseError
-from lab_agent.state.audit import AuditChainTamperError, AuditPayloadTooLargeError
+from lab_agent.state.audit import (
+    MAX_PAYLOAD_BYTES,
+    AuditChainTamperError,
+    AuditPayloadTooLargeError,
+    payload_size_bytes,
+)
 from lab_agent.state.connection import MigrationChecksumError, MigrationOrderError
 from lab_agent.state.intents import IntentHashMismatchError
 from lab_agent.state.leases import LeaseHeldByOtherError
@@ -38,10 +43,11 @@ from lab_agent.state.models import (
 )
 
 __all__ = [
+    "MAX_PAYLOAD_BYTES",
     "AttemptNotQuarantinedError", "AttemptStatus", "AuditChainTamperError", "AuditEvent",
     "AuditPayloadTooLargeError", "CanvasLease", "IntentHashMismatchError", "IntentStatus",
     "LeaseHeldByOtherError", "MigrationChecksumError", "MigrationOrderError", "OrchestratorEdge",
-    "SideEffectIntent", "StaleLeaseError", "StateStore", "WorkflowAttempt",
+    "SideEffectIntent", "StaleLeaseError", "StateStore", "WorkflowAttempt", "payload_size_bytes",
 ]
 
 

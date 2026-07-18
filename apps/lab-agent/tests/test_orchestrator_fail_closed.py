@@ -13,14 +13,15 @@ from __future__ import annotations
 import pytest
 
 from lab_agent.config import Settings
+from lab_agent.models.evidence import GroundingDecision
 from lab_agent.orchestrator import generate_setup, run_loop, run_on_robot
 from lab_agent.state_store import StateStore
 from lab_agent.watch import process_once
-from tests.fakes import FakeMCP, ScriptedAdapter
+from tests.fakes import FakeMCP, ScriptedAdapter, grounded_setup
 
 RUNTIME_ID = "test-runtime"
 
-SETUP = {"rationale": "because", "steps": ["mix A and B"], "inputs": ["A", "B"]}
+SETUP = grounded_setup()
 # Missing the respective required field(s): ExperimentSetup needs "rationale",
 # ExperimentResult needs "summary", LoopDecision needs "proceed" and "reason".
 MALFORMED_SETUP = {"steps": ["mix A and B"]}
@@ -48,12 +49,13 @@ def store(tmp_path):
 async def test_generate_setup_fails_closed_on_malformed_output(store):
     mcp = FakeMCP()
     adapter = ScriptedAdapter({"ExperimentSetup": MALFORMED_SETUP})
-    setup_id, setup = await generate_setup(
+    outcome = await generate_setup(
         mcp, adapter, _settings(), store, canvas_id="c", idea_text="try X",
         idea_id="idea1", ragcluster_id="rag1", round_index=1,
     )
-    assert setup_id == ""
-    assert setup is None
+    assert outcome.setup_id == ""
+    assert outcome.setup is None
+    assert outcome.decision is GroundingDecision.SCHEMA_FAILED
     assert mcp.notes == {}  # no widget written
     assert mcp.connectors == []  # no connector written
 

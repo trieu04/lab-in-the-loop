@@ -10,9 +10,10 @@
 ## Overview
 
 - Priority: P1
-- Status: pending
+- Status: complete
 - Effort: 5d
 - Description: Make every generated setup traceable to retrieved internal evidence, return an explicit insufficient-evidence outcome, and surface unresolved acronyms instead of guessing. Extend contracts additively so existing MVP notes remain readable.
+- Completed: 2026-07-18 (D1/D2 defects fixed & re-tempered; 314/314 tests pass)
 
 ## Key Insights
 
@@ -80,15 +81,15 @@ Evidence is carried in a structurally separated, explicitly untrusted data chann
 
 ## Todo List
 
-- [ ] Evidence and ambiguity models added
-- [ ] Per-run `EvidenceLedger` captures read results
-- [ ] Approved acronym dictionary loader added
-- [ ] `ExperimentSetup` extended additively
-- [ ] Citation and sufficiency validation gates writes
-- [ ] Insufficient/ambiguous flows create one deduplicated needs-input artifact and leave executable setup pending
-- [ ] Evidence/data channel is structurally separated from instructions
-- [ ] Grounding, citation, prompt-injection, acronym, dedup, and compatibility tests pass
-- [ ] Canonical spec, workflow, architecture, standards, and changelog updated
+- [x] Evidence and ambiguity models added
+- [x] Per-run `EvidenceLedger` captures read results
+- [x] Approved acronym dictionary loader added
+- [x] `ExperimentSetup` extended additively
+- [x] Citation and sufficiency validation gates writes
+- [x] Insufficient/ambiguous flows create one deduplicated needs-input artifact and leave executable setup pending
+- [x] Evidence/data channel is structurally separated from instructions
+- [x] Grounding, citation, prompt-injection, acronym, dedup, and compatibility tests pass
+- [x] Canonical spec, workflow, architecture, standards, and changelog updated
 
 ## Success Criteria / Validation
 

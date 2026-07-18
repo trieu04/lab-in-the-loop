@@ -1,0 +1,44 @@
+[
+  {
+    "command": "git diff --check",
+    "exitCode": 0,
+    "summary": "No trailing whitespace or formatting issues detected",
+    "stdout": "EXIT_CODE:0"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
+    "exitCode": 0,
+    "summary": "314 passed, 1 warning in 2.64s (305 baseline + 9 new D1/D2 regression tests)",
+    "stdout": "314 passed, 1 warning in 2.64s"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
+    "exitCode": 0,
+    "summary": "All checks passed (0 issues)",
+    "stdout": "All checks passed!"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
+    "exitCode": 0,
+    "summary": "Success: no issues found in 58 source files",
+    "stdout": "Success: no issues found in 58 source files"
+  },
+  {
+    "command": "uv run python scripts/check-workflow-contract-parity.py",
+    "exitCode": 0,
+    "summary": "self-test OK, parity OK (canvus-mcp markers, lab-agent markers, and docs aligned)",
+    "stdout": "self-test: OK (checker catches an injected marker mismatch)\nparity check: OK (canvus-mcp markers, lab-agent markers, and docs are aligned)"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q tests/test_experiment_widgets.py",
+    "exitCode": 0,
+    "summary": "8 passed in 0.01s (needs-input marker tests)",
+    "stdout": "8 passed in 0.01s"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest tests/test_grounding_acronym_boundary.py tests/test_grounding_audit_overflow.py -v",
+    "exitCode": 0,
+    "summary": "7 passed in 0.09s (D1 + D2 focused regression tests: acronym boundary + audit overflow)",
+    "stdout": "7 passed in 0.09s"
+  }
+]

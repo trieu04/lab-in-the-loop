@@ -22,10 +22,10 @@ from lab_agent.orchestrator import generate_setup, run_loop
 from lab_agent.recovery import idempotency_key
 from lab_agent.state_store import AttemptStatus, StateStore
 from lab_agent.watch import process_once
-from tests.fakes import FakeMCP, ScriptedAdapter
+from tests.fakes import FakeMCP, ScriptedAdapter, grounded_setup
 
 BASE = "https://lab.test"
-SETUP = {"rationale": "because", "steps": ["mix A and B"], "inputs": ["A", "B"]}
+SETUP = grounded_setup()
 RESULT = {"summary": "reduced 30%", "metrics": ["reduction=0.30"]}
 IDEA_WORKFLOW = {
     "ideas_needing_setup": [{"widget_id": "idea1", "ragcluster_id": "rag1"}],
@@ -45,11 +45,14 @@ def store(tmp_path):
 
 
 async def _make_setup(mcp, store, **kw):
+    """Run ``generate_setup`` and unpack its ``SetupOutcome`` to the
+    ``(setup_id, setup)`` shape this file's assertions expect."""
     adapter = ScriptedAdapter({"ExperimentSetup": SETUP})
-    return await generate_setup(
+    outcome = await generate_setup(
         mcp, adapter, _settings(), store, canvas_id="c", idea_text="try X",
         idea_id="idea1", ragcluster_id="rag1", round_index=1, **kw,
     )
+    return outcome.setup_id, outcome.setup
 
 
 async def test_generated_setup_is_a_browser_artifact_with_url_connector_and_store_row(store):

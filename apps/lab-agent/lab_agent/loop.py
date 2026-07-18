@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from lab_agent.adapters.base import Message, ModelAdapter, ToolSpec
+from lab_agent.evidence import EvidenceLedger
 from lab_agent.mcp_client import MCPClient
 from lab_agent.tool_bridge import execute_tool_calls
 
@@ -21,8 +22,13 @@ async def run_tool_loop(
     messages: list[Message],
     tools: list[ToolSpec],
     max_steps: int,
+    ledger: EvidenceLedger | None = None,
 ) -> list[Message]:
-    """Drive read-tool grounding. Extends and returns ``messages`` in place."""
+    """Drive read-tool grounding. Extends and returns ``messages`` in place.
+
+    ``ledger``, if given, records every successful allowlisted read so later
+    citations can be validated against it (see :mod:`lab_agent.grounding`).
+    """
     for _ in range(max_steps):
         resp = await adapter.generate(messages, tools=tools)
         messages.append(
@@ -34,7 +40,7 @@ async def run_tool_loop(
         )
         if not resp.tool_calls:
             break
-        messages.extend(await execute_tool_calls(mcp, resp.tool_calls))
+        messages.extend(await execute_tool_calls(mcp, resp.tool_calls, ledger))
     return messages
 
 

@@ -1,8 +1,13 @@
 [
   {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest tests/test_grounding_acronym_boundary.py tests/test_grounding_audit_overflow.py tests/test_orchestrator_grounding_boundary.py -v",
+    "exitCode": 0,
+    "summary": "Phase 4 defect-fix regression tests (D1 + D2): 9 tests passed in 0.12s (5 acronym boundary, 2 audit overflow, 2 orchestrator boundary)"
+  },
+  {
     "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
     "exitCode": 0,
-    "summary": "lab-agent: 136 tests passed in 1.71s"
+    "summary": "lab-agent full suite: 314 tests passed, 1 warning in 2.44s (305 baseline + 9 new regression tests for D1/D2 fixes)"
   },
   {
     "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
@@ -12,46 +17,21 @@
   {
     "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
     "exitCode": 0,
-    "summary": "lab-agent: mypy passed, 37 source files clean"
+    "summary": "lab-agent: mypy passed, 58 source files clean"
   },
   {
-    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q",
+    "command": "uv run python scripts/check-workflow-contract-parity.py",
     "exitCode": 0,
-    "summary": "canvus-mcp: 21 tests passed in 0.03s"
+    "summary": "workflow contract parity: OK (canvus-mcp markers, lab-agent markers, and docs aligned)"
   },
   {
-    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run ruff check canvus_mcp tests",
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q tests/test_experiment_widgets.py",
     "exitCode": 0,
-    "summary": "canvus-mcp: All ruff checks passed"
-  },
-  {
-    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run mypy canvus_mcp",
-    "exitCode": 0,
-    "summary": "canvus-mcp: mypy passed, 13 source files clean"
-  },
-  {
-    "command": "python3 /home/ntdm/dev/lap-in-the-loop/scripts/check-workflow-contract-parity.py",
-    "exitCode": 0,
-    "summary": "workflow contract parity check: OK, markers aligned"
+    "summary": "canvus-mcp needs-input marker tests: 8 tests passed"
   },
   {
     "command": "git diff --check",
     "exitCode": 0,
-    "summary": "git diff: no trailing whitespace or bad line endings"
-  },
-  {
-    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run lab-agent integrity",
-    "exitCode": 0,
-    "summary": "CLI: integrity check passed, SQLite + audit chain verified"
-  },
-  {
-    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run lab-agent list-quarantined",
-    "exitCode": 0,
-    "summary": "CLI: list-quarantined passed, no quarantined attempts"
-  },
-  {
-    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run lab-agent backup --to /tmp/backup.db",
-    "exitCode": 0,
-    "summary": "CLI: backup passed, 64KB checkpoint created"
+    "summary": "git: no trailing whitespace or formatting issues in diff"
   }
 ]
