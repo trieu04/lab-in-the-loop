@@ -7,34 +7,39 @@ Design: the model READS to ground itself and emits structured setups/results/
 decisions; the orchestrator performs all canvas WRITES. The loop's stop
 condition is the model's `LoopDecision` (UC step 3); `loop_max_rounds` is only a
 runaway backstop, not the decision.
+
+Emit/write stage machinery lives in :mod:`lab_agent.orchestrator_support`; this
+module is the high-level flow: two public entry points plus the loop driver.
 """
 
 from __future__ import annotations
 
 import structlog
 
-from lab_agent import nodes, prompts, render
-from lab_agent.adapters.base import Message, ModelAdapter
+from lab_agent import durable_browser, nodes, render
+from lab_agent.adapters.base import ModelAdapter
 from lab_agent.config import Settings
-from lab_agent.loop import emit_structured, run_tool_loop
 from lab_agent.mcp_client import MCPClient
-from lab_agent.models.experiment import ExperimentResult, ExperimentSetup, LoopDecision
-from lab_agent.models.states import DecisionState
-from lab_agent.orchestrator_support import LoopSummary, coerce, version
-from lab_agent.tool_bridge import select_read_tools
+from lab_agent.models.experiment import ExperimentResult, ExperimentSetup
+from lab_agent.orchestrator_support import (
+    LoopSummary,
+    emit_decision,
+    emit_result,
+    ground_and_emit_setup,
+    write_closed_node,
+    write_result_node,
+    write_setup_node,
+)
+from lab_agent.state_store import StateStore
 
 log = structlog.get_logger(__name__)
-
-_ROW = 420.0
-_SETUP_X = 0.0
-_RESULT_X = 520.0
-_CLOSED_X = 260.0
 
 
 async def generate_setup(
     mcp: MCPClient,
     adapter: ModelAdapter,
     settings: Settings,
+    store: StateStore,
     *,
     canvas_id: str,
     idea_text: str,
@@ -42,27 +47,21 @@ async def generate_setup(
     ragcluster_id: str,
     round_index: int,
     prior: str = "",
-) -> tuple[str, ExperimentSetup]:
-    """Ground on the RagCluster + idea and emit an ExperimentSetup node."""
-    read_tools = select_read_tools(await mcp.list_tools())
-    hint = f" Knowledge scope RagCluster id: {ragcluster_id}." if ragcluster_id else ""
-    user = f"Canvas id: {canvas_id}.{hint}\n\nExperiment idea: {idea_text}"
-    if prior:
-        user += f"\n\nBuild on the previous round:\n{prior}"
-    messages: list[Message] = [
-        {"role": "system", "content": prompts.SETUP_SYSTEM},
-        {"role": "user", "content": user},
-    ]
-    await run_tool_loop(adapter, mcp, messages, read_tools, settings.max_tool_steps)
-    setup = coerce(
-        ExperimentSetup,
-        await emit_structured(adapter, messages, ExperimentSetup.model_json_schema(), "ExperimentSetup"),
+) -> tuple[str, ExperimentSetup | None]:
+    """Ground on the RagCluster + idea and emit an ExperimentSetup node.
+
+    Fail-closed: a malformed emit writes nothing and returns ``("", None)``; the
+    caller must not retry within this cycle.
+    """
+    setup = await ground_and_emit_setup(
+        mcp, adapter, settings, canvas_id=canvas_id, idea_text=idea_text,
+        ragcluster_id=ragcluster_id, prior=prior,
     )
-    ver = version(round_index)
-    title = f"{nodes.EXP_SETUP} {ver}] {idea_text[:40]}"
-    body = f"Idea: {idea_id}\nRound: {round_index}\n\n{render.render_setup(setup)}"
-    setup_id = await nodes.create_node(
-        mcp, canvas_id, title, body, _SETUP_X, round_index * _ROW, state=DecisionState.RUNNING
+    if setup is None:
+        return "", None
+    setup_id = await write_setup_node(
+        mcp, store, settings, canvas_id=canvas_id, setup=setup, idea_text=idea_text, idea_id=idea_id,
+        round_index=round_index, predecessor_id=idea_id, edge_kind="idea_setup",
     )
     return setup_id, setup
 
@@ -71,50 +70,39 @@ async def run_on_robot(
     mcp: MCPClient,
     adapter: ModelAdapter,
     settings: Settings,
+    store: StateStore,
     *,
     canvas_id: str,
     setup_id: str,
     setup_text: str,
     robot_id: str,
     round_index: int,
-) -> tuple[str, ExperimentResult]:
-    """Mock a robot run of the setup and emit an ExperimentResult node."""
-    messages: list[Message] = [
-        {"role": "system", "content": prompts.RESULT_SYSTEM},
-        {"role": "user", "content": f"Experiment setup:\n{setup_text}"},
-    ]
-    result = coerce(
-        ExperimentResult,
-        await emit_structured(adapter, messages, ExperimentResult.model_json_schema(), "ExperimentResult"),
+) -> tuple[str, ExperimentResult | None]:
+    """Mock a robot run of the setup and emit an ExperimentResult node.
+
+    Fail-closed like :func:`generate_setup`: a malformed emit returns ``("", None)``.
+    """
+    result = await emit_result(adapter, setup_text)
+    if result is None:
+        return "", None
+    result_id = await write_result_node(
+        mcp, store, settings, canvas_id=canvas_id, result=result, setup_id=setup_id, robot_id=robot_id,
+        round_index=round_index,
     )
-    ver = version(round_index)
-    title = f"{nodes.EXP_RESULT} {ver}]"
-    body = f"Setup: {setup_id}\nRound: {round_index}\n\n{render.render_result(result)}"
-    result_id = await nodes.create_node(
-        mcp, canvas_id, title, body, _RESULT_X, round_index * _ROW, state=DecisionState.ANALYSIS_COMPLETE
-    )
-    if robot_id:
-        await nodes.connect(mcp, canvas_id, robot_id, result_id)
     return result_id, result
 
 
-async def _decide(
-    adapter: ModelAdapter, setup_text: str, result_text: str
-) -> LoopDecision:
-    messages: list[Message] = [
-        {"role": "system", "content": prompts.DECIDE_SYSTEM},
-        {"role": "user", "content": f"Setup:\n{setup_text}\n\nResult:\n{result_text}"},
-    ]
-    return coerce(
-        LoopDecision,
-        await emit_structured(adapter, messages, LoopDecision.model_json_schema(), "LoopDecision"),
-    )
+def _fail_closed(summary: LoopSummary) -> LoopSummary:
+    """Mark the loop stopped by a schema-validation failure (already logged)."""
+    summary.stopped_reason = "schema_validation_failed"
+    return summary
 
 
 async def run_loop(
     mcp: MCPClient,
     adapter: ModelAdapter,
     settings: Settings,
+    store: StateStore,
     *,
     canvas_id: str,
     loop: dict,
@@ -131,35 +119,49 @@ async def run_loop(
     summary = LoopSummary(setup_ids=[setup_id], result_ids=[result_id])
 
     while True:
-        setup_text = await nodes.read_note_text(mcp, canvas_id, setup_id)
-        result_text = await nodes.read_note_text(mcp, canvas_id, result_id)
-        decision = await _decide(adapter, setup_text, result_text)
+        setup_text = await durable_browser.read_stage_text(mcp, store, canvas_id, setup_id)
+        result_text = await durable_browser.read_stage_text(mcp, store, canvas_id, result_id)
+        decision = await emit_decision(adapter, setup_text, result_text)
+        if decision is None:
+            return _fail_closed(summary)  # nothing written; canvas left pending, no retry
         summary.rounds += 1
         backstop = summary.rounds >= settings.loop_max_rounds
 
         if not decision.proceed or backstop:
             reason = decision.reason if not decision.proceed else "loop_max_rounds backstop reached"
-            closed = await nodes.create_node(
-                mcp, canvas_id, f"{nodes.CLOSED} after {version(round_index)}",
-                render.render_decision(decision) + (f"\n\n({reason})" if backstop else ""),
-                _CLOSED_X, (round_index + 1) * _ROW, state=DecisionState.CLOSED,
+            summary.closed_id = await write_closed_node(
+                mcp, store, settings, canvas_id=canvas_id, decision=decision, reason=reason,
+                backstop=backstop, round_index=round_index, result_id=result_id,
             )
-            await nodes.connect(mcp, canvas_id, result_id, closed)
             summary.stopped_reason = reason
-            summary.closed_id = closed
             log.info("experiment_loop_stopped", canvas_id=canvas_id, rounds=summary.rounds, reason=reason)
             return summary
 
         round_index += 1
         prior = f"Setup:\n{setup_text}\n\nResult:\n{result_text}\n\nFocus next: {decision.next_focus}"
-        next_setup_id, next_setup = await generate_setup(
-            mcp, adapter, settings, canvas_id=canvas_id, idea_text=idea_text or decision.next_focus,
-            idea_id=idea_id, ragcluster_id=ragcluster_id, round_index=round_index, prior=prior,
+        next_idea_text = idea_text or decision.next_focus
+
+        # Validate BOTH the next round's setup and result before writing either:
+        # a result-stage failure must not strand an unpaired setup note that gets
+        # rewritten every poll (AC-UC-LITL-02-004 / FR-LITL-019). One attempt per
+        # schema this poll; no immediate retry.
+        next_setup = await ground_and_emit_setup(
+            mcp, adapter, settings, canvas_id=canvas_id, idea_text=next_idea_text,
+            ragcluster_id=ragcluster_id, prior=prior,
         )
-        await nodes.connect(mcp, canvas_id, result_id, next_setup_id)
-        next_result_id, _ = await run_on_robot(
-            mcp, adapter, settings, canvas_id=canvas_id, setup_id=next_setup_id,
-            setup_text=render.render_setup(next_setup), robot_id=robot_id, round_index=round_index,
+        if next_setup is None:
+            return _fail_closed(summary)
+        next_result = await emit_result(adapter, render.render_setup(next_setup))
+        if next_result is None:
+            return _fail_closed(summary)
+
+        next_setup_id = await write_setup_node(
+            mcp, store, settings, canvas_id=canvas_id, setup=next_setup, idea_text=next_idea_text,
+            idea_id=idea_id, round_index=round_index, predecessor_id=result_id, edge_kind="result_setup",
+        )
+        next_result_id = await write_result_node(
+            mcp, store, settings, canvas_id=canvas_id, result=next_result, setup_id=next_setup_id,
+            robot_id=robot_id, round_index=round_index,
         )
         summary.setup_ids.append(next_setup_id)
         summary.result_ids.append(next_result_id)

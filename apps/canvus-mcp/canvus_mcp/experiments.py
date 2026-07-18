@@ -1,76 +1,33 @@
 """Experiment-workflow graph logic for the Lab-in-the-Loop use case.
 
-Classifies the workflow widgets on a canvas by their markers and traverses the
-connector graph to find the **experiment loop** — a back-edge connector from an
-``[EXP:Result]`` note to an ``[EXP:Setup]`` note, which is how a user asks the
-system to iterate an experiment. Built on the vendored
-:class:`~canvus_mcp.ragcluster.ConnectorIndex`; dependency-free and unit-testable
-(no MCP, no network).
+Traverses the connector graph to find the **experiment loop** — a back-edge
+connector from an ``[EXP:Result]`` widget to an ``[EXP:Setup]`` widget, which
+is how a user asks the system to iterate an experiment. Widget classification
+(what marks a Setup/Result/Robot/Closed/idea widget) lives in
+:mod:`canvus_mcp.experiment_widgets`, which this module re-exports
+``ExpMarkers`` from; here we focus on graph traversal and loop/snapshot
+assembly. Built on the vendored :class:`~canvus_mcp.ragcluster.ConnectorIndex`;
+dependency-free and unit-testable (no MCP, no network).
 
-Workflow markers (title prefixes, except the idea marker which is in-text):
-- knowledge scope : Image title starts ``RAGCluster_``
-- idea note       : Note text contains ``{idea: ...}``
-- experiment setup: Note title starts ``[EXP:Setup``
-- robot           : any widget whose title starts ``Robot_``
-- experiment result: Note title starts ``[EXP:Result``
-- **loop**        : connector ``result -> setup``
+**loop**: connector ``result -> setup``.
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from typing import Any
 
-from canvus_mcp.ragcluster import (
-    ConnectorIndex,
-    _attr,
-    _endpoint_id,
-    _widget_title,
-    is_ragcluster_widget,
+from canvus_mcp.experiment_widgets import (
+    ExpMarkers,
+    _brief,
+    _has_idea,
+    _is_closed,
+    _is_needs_input,
+    _is_result,
+    _is_robot,
+    _is_setup,
+    _round_of,
 )
-
-_ROUND_RE = re.compile(r"v(\d+)")
-
-
-@dataclass(frozen=True)
-class ExpMarkers:
-    """Marker prefixes that identify the experiment-workflow widgets."""
-
-    ragcluster: str = "RAGCluster_"
-    robot: str = "Robot_"
-    setup: str = "[EXP:Setup"
-    result: str = "[EXP:Result"
-    idea: str = "{idea:"
-
-
-def _has_idea(w: Any, m: ExpMarkers) -> bool:
-    return _attr(w, "widget_type") == "Note" and m.idea in _attr(w, "text")
-
-
-def _is_setup(w: Any, m: ExpMarkers) -> bool:
-    return _attr(w, "widget_type") == "Note" and _widget_title(w).startswith(m.setup)
-
-
-def _is_result(w: Any, m: ExpMarkers) -> bool:
-    return _attr(w, "widget_type") == "Note" and _widget_title(w).startswith(m.result)
-
-
-def _is_robot(w: Any, m: ExpMarkers) -> bool:
-    return _widget_title(w).startswith(m.robot)
-
-
-def _brief(w: Any) -> dict[str, str]:
-    return {
-        "widget_id": _attr(w, "id"),
-        "widget_type": _attr(w, "widget_type"),
-        "title": _widget_title(w),
-    }
-
-
-def _round_of(w: Any) -> int:
-    match = _ROUND_RE.search(_widget_title(w))
-    return int(match.group(1)) if match else 0
+from canvus_mcp.ragcluster import ConnectorIndex, _endpoint_id, is_ragcluster_widget
 
 
 def _out_ids(index: ConnectorIndex, wid: str) -> list[str]:
@@ -109,6 +66,12 @@ def detect_experiment_loops(index: ConnectorIndex, m: ExpMarkers) -> list[dict[s
             continue
         if not (_is_result(src_w, m) and _is_setup(dst_w, m)):
             continue
+        if _round_of(dst_w) > _round_of(src_w):
+            # Forward edge: the orchestrator's own round-advance
+            # (result_N -> setup_{N+1}) is graph-isomorphic to a user loop
+            # trigger (result_N -> setup_N) but must not be re-detected as
+            # one. Only same-round (==) or backward (<) edges are loops.
+            continue
         robot_id = _first_neighbor(index, _out_ids(index, dst_id), lambda w: _is_robot(w, m))
         idea_id = _first_neighbor(index, _in_ids(index, dst_id), lambda w: _has_idea(w, m))
         rag_id = (
@@ -132,7 +95,7 @@ def detect_experiment_loops(index: ConnectorIndex, m: ExpMarkers) -> list[dict[s
 
 def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
     """One snapshot of the experiment workflow: nodes, pending triggers, loops."""
-    ideas, setups, results, robots = [], [], [], []
+    ideas, setups, results, robots, closeds, needs_inputs = [], [], [], [], [], []
     for wid, w in index.widgets_by_id.items():
         if _has_idea(w, m):
             ideas.append(wid)
@@ -140,6 +103,10 @@ def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
             setups.append(wid)
         elif _is_result(w, m):
             results.append(wid)
+        elif _is_closed(w, m):
+            closeds.append(wid)
+        elif _is_needs_input(w, m):
+            needs_inputs.append(wid)
         elif _is_robot(w, m):
             robots.append(wid)
 
@@ -172,6 +139,8 @@ def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
         "setups": [_brief(index.widgets_by_id[s]) for s in setups],
         "results": [_brief(index.widgets_by_id[r]) for r in results],
         "robots": [_brief(index.widgets_by_id[r]) for r in robots],
+        "closeds": [_brief(index.widgets_by_id[c]) for c in closeds],
+        "needs_inputs": [_brief(index.widgets_by_id[n]) for n in needs_inputs],
         "ideas_needing_setup": ideas_needing_setup,
         "setups_needing_run": setups_needing_run,
         "loops": detect_experiment_loops(index, m),

@@ -57,12 +57,63 @@ def register(mcp: FastMCP) -> None:
         y: float = 0.0,
         width: float | None = None,
         height: float | None = None,
+        title: str | None = None,
+        transparent_mode: bool | None = None,
     ) -> dict[str, Any]:
-        """Create a Browser widget pointed at ``url`` at ``(x, y)``."""
+        """Create a Browser widget pointed at ``url`` at ``(x, y)``.
+
+        ``title`` (if set) becomes the widget label -- generated workflow
+        artifacts (e.g. ``[EXP:Setup v001]``) carry their marker this way, the
+        same as a Note title. ``transparent_mode`` (if set) toggles the
+        widget's transparent background.
+        """
         payload: dict[str, Any] = {"url": url, "location": {"x": x, "y": y}}
         if width is not None and height is not None:
             payload["size"] = {"width": width, "height": height}
+        if title is not None:
+            payload["title"] = title
+        if transparent_mode is not None:
+            payload["transparent_mode"] = transparent_mode
         browser = await get_client().widgets.browsers.create(canvas_id, payload)
+        return _dump(browser)
+
+    @mcp.tool()
+    async def update_browser(
+        canvas_id: str,
+        browser_id: str,
+        url: str | None = None,
+        title: str | None = None,
+        transparent_mode: bool | None = None,
+        x: float | None = None,
+        y: float | None = None,
+        width: float | None = None,
+        height: float | None = None,
+    ) -> dict[str, Any]:
+        """Update a Browser widget's URL/title/transparent mode/position/size.
+
+        Repairs a generated artifact's Browser widget in place (e.g. rotating
+        a capability URL or fixing a marker title) without recreating it, so
+        its widget id and connector graph position survive. ``x``/``y`` and
+        ``width``/``height`` each only apply when both halves of the pair are
+        given. At least one field must be supplied.
+        """
+        payload: dict[str, Any] = {}
+        if url is not None:
+            payload["url"] = url
+        if title is not None:
+            payload["title"] = title
+        if transparent_mode is not None:
+            payload["transparent_mode"] = transparent_mode
+        if x is not None and y is not None:
+            payload["location"] = {"x": x, "y": y}
+        if width is not None and height is not None:
+            payload["size"] = {"width": width, "height": height}
+        if not payload:
+            raise ValueError(
+                "update_browser requires at least one of: url, title, "
+                "transparent_mode, x+y, width+height"
+            )
+        browser = await get_client().widgets.browsers.update(canvas_id, browser_id, payload)
         return _dump(browser)
 
     @mcp.tool()

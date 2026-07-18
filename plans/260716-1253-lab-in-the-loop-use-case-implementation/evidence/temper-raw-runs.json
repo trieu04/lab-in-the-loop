@@ -1,0 +1,74 @@
+[
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "canvus-mcp pytest: 37 passed in 0.28s",
+    "stdout": ".....................................                                    [100%]\n37 passed in 0.28s",
+    "ts": "2026-07-18T11:27:00Z"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run ruff check canvus_mcp tests",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "canvus-mcp ruff: all checks passed",
+    "stdout": "All checks passed!",
+    "ts": "2026-07-18T11:27:01Z"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run mypy canvus_mcp",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "canvus-mcp mypy: no issues in 14 source files",
+    "stdout": "Success: no issues found in 14 source files",
+    "ts": "2026-07-18T11:27:02Z"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "lab-agent pytest: 256 passed, 1 deprecation warning in 3.04s",
+    "stdout": "........................................................................ [ 28%]\n........................................................................ [ 56%]\n........................................................................ [ 84%]\n........................................                                 [100%]\n=============================== warnings summary ===============================\ntests/test_artifact_server.py:14\n  /home/ntdm/dev/lap-in-the-loop/apps/lab-agent/tests/test_artifact_server.py:14: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n256 passed, 1 warning in 3.04s",
+    "ts": "2026-07-18T11:27:03Z"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "lab-agent ruff: all checks passed",
+    "stdout": "All checks passed!",
+    "ts": "2026-07-18T11:27:04Z"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "lab-agent mypy: no issues in 53 source files",
+    "stdout": "Success: no issues found in 53 source files",
+    "ts": "2026-07-18T11:27:05Z"
+  },
+  {
+    "command": "python3 scripts/check-workflow-contract-parity.py --self-test",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "workflow contract parity self-test: OK (detector validates marker mismatch)",
+    "stdout": "self-test: OK (checker catches an injected marker mismatch)\nparity check: OK (canvus-mcp markers, lab-agent markers, and docs are aligned)",
+    "ts": "2026-07-18T11:27:06Z"
+  },
+  {
+    "command": "python3 scripts/check-workflow-contract-parity.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "workflow contract parity: OK (canvus-mcp, lab-agent, docs markers aligned)",
+    "stdout": "self-test: OK (checker catches an injected marker mismatch)\nparity check: OK (canvus-mcp markers, lab-agent markers, and docs are aligned)",
+    "ts": "2026-07-18T11:27:07Z"
+  },
+  {
+    "command": "git diff --check",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "git diff --check: no trailing whitespace or mixed line endings",
+    "stdout": "(no output)",
+    "ts": "2026-07-18T11:27:08Z"
+  }
+]

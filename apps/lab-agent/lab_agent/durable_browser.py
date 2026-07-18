@@ -1,0 +1,198 @@
+"""Crash-safe generated-artifact Browser writes over the canonical store.
+
+The durable primitive converges retries onto one artifact, Browser widget, and
+connector. Capability tokens and full URLs are bearer secrets and never enter
+logs or audit payloads.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from urllib.parse import quote, urlencode, urlparse
+
+from lab_agent import canvas_probe, nodes
+from lab_agent.artifact_store import ArtifactStore
+from lab_agent.config import Settings
+from lab_agent.durable_writes import _CLOSED_X, _RESULT_X, _ROW, _SETUP_X
+from lab_agent.intent_audit import connect_durable
+from lab_agent.mcp_client import MCPClient
+from lab_agent.models.artifact import ArtifactProvenance, ArtifactType
+from lab_agent.models.states import DecisionState
+from lab_agent.recovery import idempotency_key, input_hash
+from lab_agent.state_store import StateStore
+
+#: Payload key holding the human-readable rendering the model consumes on a
+#: later round (Browser widgets carry no body text; the canonical store does).
+RENDERED_TEXT_KEY = "rendered"
+
+#: Which ``scan_experiment_workflow`` bucket a generated Browser artifact lands
+#: in -- the tag-probe search space for crash recovery.
+_BUCKET = {
+    ArtifactType.SETUP: "setups",
+    ArtifactType.RESULT: "results",
+    ArtifactType.CLOSED: "closeds",
+    ArtifactType.NEEDS_INPUT: "needs_inputs",
+}
+
+
+class ArtifactUrlError(RuntimeError):
+    """Raised when ``artifact_public_base_url`` is empty/malformed for Browser
+    use -- fail closed before issuing any capability token or Browser mutation."""
+
+
+def require_public_base(base: str) -> None:
+    parsed = urlparse(base)
+    if not base or parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ArtifactUrlError("artifact_public_base_url is empty or malformed for Browser use")
+
+
+def _capability_url(base: str, opaque_id: str, token: str) -> str:
+    """Build ``{base}/artifacts/{opaque_id}?token=...`` safely (a bearer secret)."""
+    return f"{base.rstrip('/')}/artifacts/{quote(opaque_id, safe='')}?{urlencode({'token': token})}"
+
+
+def provenance_for(
+    settings: Settings, *, source_widget_id: str, trigger_id: str = ""
+) -> ArtifactProvenance:
+    """Record the configured provider/model and truthful workflow lineage."""
+    model = settings.anthropic_model if settings.model_provider == "claude" else settings.openai_model
+    return ArtifactProvenance(
+        provider=settings.model_provider,
+        model_name=model,
+        trigger_id=trigger_id,
+        source_widget_id=source_widget_id,
+    )
+
+
+#: Needs-input artifacts get their own column so they never overlap the
+#: setup/result/closed grid regardless of which round/predecessor raised one.
+_NEEDS_INPUT_X = 780.0
+
+
+def _layout(artifact_type: ArtifactType, round_index: int) -> tuple[float, float]:
+    if artifact_type is ArtifactType.SETUP:
+        return _SETUP_X, round_index * _ROW
+    if artifact_type is ArtifactType.RESULT:
+        return _RESULT_X, round_index * _ROW
+    if artifact_type is ArtifactType.NEEDS_INPUT:
+        return _NEEDS_INPUT_X, round_index * _ROW
+    return _CLOSED_X, (round_index + 1) * _ROW
+
+
+async def _reconcile_browser(
+    mcp: MCPClient,
+    store: StateStore,
+    astore: ArtifactStore,
+    *,
+    canvas_id: str,
+    browser_key: str,
+    bucket: str,
+    opaque_id: str,
+    mapped_widget_id: str | None,
+    tagged_title: str,
+    url: str,
+    x: float,
+    y: float,
+    round_index: int,
+) -> str:
+    """Create or repair the Browser widget under one durable intent. The intent
+    payload excludes the URL/token (they rotate each attempt) so its hash stays
+    stable across replays; any failure marks the intent failed (retryable),
+    never reconciled with a phantom id."""
+    store.prepare_intent(
+        idempotency_key=browser_key, canvas_id=canvas_id, kind="create_browser",
+        input_hash=input_hash({"opaque_id": opaque_id, "title": tagged_title, "x": x, "y": y}),
+    )
+    try:
+        existing = mapped_widget_id or await canvas_probe.probe_browser_by_tag(
+            mcp, canvas_id=canvas_id, bucket=bucket, idempotency_key=browser_key
+        )
+        if existing:
+            await nodes.update_artifact_widget(mcp, canvas_id, existing, url=url, title=tagged_title, x=x, y=y)
+            widget_id, created = existing, False
+        else:
+            widget_id = await nodes.create_artifact_widget(mcp, canvas_id, tagged_title, url, x, y)
+            created = True
+        astore.map_widget(opaque_id, canvas_id=canvas_id, widget_id=widget_id)
+    except Exception as exc:
+        store.mark_intent_failed(browser_key, error=str(exc)[:200])
+        store.append_audit_event(
+            canvas_id, "intent_failed",
+            {"kind": "create_browser", "key": browser_key[:16], "error": str(exc)[:200]}, round=round_index,
+        )
+        raise
+    if created:
+        store.mark_intent_executed(browser_key, external_id=widget_id)
+    store.mark_intent_reconciled(browser_key, external_id=widget_id)
+    store.append_audit_event(
+        canvas_id, "intent_reconciled",
+        {"kind": "create_browser", "key": browser_key[:16], "external_id": widget_id, "repaired": not created},
+        round=round_index,
+    )
+    return widget_id
+
+
+async def write_artifact_browser_durable(
+    mcp: MCPClient,
+    store: StateStore,
+    settings: Settings,
+    *,
+    canvas_id: str,
+    artifact_type: ArtifactType,
+    state: DecisionState,
+    title: str,
+    payload: dict[str, Any],
+    provenance: ArtifactProvenance,
+    discriminator: str,
+    round_index: int,
+    predecessor_id: str,
+    edge_kind: str,
+) -> str:
+    """Persist a canonical artifact, render it as a Browser widget, and connect it."""
+    base = settings.artifact_public_base_url
+    require_public_base(base)  # fail closed before any token/MCP mutation
+    astore = ArtifactStore(store.conn, clock=store.clock)
+    artifact_key = idempotency_key(canvas_id, f"artifact_{artifact_type.value}", discriminator)
+    doc = astore.get_or_create_artifact(
+        canvas_id=canvas_id, idempotency_key=artifact_key, artifact_type=artifact_type,
+        state=state, payload=payload, provenance=provenance, round=round_index,
+    )
+    token = astore.issue_token(doc.opaque_id, canvas_id=canvas_id)  # fresh per attempt
+    url = _capability_url(base, doc.opaque_id, token)
+    x, y = _layout(artifact_type, round_index)
+    browser_key = idempotency_key(canvas_id, "create_browser", f"browser/{artifact_type.value}/{discriminator}")
+    tagged = canvas_probe.tagged_title(title, browser_key)
+    widget_id = await _reconcile_browser(
+        mcp, store, astore, canvas_id=canvas_id, browser_key=browser_key, bucket=_BUCKET[artifact_type],
+        opaque_id=doc.opaque_id, mapped_widget_id=doc.widget_id, tagged_title=tagged,
+        url=url, x=x, y=y, round_index=round_index,
+    )
+    if widget_id and predecessor_id:
+        await connect_durable(
+            mcp, store, canvas_id=canvas_id, src_id=predecessor_id, dst_id=widget_id,
+            edge_kind=edge_kind, round_index=round_index,
+        )
+    return widget_id
+
+
+async def read_stage_text(mcp: MCPClient, store: StateStore, canvas_id: str, widget_id: str) -> str:
+    """Return a setup/result stage's text for the model: the canonical artifact
+    payload via the Browser widget mapping (never Browser HTML), falling back to
+    :func:`lab_agent.nodes.read_note_text` for a legacy Note-based canvas."""
+    astore = ArtifactStore(store.conn, clock=store.clock)
+    doc = astore.get_artifact_by_widget(canvas_id=canvas_id, widget_id=widget_id)
+    if doc is not None:
+        rendered = doc.payload.get(RENDERED_TEXT_KEY)
+        if isinstance(rendered, str) and rendered:
+            return rendered
+    return await nodes.read_note_text(mcp, canvas_id, widget_id)
+
+
+__all__ = [
+    "ArtifactUrlError",
+    "RENDERED_TEXT_KEY",
+    "provenance_for",
+    "read_stage_text",
+    "require_public_base",
+    "write_artifact_browser_durable",
+]

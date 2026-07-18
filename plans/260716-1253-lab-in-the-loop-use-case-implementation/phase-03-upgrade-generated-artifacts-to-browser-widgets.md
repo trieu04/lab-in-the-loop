@@ -14,7 +14,7 @@
 ## Overview
 
 - Priority: P1
-- Status: pending
+- Status: complete
 - Effort: 7d
 - Description: Replace system-generated experiment Notes with Browser widgets backed by a dynamic HTML artifact service and canonical structured artifact store. Keep user-authored `{idea: ...}` and human input Notes as the simple canvas entry/control surface.
 
@@ -89,16 +89,16 @@ The Browser widget is a view and graph node. `ArtifactStore` is the canonical ge
 
 ## Todo List
 
-- [ ] Artifact models, versioned store, and migration added
-- [ ] Safe tab renderer and same-origin static assets added
-- [ ] Capability-protected dynamic artifact service added
-- [ ] Browser creation/update tools support marker titles
-- [ ] Generated artifact creation uses Browser widgets
-- [ ] Workflow detector supports Browser + legacy Note artifacts
-- [ ] Idea/human input remains Note-only
-- [ ] Legacy migration is dry-run/mirror-first and idempotent
-- [ ] Security, large-payload, graph, restart, accessibility, and migration tests pass
-- [ ] README and affected docs/changelog updated
+- [x] Artifact models, versioned store, and migration added
+- [x] Safe tab renderer and same-origin static assets added
+- [x] Capability-protected dynamic artifact service added
+- [x] Browser creation/update tools support marker titles
+- [x] Generated artifact creation uses Browser widgets
+- [x] Workflow detector supports Browser + legacy Note artifacts
+- [x] Idea/human input remains Note-only
+- [x] Legacy migration is dry-run/mirror-first and idempotent
+- [x] Security, large-payload, graph, restart, accessibility, and migration tests pass
+- [x] README and affected docs/changelog updated
 
 ## Success Criteria / Validation
 

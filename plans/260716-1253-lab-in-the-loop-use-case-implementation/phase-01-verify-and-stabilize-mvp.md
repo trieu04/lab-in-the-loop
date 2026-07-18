@@ -11,7 +11,7 @@
 ## Overview
 
 - Priority: P1 (foundation — blocks all later phases)
-- Status: pending
+- Status: complete
 - Effort: 3d
 - Description: Establish a green local baseline for both apps and fix three correctness defects that would otherwise corrupt canvas state or violate documented safety policy, plus reconcile stale git-state docs. No new capability — stabilization only.
 
@@ -68,15 +68,15 @@ No new modules. Behavior of the detector narrows (forward edges excluded); write
 
 ## Todo List
 
-- [ ] Baseline recorded (both apps: pytest/ruff/mypy)
-- [ ] Round-filter added to `detect_experiment_loops` + test
-- [ ] `coerce_or_fail` + `SchemaValidationError`; defensive fill removed
-- [ ] Three orchestrator call sites fail-closed with structured logs
-- [ ] `FakeMCP` live-recompute mode + loop-regression test
-- [ ] Malformed-output → no-write/no-inner-loop-retry tests for setup/result/decision
-- [ ] Cross-app marker/render/documentation parity check added
-- [ ] Git-state docs reconciled (roadmap/README/changelog)
-- [ ] Workflow + code-standards docs updated; changelog entry
+- [x] Baseline recorded (both apps: pytest/ruff/mypy)
+- [x] Round-filter added to `detect_experiment_loops` + test
+- [x] `coerce_or_fail` + `SchemaValidationError`; defensive fill removed
+- [x] Three orchestrator call sites fail-closed with structured logs
+- [x] `FakeMCP` live-recompute mode + loop-regression test
+- [x] Malformed-output → no-write/no-inner-loop-retry tests for setup/result/decision
+- [x] Cross-app marker/render/documentation parity check added
+- [x] Git-state docs reconciled (roadmap/README/changelog)
+- [x] Workflow + code-standards docs updated; changelog entry
 
 ## Success Criteria / Validation
 

@@ -64,6 +64,14 @@ class Settings(BaseSettings):
         default="{idea:",
         description="In-text marker of an experiment-idea Note.",
     )
+    mcp_exp_closed_marker: str = Field(
+        default="[EXP:Closed]",
+        description="Title prefix of a terminal experiment-closed Note.",
+    )
+    mcp_exp_needs_input_marker: str = Field(
+        default="[EXP:Needs Input]",
+        description="Title prefix of a generated needs-input Note/Browser widget.",
+    )
 
 
 __all__ = ["Settings"]

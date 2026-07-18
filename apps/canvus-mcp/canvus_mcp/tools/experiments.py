@@ -20,6 +20,8 @@ def _markers() -> exp.ExpMarkers:
         setup=cfg.mcp_exp_setup_marker,
         result=cfg.mcp_exp_result_marker,
         idea=cfg.mcp_idea_marker,
+        closed=cfg.mcp_exp_closed_marker,
+        needs_input=cfg.mcp_exp_needs_input_marker,
     )
 
 
@@ -51,10 +53,15 @@ def register(mcp: FastMCP) -> None:
         """Snapshot the whole experiment workflow on a canvas.
 
         Returns classified nodes (``ragclusters``, ``ideas``, ``setups``,
-        ``results``, ``robots``), the pending forward triggers
-        (``ideas_needing_setup`` — an idea connected from a RagCluster with no
-        setup yet; ``setups_needing_run`` — a setup wired to a robot with no
-        result yet, each carrying its ``robot_id``), and detected ``loops``.
+        ``results``, ``robots``, ``closeds``, ``needs_inputs``), the pending
+        forward triggers (``ideas_needing_setup`` — an idea connected from a
+        RagCluster with no setup yet; ``setups_needing_run`` — a setup wired
+        to a robot with no result yet, each carrying its ``robot_id``), and
+        detected ``loops``. ``closeds``/``needs_inputs`` make terminal
+        ``[EXP:Closed]`` and generated ``[EXP:Needs Input]`` widgets enumerable
+        the same way ``setups``/``results`` are, so a caller can recover a
+        prior run's widget by its idempotency tag without depending on any
+        connector having been drawn yet.
         One call gives an agent everything it needs to drive the next step.
         """
         index = await _build_index(canvas_id)

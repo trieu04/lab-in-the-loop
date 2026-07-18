@@ -55,6 +55,37 @@ def test_forward_only_graph_has_no_loop():
     assert detect_experiment_loops(_index(widgets), M) == []
 
 
+def test_forward_round_advance_edge_is_excluded():
+    """A round-advance edge (result_N -> setup_{N+1}) is graph-isomorphic to a
+    user loop trigger (result_N -> setup_N) but must not be re-detected as a
+    loop on the next poll. Only same-round/backward edges are actionable."""
+    widgets = [
+        _w("setup1", "Note", title="[EXP:Setup v001] A+B"),
+        _w("robot1", "Note", title="Robot_arm"),
+        _w("result1", "Note", title="[EXP:Result v001]"),
+        _w("setup2", "Note", title="[EXP:Setup v002] A+B"),
+        _conn("c1", "setup1", "robot1"),
+        _conn("c2", "robot1", "result1"),
+        _conn("c3", "result1", "setup1"),  # same-round: actionable loop
+        _conn("c4", "result1", "setup2"),  # forward round-advance: not a loop
+    ]
+    loops = detect_experiment_loops(_index(widgets), M)
+    assert [loop["loop_connector_id"] for loop in loops] == ["c3"]
+    assert loops[0]["setup_id"] == "setup1"
+
+
+def test_strictly_backward_edge_is_still_a_loop():
+    """round(setup) < round(result) (e.g. a user reconnects a v2 result back to
+    the original v1 setup) is a backward edge, not forward — still actionable."""
+    widgets = [
+        _w("setup1", "Note", title="[EXP:Setup v001] A+B"),
+        _w("result2", "Note", title="[EXP:Result v002]"),
+        _conn("c1", "result2", "setup1"),
+    ]
+    loops = detect_experiment_loops(_index(widgets), M)
+    assert [loop["loop_connector_id"] for loop in loops] == ["c1"]
+
+
 def test_scan_reports_idea_needing_setup():
     widgets = [
         _w("rag1", "Image", title="RAGCluster_x"),
@@ -93,3 +124,24 @@ def test_scan_setup_with_result_is_not_pending():
     snap = scan_workflow(_index(widgets), M)
     assert snap["setups_needing_run"] == []
     assert [b["widget_id"] for b in snap["results"]] == ["result1"]
+
+
+def test_scan_reports_closed_note_without_needing_a_connector():
+    """A closed note must be enumerable via the ``closeds`` bucket on its own
+    -- unlike setup/result, it has no defining connector, so classification
+    must not require one (this is what makes tag-based crash recovery for
+    closed notes possible independent of the result -> closed connector)."""
+    widgets = [_w("closed1", "Note", title="[EXP:Closed] after v001 #a1b2c3d4e5f6")]
+    snap = scan_workflow(_index(widgets), M)
+    assert [b["widget_id"] for b in snap["closeds"]] == ["closed1"]
+    assert snap["ideas"] == snap["setups"] == snap["results"] == snap["robots"] == []
+
+
+def test_closed_note_is_not_misclassified_as_robot():
+    """``_is_closed`` must be checked before ``_is_robot`` in the
+    classification order so a closed note (no widget_type restriction, same
+    as robot) lands in ``closeds``, not ``robots``."""
+    widgets = [_w("closed1", "Note", title="[EXP:Closed] after v001")]
+    snap = scan_workflow(_index(widgets), M)
+    assert snap["robots"] == []
+    assert [b["widget_id"] for b in snap["closeds"]] == ["closed1"]

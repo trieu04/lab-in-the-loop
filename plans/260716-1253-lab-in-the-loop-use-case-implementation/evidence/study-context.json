@@ -1,0 +1,53 @@
+{
+  "task": "Upgrade system-generated experiment artifacts from Notes to capability-protected HTML Browser widgets backed by a versioned structured artifact store, while preserving legacy Notes and human-input behavior.",
+  "mode": "auto",
+  "acceptanceCriteria": [
+    "New setup, result, closed, and needs-input outputs create Browser widgets with exact workflow title markers, stable artifact URLs, canonical structured records, and durable connectors.",
+    "Artifact updates append versions and change rendered content without recreating the Browser widget.",
+    "The HTML renderer escapes all user/model content, rejects raw executable HTML, uses a strict CSP with same-origin assets, and remains responsive and keyboard accessible.",
+    "Capability reads use high-entropy opaque identifiers and constant-time token verification; revoked, guessed, unauthorized, and cross-canvas requests expose no artifact data.",
+    "Workflow detection accepts generated Browser widgets and legacy Notes while idea and human approval/review input remain Note-only.",
+    "Crash recovery reconciles persisted artifacts, Browser widgets, widget mappings, and connectors without duplicate effects.",
+    "Legacy generated Notes can be inventoried and mirrored idempotently in dry-run-first mode, with no deletion by default.",
+    "Both applications pass pytest, ruff, and mypy; security, large-payload, graph, restart, accessibility, and migration paths have regression coverage.",
+    "README, architecture, workflow, operations, standards, roadmap, changelog, and canonical use-case documentation describe the implemented service and deployment constraints."
+  ],
+  "touchpoints": [
+    "apps/lab-agent/lab_agent/models/artifact.py",
+    "apps/lab-agent/lab_agent/artifact_store.py",
+    "apps/lab-agent/lab_agent/artifact_render.py",
+    "apps/lab-agent/lab_agent/artifact_server.py",
+    "apps/lab-agent/lab_agent/static/",
+    "apps/lab-agent/lab_agent/migrations/002_artifact_documents.sql",
+    "apps/lab-agent/lab_agent/config.py",
+    "apps/lab-agent/lab_agent/cli.py",
+    "apps/lab-agent/lab_agent/nodes.py",
+    "apps/lab-agent/lab_agent/orchestrator.py",
+    "apps/lab-agent/lab_agent/watch.py",
+    "apps/lab-agent/lab_agent/render.py",
+    "apps/canvus-mcp/canvus_mcp/tools/widgets.py",
+    "apps/canvus-mcp/canvus_mcp/experiments.py",
+    "apps/canvus-mcp/canvus_mcp/tools/experiments.py",
+    "scripts/migrate-generated-notes-to-browser-artifacts.py",
+    "apps/lab-agent/tests/",
+    "apps/canvus-mcp/tests/",
+    "README.md",
+    "docs/"
+  ],
+  "blastRadius": [
+    "all system-generated experiment artifact creation",
+    "workflow graph classification and loop scanning",
+    "durable side-effect recovery",
+    "artifact-service network and capability security",
+    "legacy canvas compatibility and migration",
+    "operator deployment and backup procedures"
+  ],
+  "contracts": [
+    "Canvas Browser widgets are views and graph nodes; ArtifactStore is the canonical generated-artifact record.",
+    "Workflow title markers and connector semantics remain backward compatible.",
+    "Idea and human-authored control inputs remain Notes.",
+    "Capability URLs are bearer secrets and must not be logged or included in model/audit payloads.",
+    "Migration is dry-run/mirror-first, idempotent, and non-destructive by default.",
+    "Canvas remains workflow truth while the durable ledger owns artifact versions, mappings, recovery, and audit evidence."
+  ]
+}

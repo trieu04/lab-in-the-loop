@@ -10,7 +10,7 @@
 | Source vision | [docs/notes/use-case-lab-in-the-loop.md](notes/use-case-lab-in-the-loop.md) (original meeting notes, excluded from normalization) |
 | Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lap-in-the-loop` repository |
 | Owner / Approver | Pending |
-| Status notation | `[MVP]` = code path exists in this repository and confirmed from source; does not imply local/E2E verification completed; `[Future]` = in roadmap/target architecture but not yet implemented; `[Proposed]` = proposed direction (harness-first architecture), not yet ratified by owner |
+| Status notation | `[MVP]` = code path exists in this repository and confirmed from source; local unit/type/lint verification is complete where stated, while live Canvus E2E demo verification remains Phase 2; `[Future]` = in roadmap/target architecture but not yet implemented; `[Proposed]` = proposed direction (harness-first architecture), not yet ratified by owner |
 
 **Scope statement:** This document specifies the **entire target vision** of the Lab-in-the-Loop use case, inherited from the original meeting notes (`docs/notes/use-case-lab-in-the-loop.md`). Each requirement, flow, and data field is tagged with implementation status. The document does **not claim** that `[Future]`/`[Proposed]` capabilities are installed — only records them as part of the target specification to guide development. The harness-first architectural direction (independent, provider-neutral, decoupled from Claude Code skill) described in `docs/system-architecture.md` § "Target harness boundary (proposed)" and `docs/development-roadmap.md` remains a **proposal awaiting owner ratification**, not officially approved.
 
@@ -63,7 +63,7 @@ Canonical descriptor (bilingual, preserved from original vision):
 
 | Notation | Meaning |
 |---|---|
-| `[MVP]` | Code path exists in `apps/canvus-mcp` + `apps/lab-agent`, confirmed directly from source; local test/E2E verification still on roadmap Phase 1–2 |
+| `[MVP]` | Code path exists in `apps/canvus-mcp` + `apps/lab-agent`, confirmed directly from source; local test/lint/type verification is complete where noted, while live Canvus E2E demo verification remains Phase 2 |
 | `[MVP partial]` | Implementation exists but covers only part of the vision requirement |
 | `[Future]` | In roadmap/vision but not yet implemented |
 | `[Proposed]` | Proposed architectural direction (harness-first), not yet ratified |
@@ -85,10 +85,12 @@ apps/canvus-mcp  ── MCP tools: scan / read / write canvas ──►
 apps/lab-agent   ── watcher/orchestrator: read to ground, model propose, orchestrator write ──►
   │
   ├─ OpenAI adapter
-  └─ Claude adapter
+  ├─ Claude adapter
+  ├─ artifact service (capability-protected Browser HTML)
+  └─ local SQLite WAL ledger (attempts, leases, intents, audit/outbox, artifact records/tokens/widgets)
 ```
 
-Current system boundary `[MVP]` consists only of the 2 runtime apps above. Target components — Knowledge Retrieval Service, independent Execution Orchestrator, Flywheel wrapper, Knowledge Update Service, In-silico service — are all `[Future/Proposed]`, not yet existing as separate modules (see `docs/system-architecture.md` § "Target harness boundary (proposed)").
+Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-agent`'s local SQLite WAL ledger for attempts, leases, side-effect intents/outbox, audit, and canonical generated-artifact records. The Phase 3 artifact service serves generated Setup/Result/Closed and generated Needs Input prompt/status artifacts as capability-protected Browser widgets; `{idea: ...}` and human-authored approval/review/input responses remain Notes. Target components — Knowledge Retrieval Service, independent Execution Orchestrator beyond today's `lab-agent`, Flywheel wrapper, Knowledge Update Service, In-silico service — are all `[Future/Proposed]`, not yet existing as separate modules (see `docs/system-architecture.md` § "Target harness boundary (proposed)").
 
 ---
 
@@ -108,7 +110,7 @@ Current system boundary `[MVP]` consists only of the 2 runtime apps above. Targe
 | ACT-LITL-10 | In-silico / digital-twin service | Validate design before wet lab | `[Future]` | Original UC §8; roadmap Phase 5 |
 | ACT-LITL-11 | Robotic/wet-lab system | Execute real experiments | `[Future]`; currently `Robot_` is only a mock widget | roadmap "Real robot integration: Future" |
 | ACT-LITL-12 | Flywheel / imaging analysis platform | Auto-run analysis gear (e.g., lung fibrosis quantification) | `[Future]`, no wrapper | Original UC §9.4; roadmap Phase 6 |
-| ACT-LITL-13 | Administrator / auditor | Audit log, observability, multi-user isolation | **`Conditional/Future inferred`** — this actor is **not explicitly listed in original UC**; inferred from Audit Log requirement (§15) and roadmap Phase 7 | roadmap Phase 7; no direct actor reference in vision |
+| ACT-LITL-13 | Administrator / auditor | Audit log, quarantine reset/backup, observability, multi-user isolation | **`MVP partial / Future inferred`** — operator CLI and hash-chained audit exist; multi-user observability remains Future; actor is inferred, not explicitly listed in original UC | `lab_agent/admin.py`, roadmap Phase 7; no direct actor reference in vision |
 
 ---
 
@@ -137,6 +139,8 @@ Current system boundary `[MVP]` consists only of the 2 runtime apps above. Targe
 
 - `apps/canvus-mcp` must run with valid credentials (`CANVUS_API_URL`, `CANVUS_API_KEY`) for `lab-agent` to function.
 - Model adapter (`openai` or `claude`) must be available; OpenAI-compatible endpoint (`LAB_AGENT_OPENAI_BASE_URL`) used for Ollama/vLLM/internal model `[MVP partial]`.
+- Durable local operation depends on the SQLite WAL ledger at `LAB_AGENT_STATE_DB_PATH`; it is local-disk/single-host scoped and must be backed up/restored intentionally. The same DB contains generated-artifact records, versions, token hashes, and Browser widget mappings.
+- Browser artifact writes depend on a configured `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` reachable by intended Canvus clients; production requires HTTPS/private ingress. Live external reachability/TLS verification is a deployment gate, not proven by this repo.
 - Target components (Flywheel, in-silico, knowledge/versioning service) are **not yet in existence** — all use cases involving them are `[Future]`.
 
 **Constraints**
@@ -144,6 +148,8 @@ Current system boundary `[MVP]` consists only of the 2 runtime apps above. Targe
 - Model receives only read tools (`READ_TOOLS` in `lab_agent/tool_bridge.py`); all writes go through orchestrator (`lab_agent/nodes.py`) — strict read/write separation.
 - Must not hard-code dependence on any specific provider (`code-standards.md` § "Provider and harness boundaries").
 - `LAB_AGENT_LOOP_MAX_ROUNDS` is the only loop backstop currently available — no real cost/token threshold yet.
+- Durable idempotency and artifact storage are scoped to one local host and one active writer per canvas; multi-host/shared-store deployment is a future Postgres-or-equivalent migration trigger.
+- Capability URLs are bearer secrets; full token-bearing URLs must not be logged, audited, printed, pasted into model context, or copied into reports.
 - Harness-first architectural direction is **`[Proposed]`**, not yet ratified — new designs should not assume approval.
 
 ---
@@ -194,7 +200,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | FR-LITL-016 | Handle ambiguous acronyms: detect → retrieve dict → ask confirmation | Should | `[Future]` — currently only "don't guess, lower confidence" rule |
 | FR-LITL-017 | Handle Flywheel job failure: show failed, preserve data path, allow rerun | Should | `[Future]` |
 | FR-LITL-018 | Create conflict note when new data contradicts old knowledge | Should | `[Future]` |
-| FR-LITL-019 | Idempotency: no duplicate setup/result/loop-processing | Must | `[MVP]` — session-local, not persistent across restart |
+| FR-LITL-019 | Idempotency: no duplicate setup/result/closed/connector loop-processing | Must | `[MVP]` — durable local SQLite attempts + side-effect intents/outbox; local-disk, single-host scope |
 | FR-LITL-020 | Ingest large multimodal data with chunking/caching/resumable capability | Should | `[Future]` |
 | FR-LITL-021 | Represent workflow as directed node + connector on canvas | Must | `[MVP]` |
 | FR-LITL-022 | Clearly label all simulated results as "mock" | Must | `[MVP]` |
@@ -211,7 +217,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | Name | Close the loop from design to new data |
 | Level | Top-level (goal-level) |
 | Scope | Entire Lab-in-the-Loop loop |
-| Status | `[MVP partial]` — core happy path is implemented in code but lacks local/E2E verification; most of target flow remains `[Future]` |
+| Status | `[MVP partial]` — core happy path is implemented and covered by local tests; live Canvus E2E demo remains Phase 2; most of target flow remains `[Future]` |
 | Priority | Must |
 | Primary actor | ACT-LITL-01 (Scientist/Researcher) |
 | Supporting actors | ACT-LITL-02, ACT-LITL-03, ACT-LITL-05, ACT-LITL-06, ACT-LITL-07, ACT-LITL-08, ACT-LITL-10, ACT-LITL-11, ACT-LITL-12 |
@@ -255,16 +261,16 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | Ambiguous acronym (e.g., `BIA`) | Detect → retrieve dict → ask confirm → regenerate | `[Future]` — only "don't guess, lower confidence" rule |
 | Flywheel job fails | Show failed, preserve data path, allow rerun, don't update KB | `[Future]` — Flywheel doesn't exist |
 | New data conflicts old knowledge | Create conflict note, keep both hypotheses | `[Future]` — no knowledge store |
-| Infinite loop | Max iteration, stop condition, cost threshold | `[MVP partial]` — only `LAB_AGENT_LOOP_MAX_ROUNDS`, no advanced duplicate/cost detection |
+| Infinite loop | Max iteration, stop condition, cost threshold | `[MVP partial]` — only `LAB_AGENT_LOOP_MAX_ROUNDS`, no cost/plateau threshold |
 | MCP server unavailable | — | `[MVP]` CLI fails/logs warning, watcher continues polling |
-| Model does not emit correct schema | — | `[MVP]` current run fails, canvas stays pending, retry in next cycle |
+| Model does not emit correct schema | — | `[MVP]` current run writes nothing; canvas stays pending; durable attempt is failed/backed off/quarantine-eligible |
 | Human rejection at gate | Reject design/result, request revise | `[Future]` — no gate to reject |
 | Resource/budget rejection | Lab lead rejects due to insufficient resources/budget | `[Future]` — no budget field/gate |
-| Duplicate/retry/idempotency failure | Don't create duplicate on retry | `[MVP]` — idempotency by connector presence; `[Future]` durable across restart |
+| Duplicate/retry/idempotency failure | Don't create duplicate on retry | `[MVP]` — connector graph checks plus durable `workflow_attempts` and side-effect intents; generated Browser artifacts use title tags and bucket probes, while legacy Note recovery remains available for migrated canvases |
 
 **Business rules reference:** BR-LITL-001, BR-LITL-002, BR-LITL-003, BR-LITL-004, BR-LITL-006.
 
-**Data inputs/outputs:** Input = RagCluster context, idea note text, setup note text, result note text. Output = `[EXP:Setup vNNN]`, `[EXP:Result vNNN]`, `[EXP:Closed]` — actual schema in `lab_agent/models/experiment.py` (see §13).
+**Data inputs/outputs:** Input = RagCluster context, idea note text, setup artifact text, result artifact text. Output = `[EXP:Setup vNNN]`, `[EXP:Result vNNN]`, `[EXP:Closed]` Browser artifacts backed by `ArtifactStore`, with legacy generated Notes still readable during migration — actual schema in `lab_agent/models/experiment.py` plus artifact metadata/versioning in `lab_agent/models/artifact.py` (see §13).
 
 **Approval points:** Gates 1–5 (§12 vision) are defined but **only state framework (`DecisionState` enum) exists** — 6/9 states lack transition logic (see §11 Workflow state model).
 
@@ -274,10 +280,10 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 | ID | Criterion | Status |
 |---|---|---|
-| AC-UC-LITL-02-001 | User note `{idea:...}` connected from `RAGCluster_` → agent creates `[EXP:Setup v001]` | `[MVP]` code path exists; E2E verification pending |
-| AC-UC-LITL-02-002 | Connect setup→`Robot_` → agent creates `[EXP:Result v001]` clearly labeled mock | `[MVP]` code path exists; E2E verification pending |
-| AC-UC-LITL-02-003 | Connect result→setup → agent decides CONTINUE (`[EXP:Setup v002]`) or STOP (`[EXP:Closed]`) | `[MVP]` code path exists; E2E verification pending |
-| AC-UC-LITL-02-004 | No duplicate setup/result created when watcher scan repeats in same session | `[MVP]` logic exists; local verification pending |
+| AC-UC-LITL-02-001 | User note `{idea:...}` connected from `RAGCluster_` → agent creates `[EXP:Setup v001]` | `[MVP]` code path exists and local tests pass; live Canvus E2E verification pending |
+| AC-UC-LITL-02-002 | Connect setup→`Robot_` → agent creates `[EXP:Result v001]` clearly labeled mock | `[MVP]` code path exists and local tests pass; live Canvus E2E verification pending |
+| AC-UC-LITL-02-003 | Connect result→setup → agent decides CONTINUE (`[EXP:Setup v002]`) or STOP (`[EXP:Closed]`) | `[MVP]` code path exists and local tests pass; live Canvus E2E verification pending |
+| AC-UC-LITL-02-004 | No duplicate setup/result/closed/connector side effects across repeated scans or restart/retry windows | `[MVP]` local regression tests pass; live Canvus E2E verification pending |
 | AC-UC-LITL-02-005 | Node Experiment Design connects to Flywheel Data Node; Flywheel job runs (or mock) and returns Analysis output to canvas (MVP 2 — Flywheel-connected demo) | `[Future]` not achieved |
 | AC-UC-LITL-02-006 | Simulation returns predicted outcome + uncertainty; only proceed to lab if human approves (MVP 3 — in-silico gate) | `[Future]` not achieved |
 
@@ -328,7 +334,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 | ID | Criterion | Status |
 |---|---|---|
-| AC-UC-LITL-01-001 | User asks → receive `[EXP:Setup vNNN]` with complete rationale/inputs/conditions/steps/parameters/expected_readouts structure | `[MVP]` code path exists; E2E verification pending |
+| AC-UC-LITL-01-001 | User asks → receive `[EXP:Setup vNNN]` with complete rationale/inputs/conditions/steps/parameters/expected_readouts structure | `[MVP]` code path exists and local tests pass; live Canvus E2E verification pending |
 | AC-UC-LITL-01-002 | Clear approve button/track before moving to execution | `[Future]` not achieved |
 | AC-UC-LITL-01-003 | System returns "insufficient internal evidence" when context is inadequate | `[Future]` not achieved |
 
@@ -409,17 +415,17 @@ Two **distinct state layers** should not be conflated:
 
 ### 11.1 Layer 1 — Current canvas marker `[MVP]`
 
-Connector presence is the state transition signal (`system-architecture.md` § "State and idempotency": "canvas is the durable source of workflow state; agent treats connector presence as the state transition signal").
+Connector presence is the workflow transition signal (`system-architecture.md` § "State and idempotency"). The SQLite ledger is the durable operational record for attempts, leases, side-effect intents, and audit; it does not replace the canvas graph as the source of workflow truth.
 
 ```text
 {idea: ...} (no setup yet)
-     → [EXP:Setup vNNN]           (Status: RUNNING)
+     → [EXP:Setup vNNN] Browser artifact           (artifact state: RUNNING)
         → Robot_ (mock execution)
-           → [EXP:Result vNNN]    (Status: ANALYSIS_COMPLETE)
-              → { [EXP:Setup vNNN+1] (Status: RUNNING)  |  [EXP:Closed] (Status: CLOSED) }
+           → [EXP:Result vNNN] Browser artifact    (artifact state: ANALYSIS_COMPLETE)
+              → { [EXP:Setup vNNN+1] Browser artifact (artifact state: RUNNING)  |  [EXP:Closed] Browser artifact (artifact state: CLOSED) }
 ```
 
-Each note has a `Status: <DecisionState.value>` line added by `lab_agent/nodes.py:create_node` (via `state` parameter) — confirmed in `orchestrator.py` (`DecisionState.RUNNING`, `DecisionState.ANALYSIS_COMPLETE`, `DecisionState.CLOSED`).
+Generated Browser artifacts carry `DecisionState` in their canonical `ArtifactStore` record and render it in the Browser HTML header. Legacy generated Notes may carry a `Status: <DecisionState.value>` line from the older `create_node` path during migration.
 
 ### 11.2 Layer 2 — Target decision-state lifecycle (vision §12)
 
@@ -428,14 +434,14 @@ DRAFT → NEEDS_REVIEW → APPROVED_FOR_IN_SILICO → APPROVED_FOR_WET_LAB
       → RUNNING → ANALYSIS_COMPLETE → KNOWLEDGE_UPDATE_PENDING → CLOSED | REJECTED
 ```
 
-`lab_agent/models/states.py` declares all 9 `DecisionState` values (`StrEnum`). **Only 3/9 values are actually written to notes at runtime:** `RUNNING`, `ANALYSIS_COMPLETE`, `CLOSED`. The other six — `DRAFT`, `NEEDS_REVIEW`, `APPROVED_FOR_IN_SILICO`, `APPROVED_FOR_WET_LAB`, `KNOWLEDGE_UPDATE_PENDING`, `REJECTED` — **exist in enum but have no transition logic that assigns them**. This is the most concrete evidence for "no human-approval gate in code" in `system-architecture.md`.
+`lab_agent/models/states.py` declares all 9 `DecisionState` values (`StrEnum`). Generated Setup/Result/Closed artifacts currently use `RUNNING`, `ANALYSIS_COMPLETE`, and `CLOSED`. Generated Needs Input prompt/status artifacts can use `NEEDS_REVIEW` as a safe request state, but there is no implemented approval workflow that transitions from that state. The other five — `DRAFT`, `APPROVED_FOR_IN_SILICO`, `APPROVED_FOR_WET_LAB`, `KNOWLEDGE_UPDATE_PENDING`, `REJECTED` — **exist in enum but have no transition logic that assigns them**. This remains concrete evidence for "no human-approval gate in code" in `system-architecture.md`.
 
 Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` or `NEEDS_POST_SILICO_REVIEW`**. The enum sequence above does not yet fully represent the canonical authorization order `AI design → in-silico → scientist review → lab lead approval → wet lab`; state model must be revised when implementing Phase 5–6.
 
 | DecisionState | Has transition logic in `orchestrator.py`? | Notes |
 |---|---|---|
 | `DRAFT` | No | Framework for future gate/approval |
-| `NEEDS_REVIEW` | No | Gate 1 (scientist review) — `[Future]` |
+| `NEEDS_REVIEW` | Partial | Generated Needs Input prompt/status artifact state only — approval/review transitions remain `[Future]` |
 | `APPROVED_FOR_IN_SILICO` | No | Gate 1 output → in-silico — `[Future]` |
 | `APPROVED_FOR_WET_LAB` | No | Gate 2/3 output — `[Future]` |
 | `RUNNING` | **Yes** — assigned when creating `[EXP:Setup vNNN]` | `[MVP]` |
@@ -450,13 +456,13 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 |---|---|---|
 | Knowledge Scope Node | Widget image `RAGCluster_` | `[MVP]` |
 | Query Node | Note `{idea: ...}` | `[MVP]` |
-| Experiment Design Node | Note `[EXP:Setup vNNN]` | `[MVP]` |
-| Human Review Node | — | `[Future]` — no approve gate/button |
+| Experiment Design Node | Browser `[EXP:Setup vNNN]` backed by `ArtifactStore`; legacy Note readable | `[MVP]` |
+| Human Review Node | Browser `[EXP:Needs Input]` prompt/status infrastructure; human response Note | `[MVP infrastructure only]` — no approve gate/button or transition workflow |
 | In Silico Simulation Node | — | `[Future]` — see UC-LITL-03 |
 | Lab Execution Node | Widget `Robot_` (mock) | `[MVP mock]` — not connected to real robot/lab |
 | Flywheel Data Node | — | `[Future]` — no Flywheel wrapper |
 | Analysis Gear Node | — | `[Future]` |
-| Result Interpretation Node | Note `[EXP:Result vNNN]` (mock) | `[MVP mock form]` |
+| Result Interpretation Node | Browser `[EXP:Result vNNN]` backed by `ArtifactStore`; legacy Note readable | `[MVP mock form]` |
 | Knowledge Update Node | — | `[Future]` — no knowledge/versioning service |
 | Next Experiment Node | `[EXP:Setup vNNN+1]` on CONTINUE | `[MVP]` |
 
@@ -468,8 +474,8 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 
 | ID | Rule | Status | Evidence |
 |---|---|---|---|
-| BR-LITL-001 | Model read-only (`READ_TOOLS`); only orchestrator writes (`create_note`/`create_connector`) — strict separation | `[MVP]` | `lab_agent/tool_bridge.py`, `lab_agent/nodes.py` |
-| BR-LITL-002 | Idempotency: idea processed only if setup doesn't exist; setup runs only if result doesn't exist; loop connector processed once per watcher session | `[MVP]` session-local | `experiment-workflow.md` § Idempotency |
+| BR-LITL-001 | Model read-only (`READ_TOOLS`); only orchestrator writes (`create_note`, `create_browser`/`update_browser`, `create_connector`) — strict separation | `[MVP]` | `lab_agent/tool_bridge.py`, `lab_agent/nodes.py` |
+| BR-LITL-002 | Idempotency: idea processed only if setup doesn't exist; setup runs only if result doesn't exist; every derived trigger is completed/failed/quarantined in the durable local ledger | `[MVP]` durable local/single-host | `experiment-workflow.md` § Idempotency; `lab_agent/state_store.py` |
 | BR-LITL-003 | Don't self-generate acronyms/domain terms without retrieving internal context; if ambiguous, lower confidence instead of guessing | `[MVP partial]` | `code-standards.md` § "Grounding and scientific caution" |
 | BR-LITL-004 | Mock results always clearly labeled as mock | `[MVP]` | `lab_agent/prompts.py` (RESULT_SYSTEM), render output |
 | BR-LITL-005 | Proposal must contain complete structure: rationale, inputs, conditions, steps, parameters, expected_readouts (actual current schema) | `[MVP]` | `lab_agent/models/experiment.py` |
@@ -525,13 +531,14 @@ Fields **required by vision but with no separate field name** in current schema 
 | Audit/version metadata (`version_id`, `source_experiment_id`, `input_data_ids`, `analysis_job_ids`, `created_at`) | No | Vision §9.5; no Knowledge Update Service/Versioning Service |
 | `confidence` (number, at `ExperimentSetup` level) | No | Vision §9.2 model output has `confidence: 0.68`; actual schema has no field |
 
-### 13.5 Canvas note artifact (rendered text — not separate Pydantic schema)
+### 13.5 Canvas generated artifacts (Browser current, Note legacy)
 
-| Note | First-line marker | Rendered content |
+| Artifact | Model-readable marker | Rendered/canonical content |
 |---|---|---|
-| `[EXP:Setup vNNN]` | `Idea: <idea_id>` / `Round: <n>` | Rendered from `ExperimentSetup` |
-| `[EXP:Result vNNN]` | `Setup: <setup_id>` / `Round: <n>` | Rendered from `ExperimentResult` |
-| `[EXP:Closed]` | — | Rendered from `LoopDecision` + backstop reason if any |
+| `[EXP:Setup vNNN]` | `Idea: <idea_id>` / `Round: <n>` | Browser widget backed by `ArtifactStore`; payload rendered from `ExperimentSetup`; legacy Note readable during migration |
+| `[EXP:Result vNNN]` | `Setup: <setup_id>` / `Round: <n>` | Browser widget backed by `ArtifactStore`; payload rendered from `ExperimentResult`; legacy Note readable during migration |
+| `[EXP:Closed]` | — | Browser widget backed by `ArtifactStore`; payload rendered from `LoopDecision` + backstop reason if any; legacy Note readable during migration |
+| `[EXP:Needs Input]` | generated request/status marker | Browser widget backed by `ArtifactStore` with message/reason/context and `NEEDS_REVIEW` state; human response remains a Note; no approval transition workflow is implemented |
 
 ---
 
@@ -544,11 +551,11 @@ Fields **required by vision but with no separate field name** in current schema 
 | NFR-LITL-003 | Model independence: not Claude-only | 3+ providers run same workflow, no code changes | `[MVP partial]` — only 2 named adapters; Ollama/vLLM/internal via OpenAI-compatible `base_url` |
 | NFR-LITL-004 | Traceability: each setup cites internal sources used | 100% of setups have citation | `[Future]` — roadmap Phase 4, not achieved |
 | NFR-LITL-005 | Reproducibility/versioning: knowledge version never overwrites | Each update creates new version with full metadata | `[Future]` — no Versioning Service |
-| NFR-LITL-006 | Reliability: retry/resume, idempotency durable across restart | Idempotency survives watcher restart | `[Future]` — currently only session-local `processed_loops` |
+| NFR-LITL-006 | Reliability: retry/resume, idempotency durable across restart | Idempotency survives watcher restart | `[MVP]` — local SQLite WAL ledger with attempts/leases/intents/audit; multi-host/shared-store durability remains `[Future]` |
 | NFR-LITL-007 | Performance/scalability: chunking/caching/resumable for large multimodal | Large ingest case (e.g., ~4 days) resumes after interruption | `[Future]` — roadmap Phase 4c |
-| NFR-LITL-008 | Observability: structured log, metrics, health check, multi-user dashboard | TBD (no specific metrics yet) | `[Future]` — roadmap Phase 7; currently only basic warning logs |
+| NFR-LITL-008 | Observability: structured log, metrics, health check, multi-user dashboard | TBD (no specific metrics yet) | `[Future]` — roadmap Phase 7; currently structured logs plus durable audit events, but no metrics/dashboard/health-check stack |
 | NFR-LITL-009 | Cost/token governance: budget/cost threshold, model routing by task | TBD (no real cost/token threshold yet) | `[Future]` — roadmap Phase 4b; currently only `LAB_AGENT_LOOP_MAX_ROUNDS` (round count, not cost) |
-| NFR-LITL-010 | Accessibility/operability: CLI `once`/`watch`, clear `.env` config, troubleshooting docs | CLI runs with 2 commands, complete docs | `[MVP]` — `setup-and-operations.md` |
+| NFR-LITL-010 | Accessibility/operability: CLI `once`/`watch`, admin commands, clear `.env` config, troubleshooting docs | Workflow and operator commands documented | `[MVP]` — `setup-and-operations.md` |
 
 ---
 
@@ -559,6 +566,7 @@ Fields **required by vision but with no separate field name** in current schema 
 | Canvus credentials | Secret leak | Keep in `apps/canvus-mcp/.env`, git-ignored | `[MVP]` |
 | MCP write tools | Unintended canvas mutation | Only orchestrator calls write tool; model receives only read tools | `[MVP]` |
 | Downloaded PDF/image | Sensitive data | Write to `downloads/` directory ignored; bytes don't enter model context by default | `[MVP]` |
+| Artifact Browser URLs | Bearer capability leak or cross-canvas access | Private bind by default; reachable public base URL through HTTPS/private ingress in production; tokens stored as hashes; no access logs/full URL output; artifact/canvas scope checks; strict CSP/same-origin assets | `[MVP infrastructure]` — live reachability/TLS verification pending |
 | Model output | Domain fact hallucination | Ground with RagCluster; flag ambiguous term; schema is structured | `[MVP partial]` |
 | Loop autonomy | Runaway execution | Model stop decision + `LAB_AGENT_LOOP_MAX_ROUNDS` backstop | `[MVP partial]` |
 | Wet-lab authorization | Unapproved experiment execution | 5-step canonical chain (below) + Gate 1-5 | `[Future]` — no gate code |
@@ -598,10 +606,10 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 
 | Phase (roadmap) | Content | Status | Related UC/FR |
 |---|---|---|---|
-| Phase 0 | Repository extraction | Files extracted; not yet committed | — |
-| Phase 1 | Local verification (test/lint/mypy) | Pending | — |
+| Phase 0 | Repository extraction | Complete — committed (`git log`) | — |
+| Phase 1 | Local verification (test/lint/mypy) | Complete — original stabilization baseline passed; see [development roadmap](development-roadmap.md) Phase 1 | — |
 | Phase 2 | Demo canvas operation (end-to-end mock loop) | Pending | UC-LITL-02 happy path |
-| Phase 3 | Harness contracts, persistent loop state | Future | FR-LITL-019, NFR-LITL-006 |
+| Phase 3 | Harness contracts, persistent loop state, generated Browser artifacts | Partially complete — durable local state and generated Browser artifact infrastructure shipped; cross-implementation harness contracts and live public-base/TLS deployment gates remain Future/Pending | FR-LITL-019, FR-LITL-021, NFR-LITL-006, NFR-LITL-010 |
 | Phase 4 | Stronger grounding (wiki/KG/acronym) | Future | FR-LITL-001, FR-LITL-016, NFR-LITL-004 |
 | Phase 4b | Token/resource governance, model routing | Future | FR-LITL-013, NFR-LITL-002, NFR-LITL-009 |
 | Phase 4c | Async multimodal ingestion | Future | FR-LITL-020, NFR-LITL-007 |
@@ -613,7 +621,7 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 
 | MVP | Content | Status |
 |---|---|---|
-| MVP 1 — Text-only simulation | Idea → setup → mock approve → mock result → interpret → update version → suggest next | `[MVP]` core exists with code path; local/E2E verification pending; "update knowledge version" still `[Future]` |
+| MVP 1 — Text-only simulation | Idea → setup → mock approve → mock result → interpret → update version → suggest next | `[MVP]` core exists with code path; local verification complete (Phase 1), E2E demo (Phase 2) still pending; "update knowledge version" still `[Future]` |
 | MVP 2 — Flywheel-connected demo | Setup connects Flywheel Data Node → job runs/mock → Analysis output → Result Interpretation → Knowledge Update versioned → Next Experiment | `[Future]` not achieved — no implementation evidence |
 | MVP 3 — In silico gate | AI design → digital twin/simulation → predicted outcome + uncertainty → proceed/revise/reject → proceed only if human approves | `[Future]` not achieved |
 

@@ -10,7 +10,7 @@
 ## Overview
 
 - Priority: P1 (durable spine for all safety/audit work)
-- Status: pending
+- Status: complete
 - Effort: 6d
 - Description: Add a local SQLite (WAL) ledger owned by `lab-agent` for restart-safe idempotency, an append-only audit/event log, unique idempotency keys, and a single-writer-per-canvas lease. Define the harness policy/contract boundary and a documented Postgres/multi-host migration boundary. No external services, no state-machine engine (YAGNI vs Temporal).
 
@@ -85,15 +85,15 @@ Canvas remains workflow truth. The ledger owns recovery/idempotency evidence. `w
 
 ## Todo List
 
-- [ ] Versioned SQLite migrations + integrity checks
-- [ ] Attempt lifecycle, expiring attempt leases, retry/backoff, and quarantine
-- [ ] Runtime-unique per-canvas writer lease
-- [ ] Side-effect intent/outbox + live reconciliation
-- [ ] Append-only sequenced/hashed safety audit events
-- [ ] Config/CLI wiring and ignored DB/WAL/backup artifacts
-- [ ] Crash-boundary, restart, quarantine, reconciliation, and audit-chain tests
-- [ ] Backup/restore drill documented and verified
-- [ ] Architecture + operations + roadmap + changelog updated
+- [x] Versioned SQLite migrations + integrity checks
+- [x] Attempt lifecycle, expiring attempt leases, retry/backoff, and quarantine
+- [x] Runtime-unique per-canvas writer lease
+- [x] Side-effect intent/outbox + live reconciliation
+- [x] Append-only sequenced/hashed safety audit events
+- [x] Config/CLI wiring and ignored DB/WAL/backup artifacts
+- [x] Crash-boundary, restart, quarantine, reconciliation, and audit-chain tests
+- [x] Backup/restore drill documented and verified
+- [x] Architecture + operations + roadmap + changelog updated
 
 ## Success Criteria / Validation
 

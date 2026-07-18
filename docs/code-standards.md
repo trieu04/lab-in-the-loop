@@ -57,12 +57,26 @@ The model should receive only read/grounding tools during reasoning. The enforce
 
 Writes are controlled by application code (`lab_agent/nodes.py`):
 
-- `create_note`
+- `create_note` — user/legacy Note paths only; `{idea: ...}` and human-authored approval/review/input responses stay Notes.
+- `create_browser` — generated Setup/Result/Closed and generated Needs Input status/prompt artifacts.
+- `update_browser` — in-place Browser repair/token URL rotation without recreating the widget.
 - `create_connector`
 
-`create_browser` and `create_image` exist as `canvus-mcp` write tools but are not called by `lab-agent`'s orchestrator today; they remain available for direct/manual use only (e.g. the Claude Code skill).
+`create_image` exists as a `canvus-mcp` write tool but is not part of `lab-agent`'s automated generated-artifact write path.
+
+Write helpers fail closed: `lab_agent/nodes.py` raises `MCPToolError` when write tools return malformed JSON, an explicit `error`, or no non-empty `id`. Do not treat an empty id as a successful canvas mutation.
 
 Do not let an unconstrained model decide arbitrary write tool calls.
+
+## Generated artifact Browser standards
+
+- Canvus Browser widgets are views/graph nodes only. Canonical generated artifact data belongs in `ArtifactStore` as versioned structured records with metadata, provenance, content hash, state, round, and Browser-widget mapping.
+- Browser widget identity and `/artifacts/{opaque_id}` resource paths are stable. Token-bearing capability URLs may rotate; repair with `update_browser` in place rather than recreating the widget.
+- Never log, audit, paste into model context, or print full capability URLs/tokens. Store only token hashes and emit ids/counts/status in operator output.
+- Bind the artifact service privately by default. Production needs a reachable public base URL for Canvus clients plus HTTPS/private ingress; external live Canvus reachability and TLS are operational gates, not assumed by code or docs.
+- Enforce artifact/canvas scope on every read, support revocation/rotation, and keep static assets same-origin under the service CSP.
+- Generated Needs Input artifacts are Browser prompt/status markers only; do not imply future approval workflow transitions are implemented. Human-authored responses remain Notes.
+- Legacy generated Notes remain readable during migration; migration must be dry-run/mirror-first and non-destructive by default.
 
 ## Provider and harness boundaries
 
@@ -77,13 +91,15 @@ Model outputs that drive workflow state should be schema-bound:
 - `ExperimentResult`
 - `LoopDecision`
 
-If a provider returns invalid schema, fail visibly and leave the canvas state pending so a retry can happen safely.
+If a provider returns invalid schema, fail visibly and leave the canvas state pending so a retry can happen safely. **Never fabricate or fill in missing required fields** to make an invalid payload pass — a note that looks complete but was silently patched by the orchestrator is worse than no note at all.
+
+The enforcement path is `lab_agent/orchestrator_support.py:coerce_or_fail` plus `_emit_validated`: `coerce_or_fail` validates parsed model output against its Pydantic schema and raises `SchemaValidationError` instead of coercing or defaulting missing fields; `_emit_validated` catches that error, logs a `schema_validation_failed` warning (stage, model name, raw payload) via `structlog`, and returns `None`. The setup, result, and decision callers propagate that fail-closed outcome without writing a note or connector or retrying within the same cycle. The canvas is left exactly as it was; the trigger's durable attempt is marked failed/backoff/quarantine-eligible so a later due poll can retry safely.
 
 ## Grounding and scientific caution
 
 - Do not invent domain facts.
 - Do not guess acronym meanings.
-- State uncertainty in generated setup/result notes.
+- State uncertainty in generated setup/result artifacts.
 - Prefer lower confidence over unsupported specificity.
 - Mock robot results must be clearly mock.
 - Future wet-lab integrations require explicit human approval and safety gates.
@@ -121,6 +137,7 @@ Update docs when changing:
 - loop semantics;
 - provider configuration;
 - safety/idempotency behavior;
+- generated artifact storage/rendering, capability URL handling, artifact service deployment, or migration behavior;
 - any future real lab/Flywheel integration.
 
 Docs to keep in sync:

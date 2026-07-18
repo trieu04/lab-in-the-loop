@@ -118,7 +118,32 @@ LAB_AGENT_LOOP_MAX_ROUNDS=25
 
 `LAB_AGENT_LOOP_MAX_ROUNDS` is only a runaway backstop. The model's `LoopDecision` is the intended stop condition.
 
+Durable harness (local SQLite WAL ledger — see [system architecture](system-architecture.md) → "Durable harness core"):
+
+```bash
+LAB_AGENT_STATE_DB_PATH=.state/lab_agent.db      # parent dir created automatically
+LAB_AGENT_CANVAS_LEASE_TTL_SECONDS=180            # single-writer canvas lease, renewed each cycle
+LAB_AGENT_ATTEMPT_LEASE_TTL_SECONDS=600           # per-trigger lease, covers a full multi-round loop
+LAB_AGENT_RETRY_BASE_SECONDS=5                    # full-jitter backoff base
+LAB_AGENT_RETRY_MAX_SECONDS=300                   # full-jitter backoff ceiling
+LAB_AGENT_MAX_ATTEMPTS=5                          # attempts before a trigger is quarantined
+```
+
+All six have safe defaults (shown above) — none are required to run `lab-agent`, and they may be omitted from `.env` unless overriding behavior. `LAB_AGENT_STATE_DB_PATH` is relative to the process's working directory unless given as an absolute path; keep it out of version control (the default `.state/` prefix is already git-ignored). The same SQLite file also stores canonical generated-artifact records, token hashes, and Browser widget mappings.
+
+Artifact Browser service (generated Setup/Result/Closed and generated Needs Input status/prompt artifacts):
+
+```bash
+LAB_AGENT_ARTIFACT_BIND_HOST=127.0.0.1      # private default
+LAB_AGENT_ARTIFACT_BIND_PORT=8600
+LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL=          # required before Browser artifact writes
+```
+
+`LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` must be the base URL that Canvus clients can reach, for example an internal HTTPS ingress that forwards to the private bind. Browser artifact writes fail closed when this value is empty or malformed; local `127.0.0.1` only works if the Canvus client browser can reach the same host. Production must use HTTPS/private ingress and restrict access to intended Canvus clients/users. Capability URLs are bearer secrets: do not log, audit, print, paste, or send full token-bearing URLs to model context. This repo has not verified live external Canvus reachability or TLS termination.
+
 ## Run `lab-agent`
+
+Every subcommand opens the durable ledger first: it creates `LAB_AGENT_STATE_DB_PATH`'s parent directory if missing, applies any pending SQL migration, runs `PRAGMA integrity_check`, and verifies the audit hash chain. If any of that fails, the command prints `STARTUP FAILED: ...` to stderr, exits `1`, and touches no canvas — this is deliberate fail-closed behavior, not a bug to work around by deleting the ledger (see "Durable harness operator commands" below for the safe path).
 
 One scan/process cycle:
 
@@ -134,7 +159,55 @@ Continuous watcher:
 uv run lab-agent watch --canvas <canvas-id>
 ```
 
-Stop with Ctrl-C. The watcher finishes the current operation before exiting if the process receives normal interruption.
+Artifact HTML service, in a separate long-running process using the same state DB:
+
+```bash
+uv run lab-agent serve-artifacts
+# or override bind only; public URL still comes from LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL
+uv run lab-agent serve-artifacts --host 127.0.0.1 --port 8600
+```
+
+Health check:
+
+```text
+GET /healthz -> {"status":"ok"}
+```
+
+The health response is intentionally non-sensitive. It does not expose DB paths, artifact ids, tokens, or config.
+
+Stop with Ctrl-C. The watcher finishes the current operation before exiting if the process receives normal interruption; on exit (clean or Ctrl-C) it releases the canvas lease it holds, so a subsequent run (this process restarted, or a different host/runtime) is not blocked waiting for a stale lease to expire.
+
+Only one runtime instance can hold the write lease for a given `--canvas` at a time. If a second `lab-agent once`/`watch` is started against the same canvas while another instance's lease is still live, it safely skips all work for that cycle (zero canvas writes, a `canvas_lease_denied` audit event) rather than racing or crashing — see "Second instance appears to do nothing" under Troubleshooting below.
+
+## Durable harness operator commands
+
+```bash
+# Verify SQLite integrity and the audit hash chain; exit 0 if clean, 1 otherwise.
+uv run lab-agent integrity
+
+# List quarantined workflow attempts (a trigger that failed LAB_AGENT_MAX_ATTEMPTS times).
+uv run lab-agent list-quarantined [--canvas <canvas-id>]
+
+# Reset one quarantined attempt back to pending so the next once/watch cycle retries it.
+uv run lab-agent reset --canvas <canvas-id> --trigger <trigger_id>
+
+# Write a consistent hot backup of the ledger (safe to run against a live, running watcher).
+uv run lab-agent backup --to <path>
+```
+
+`<trigger_id>` comes from `list-quarantined`'s output (e.g. `idea_setup:<widget_id>`, `setup_run:<widget_id>`, `loop:<connector_id>`). `reset` only succeeds on an attempt that is actually quarantined; it prints `ERROR: ...` and exits `1` otherwise — there is no bulk/blind reset.
+
+### Restore drill
+
+There is intentionally **no** command that overwrites a live ledger from a backup — an operator restoring from backup does so explicitly, outside `lab-agent`, so a live ledger is never silently clobbered. To verify a backup file is restorable:
+
+```bash
+cd ~/dev/lap-in-the-loop/apps/lab-agent
+cp /path/to/backup.db /tmp/restore-drill.db
+LAB_AGENT_STATE_DB_PATH=/tmp/restore-drill.db uv run lab-agent integrity
+```
+
+A clean `OK: SQLite integrity and audit chain verified.` confirms the backup is a valid, restorable ledger. To actually restore, stop `lab-agent` and `serve-artifacts`, replace the live `LAB_AGENT_STATE_DB_PATH` file with the backup copy (including its `-wal`/`-shm` siblings if present), and restart — attempts/leases/audit history and generated artifact records/tokens/widget mappings resume exactly as of the backup, so any trigger completed after the backup was taken is safely reprocessed (not silently lost) rather than duplicated, because completion state for anything *before* the backup is preserved.
 
 ## Seed a canvas
 
@@ -151,8 +224,26 @@ Minimum setup:
 4. Connect `RAGCluster_ → idea note`.
 5. Place a widget titled with `Robot_` for mock execution.
 6. Start `lab-agent watch`.
-7. After setup is created, connect `[EXP:Setup v001] → Robot_`.
-8. After result is created, connect `[EXP:Result v001] → [EXP:Setup v001]` to request loop analysis.
+7. After the setup Browser artifact is created, connect `[EXP:Setup v001] → Robot_`.
+8. After the result Browser artifact is created, connect `[EXP:Result v001] → [EXP:Setup v001]` to request loop analysis.
+
+## Legacy generated Note migration
+
+Legacy canvases can contain generated Setup/Result/Closed Notes. They remain readable by the scanner and by `lab-agent` fallback reads. Migration is mirror-first and non-destructive.
+
+Read-only inventory (default; no DB, Browser, connector, or Note writes):
+
+```bash
+python scripts/migrate-generated-notes-to-browser-artifacts.py --canvas <canvas-id>
+```
+
+Mirror apply (requires `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL`; creates Browser mirrors and equivalent connectors; never deletes, archives, or edits the original Notes/connectors):
+
+```bash
+python scripts/migrate-generated-notes-to-browser-artifacts.py --canvas <canvas-id> --apply
+```
+
+The script prints ids/counts/status only. It never prints token-bearing capability URLs. Re-running is intended to converge through durable idempotency and in-place Browser repair. `--apply` is the operator's explicit confirmation for mirror writes; Phase 3 has no destructive archive/delete mode and no extra deletion confirmation prompt.
 
 ## Test and quality commands
 
@@ -213,7 +304,7 @@ Controls:
 
 - Strengthen prompt or decision criteria in `lab_agent/prompts.py`.
 - Lower `LAB_AGENT_LOOP_MAX_ROUNDS` for demos.
-- Ensure result notes contain enough signal to decide plateau/answer/uncertainty.
+- Ensure result artifacts contain enough signal to decide plateau/answer/uncertainty; for legacy canvases this means result Note text.
 
 ### No setup appears after connecting RagCluster to idea
 
@@ -228,10 +319,42 @@ Check:
 
 Check:
 
-- Setup note title starts with `[EXP:Setup`.
+- Setup Browser or legacy Note title starts with `[EXP:Setup`.
 - Robot widget title starts with `Robot_`.
 - Connector direction is `setup → robot`.
 - There is no existing result connected for that setup.
+
+### Command exits with `STARTUP FAILED: ...`
+
+The durable ledger's open/migrate/integrity/audit-chain check failed before any canvas work started (deliberate fail-closed behavior). Diagnose with:
+
+```bash
+uv run lab-agent integrity
+```
+
+If integrity is clean but the file was missing or newly created, this is expected on first run (a fresh ledger is created and migrated automatically) — re-run the failing command. If `integrity` itself reports a problem, restore from the most recent backup (see "Restore drill" above) rather than deleting the ledger — deleting it discards attempt/lease/audit history, not just the "corrupt" part.
+
+### A trigger never seems to be retried (quarantined)
+
+After `LAB_AGENT_MAX_ATTEMPTS` consecutive failures, a trigger stops being retried automatically and is quarantined instead — this is intentional (prevents an unfixable trigger from looping forever). Check and clear it:
+
+```bash
+uv run lab-agent list-quarantined --canvas <canvas-id>
+# inspect last_error in the output, fix the underlying cause if any, then:
+uv run lab-agent reset --canvas <canvas-id> --trigger <trigger_id>
+```
+
+The next `once`/`watch` cycle picks the reset attempt back up.
+
+### Second instance appears to do nothing
+
+Only one runtime instance may hold the write lease for a given canvas (`LAB_AGENT_CANVAS_LEASE_TTL_SECONDS`, default 180s, renewed every cycle). A second instance started against the same `--canvas` while the first is live logs a lease-denied cycle and performs zero writes — this is expected multi-instance safety, not a bug. Confirm via:
+
+```bash
+uv run lab-agent integrity   # ledger is healthy
+```
+
+and check the audit log (or wait for the first instance's lease to expire/release) rather than starting a third instance.
 
 ## Operational safety
 
@@ -240,3 +363,9 @@ Check:
 - Use `once` first on a demo canvas before `watch` on an active canvas.
 - Keep robot execution mock until real lab integration has explicit approval and safety gates.
 - For wet-lab/Flywheel production, add human approval and in-silico validation gates before execution.
+- Never commit the durable ledger (`LAB_AGENT_STATE_DB_PATH` and its `-wal`/`-shm` siblings, or any `*.db`/backup file) — it is git-ignored by default; if you must inspect it, treat it as operational data, not a document to paste elsewhere. Its audit log stores only ids/hashes/reasons/counts by design (never note text, model payloads, or credentials), but attempt/lease metadata can still reveal canvas ids and timing.
+- Take a `lab-agent backup` before any manual maintenance on a canvas's triggers/artifacts, and periodically in production, since there is no automatic backup schedule built in.
+- Treat token-bearing artifact URLs as secrets: do not copy them into tickets, logs, audit payloads, model prompts, or reports.
+- Keep `LAB_AGENT_ARTIFACT_BIND_HOST` private unless an intentional ingress is in front of it. Production ingress must provide HTTPS/private network access; live external Canvus reachability and TLS verification are deployment gates, not guaranteed by local tests.
+- Serve artifact CSS/JS from the same origin as the artifact HTML; do not add third-party assets without a CSP/security review.
+- Use the migration script in dry-run mode first, then mirror apply only on a backed-up state DB. Phase 3 has no destructive migration path for legacy Notes.

@@ -18,12 +18,13 @@ The result-to-setup back-edge means: “analyse this result against this setup a
 |---|---|---|---|
 | `RAGCluster_` | Image | User/system | Knowledge scope, usually fed by docs/PDFs/notes |
 | `{idea: ...}` | Note | User | Experiment idea/request grounded in a RagCluster |
-| `[EXP:Setup vNNN]` | Note | Agent | Structured experiment design for round N |
+| `[EXP:Setup vNNN]` | Browser (generated) or legacy Note | Agent | Structured experiment design for round N |
 | `Robot_` | Any widget/title marker | User/system | Mock execution target |
-| `[EXP:Result vNNN]` | Note | Agent | Clearly mock result for round N |
-| `[EXP:Closed]` | Note | Agent | Stop decision, reason, confidence, next action |
+| `[EXP:Result vNNN]` | Browser (generated) or legacy Note | Agent | Clearly mock result for round N |
+| `[EXP:Closed]` | Browser (generated) or legacy Note | Agent | Stop decision, reason, confidence, next action |
+| `[EXP:Needs Input]` | Browser (generated prompt/status) | Agent | Infrastructure marker for requesting human input; the human response is a Note |
 
-Marker matching is an exact title-**prefix** check (`str.startswith`), confirmed in `canvus_mcp/experiments.py` (`_is_robot`, `_is_setup`, `_is_result`) — e.g. a widget titled `Robot_Arm_1` matches `Robot_`, but a typo like `Robott_` or a differently-cased marker does not.
+Marker matching is an exact title-**prefix** check (`str.startswith`), confirmed in `canvus_mcp/experiment_widgets.py` (`_is_robot`, `_is_setup`, `_is_result`) — e.g. a widget titled `Robot_Arm_1` matches `Robot_`, but a typo like `Robott_` or a differently-cased marker does not. Setup/Result markers classify both generated Browser widgets and legacy Notes; `{idea: ...}` is Note-only.
 
 ## Connectors and triggers
 
@@ -44,8 +45,8 @@ Agent action:
 1. Read idea note.
 2. Check RagCluster feeders and outputs.
 3. Let the model use read-only tools for grounding.
-4. Create `[EXP:Setup v001]`.
-5. Connect idea → setup.
+4. Create `[EXP:Setup v001]` as a generated Browser artifact backed by `ArtifactStore`.
+5. Connect idea → setup Browser widget.
 
 ### 2. Setup to robot
 
@@ -60,10 +61,10 @@ Trigger surfaced as `setups_needing_run` when:
 
 Agent action:
 
-1. Read setup note.
+1. Read setup text from the canonical artifact payload, falling back to legacy Note text during migration.
 2. Ask model for a mock result consistent with the setup.
-3. Create `[EXP:Result vNNN]` with first lines `Setup: <setup_id>` and `Round: <round_number>` (`lab_agent/orchestrator.py:run_on_robot`).
-4. Connect robot → result.
+3. Create `[EXP:Result vNNN]` as a generated Browser artifact whose canonical payload includes `Setup: <setup_id>` and `Round: <round_number>` text for later model reads.
+4. Connect robot → result Browser widget.
 
 ### 3. Result to setup loop
 
@@ -73,9 +74,12 @@ Agent action:
 
 Trigger surfaced as `loops` by `scan_experiment_workflow` / `detect_experiment_loops` when:
 
-- result note connects back to a setup note;
+- result widget connects back to a setup widget;
+- **the setup's round is not greater than the result's round** (`round(setup) <= round(result)`, per the `vNNN` suffix in each note's title) — this excludes the orchestrator's own round-advance edge;
 - detector resolves the loop connector id;
 - detector can infer setup/result round and related idea/RagCluster/robot where possible.
+
+The round check matters because a `result_N -> setup_{N+1}` connector (drawn by the orchestrator itself when it advances the loop to the next round, step 4 below) is graph-isomorphic to a real user-drawn `result_N -> setup_N` loop trigger. Both generated Browser widgets and legacy Notes use the same `[EXP:Result]` / `[EXP:Setup]` title markers. Only the same-round or backward case (`round(setup) <= round(result)`) is a genuine "iterate this experiment" signal; a strictly forward edge (`round(setup) > round(result)`) is the loop's own advance and must not be re-detected as a new actionable loop on the next scan. See `canvus_mcp/experiments.py:detect_experiment_loops`.
 
 Agent action:
 
@@ -85,9 +89,11 @@ Agent action:
 4. If CONTINUE: create next setup, connect result → next setup, run mock robot, create next result.
 5. Repeat until model stops or the safety backstop is reached.
 
-## Required note body markers
+## Generated artifact payload markers
 
-### Setup note
+Generated Setup/Result/Closed and generated Needs Input prompt/status artifacts are Browser widgets. Their model-readable text lives in the canonical `ArtifactStore` payload; legacy Notes still expose Setup/Result/Closed text directly during migration. Human-authored responses to approval/review/input requests remain Notes.
+
+### Setup artifact
 
 First lines:
 
@@ -108,7 +114,7 @@ Then rendered experiment setup sections:
 - risks/uncertainties
 - success criteria
 
-### Result note
+### Result artifact
 
 First lines:
 
@@ -126,7 +132,7 @@ Then rendered result sections:
 - interpretation
 - caveats
 
-### Closed note
+### Closed artifact
 
 Contains rendered decision:
 
@@ -135,6 +141,12 @@ Contains rendered decision:
 - confidence
 - what was learned
 - recommended human next step
+
+Closed artifacts are classified in `scan_experiment_workflow`'s `closeds` bucket by title prefix (`[EXP:Closed]`). That bucket is used for connector-independent crash recovery of terminal generated widgets, including legacy Notes.
+
+### Needs Input artifact
+
+`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, optional context, round, and `NEEDS_REVIEW` artifact state. This is infrastructure for a request/status marker only. The implementation does not yet provide future approval workflow transitions, approve/reject buttons, or wet-lab gate enforcement; the human-authored response remains a separate Note.
 
 ## Grounding rules
 
@@ -150,10 +162,11 @@ Contains rendered decision:
 
 - `scan_experiment_workflow` returns only pending forward triggers.
 - Existing setup/result connectors prevent reprocessing.
-- `lab-agent` keeps a session-local `processed_loops` set keyed by `loop_connector_id`.
+- `detect_experiment_loops` filters out forward round-advance edges (`round(setup) > round(result)`, see "Result to setup loop" above) so the orchestrator's own advance connector is never mistaken for a new actionable loop.
+- `lab-agent` persists every derived trigger (`idea_setup:<id>`, `setup_run:<id>`, `loop:<connector_id>`) in the SQLite `workflow_attempts` ledger; completed attempts block reprocessing across restarts.
+- Node/connector creation uses side-effect intents plus live canvas probes before mutation, so a crash after a write lands can reconcile the existing effect instead of duplicating it.
+- Generated Browser widgets carry short idempotency tags in their titles; legacy Notes with the same markers remain discoverable. `scan_experiment_workflow` exposes closed artifacts in the `closeds` bucket so terminal `[EXP:Closed]` recovery does not depend on a connector already existing. Needs-input Browser artifacts use the same durable Browser infrastructure and `needs_inputs` recovery bucket.
 - Node creation happens after analysis, not speculatively.
-
-Known gap: processed-loop memory is not persisted across process restarts. A future version should store processed connector ids or round provenance durably.
 
 ## Poll cadence
 
@@ -177,7 +190,8 @@ Use `lab-agent once` for smoke tests or scripted operation.
 |---|---|
 | MCP server unavailable | CLI fails/connect cycle logs warning |
 | Canvus transient API error | watcher logs warning and continues next cycle |
-| Model cannot emit schema | current run fails; next cycle can retry pending canvas state |
+| Model cannot emit schema | current run writes nothing; the attempt is durably failed/backed off and can retry while canvas state remains pending |
+| MCP write tool returns error payload or no id | write helper raises `MCPToolError`; the side-effect intent is marked failed and the workflow attempt remains retryable/quarantine-eligible |
 | Ambiguous domain input | setup/result includes caveat rather than invented fact |
 | Loop keeps continuing | `LAB_AGENT_LOOP_MAX_ROUNDS` closes via backstop reason |
 
@@ -187,9 +201,9 @@ Use `lab-agent once` for smoke tests or scripted operation.
 2. User connects documents/PDFs/notes into the RagCluster.
 3. User adds note: `{idea: Design next lung fibrosis micro-CT experiment}`.
 4. User connects `RAGCluster_ → idea note`.
-5. `lab-agent watch` creates `[EXP:Setup v001]`.
+5. `lab-agent watch` creates `[EXP:Setup v001]` as a Browser artifact.
 6. User connects setup to a `Robot_` widget.
-7. `lab-agent watch` creates `[EXP:Result v001]`.
+7. `lab-agent watch` creates `[EXP:Result v001]` as a Browser artifact.
 8. User connects result back to setup.
 9. Agent analyses and either creates `[EXP:Closed]` or next setup/result round.
 
@@ -217,9 +231,11 @@ Two different layers call `canvus-mcp` tools, and they are not the same tool set
 
 **Orchestrator-only write tools** (`lab_agent/nodes.py`):
 
-- `create_note`
+- `create_note` — still used for user/legacy Note paths; generated Setup/Result/Closed/Needs Input prompt artifacts are no longer created as Notes.
+- `create_browser` — creates generated artifact Browser widgets.
+- `update_browser` — repairs marker/title/location and rotates token-bearing capability URLs in place without recreating the widget or breaking connectors.
 - `create_connector`
 
-`canvus-mcp` also exposes `create_browser` and `create_image` write tools, but `lab-agent`'s orchestrator does not call either today — `nodes.py` only ever calls `create_note` and `create_connector`. They remain available on the MCP server for direct/manual use (e.g. via the Claude Code skill) and are not part of the automated write path described in this document.
+`canvus-mcp` also exposes `create_image`; it remains available for direct/manual use and is not part of the automated generated-artifact write path.
 
 The model-facing tool loop receives only the read-tool allowlist above; it never receives write tools. The orchestrator is the only caller of write tools.

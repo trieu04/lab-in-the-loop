@@ -71,6 +71,59 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Durable harness (Phase 2: SQLite WAL ledger, single-host scope) ──
+    state_db_path: str = Field(
+        default=".state/lab_agent.db",
+        description="Path to the durable SQLite ledger (WAL journal). Parent created on startup.",
+    )
+    canvas_lease_ttl_seconds: float = Field(
+        default=180.0,
+        gt=0,
+        description="Single-writer canvas lease TTL, renewed once per process_once/watch cycle.",
+    )
+    attempt_lease_ttl_seconds: float = Field(
+        default=600.0,
+        gt=0,
+        description=(
+            "Per-trigger workflow_attempt lease TTL. Covers one trigger's full "
+            "processing (a loop trigger may run several rounds before stopping)."
+        ),
+    )
+    retry_base_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        description="Base delay for full-jitter exponential backoff on a failed attempt.",
+    )
+    retry_max_seconds: float = Field(
+        default=300.0,
+        gt=0,
+        description="Ceiling for full-jitter exponential backoff on a failed attempt.",
+    )
+    max_attempts: int = Field(
+        default=5,
+        ge=1,
+        description="Attempts before a trigger is quarantined instead of retried.",
+    )
+
+    # ── Artifact service (Phase 3: capability-protected ASGI server) ─
+    artifact_bind_host: str = Field(
+        default="127.0.0.1",
+        description="Bind host for the artifact HTTP service. Private by default -- "
+        "production ingress/TLS is a separate, explicit deployment concern.",
+    )
+    artifact_bind_port: int = Field(
+        default=8600,
+        ge=1,
+        le=65535,
+        description="Bind port for the artifact HTTP service.",
+    )
+    artifact_public_base_url: str = Field(
+        default="",
+        description="Public base URL Canvus clients use to reach the artifact service "
+        "(e.g. 'https://lab.internal'). Empty until a deployment target is chosen; "
+        "never used to construct auth -- capability tokens are opaque and hashed in the DB.",
+    )
+
 
 _settings: Settings | None = None
 
