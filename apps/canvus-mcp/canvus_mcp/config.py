@@ -6,8 +6,14 @@ Connection settings are shared with the Canvus SDK (``CANVUS_API_URL`` /
 
 from __future__ import annotations
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+import re
+from typing import Annotated, Any
+
+from pydantic import Field, SecretStr, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_CLASSIFICATION = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
 class Settings(BaseSettings):
@@ -46,6 +52,47 @@ class Settings(BaseSettings):
         default="RAGCluster_",
         description="Title prefix that identifies a RagCluster Image widget.",
     )
+    mcp_ingestion_db_path: str = Field(default="./.state/ingestion.db")
+    mcp_ingestion_cache_dir: str = Field(default="./.state/ingestion-cache")
+    mcp_ingestion_worker_concurrency: int = Field(default=2, ge=1, le=4)
+    mcp_ingestion_lease_seconds: float = Field(default=60.0, ge=0.1)
+    mcp_ingestion_max_attempts: int = Field(default=3, ge=1, le=10)
+    mcp_ingestion_max_source_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    mcp_ingestion_max_output_chars: int = Field(default=16_000, ge=1)
+    mcp_ingestion_max_records: int = Field(default=500, ge=1)
+    mcp_ingestion_max_pdf_pages: int = Field(default=200, ge=1)
+    mcp_ingestion_pdf_password_file: str | None = Field(default=None)
+    mcp_ingestion_chunk_char_cap: int = Field(default=8000, ge=1, le=8000)
+
+    # Static local authorization. Tokens are write-only in config repr/logs.
+    mcp_reader_token: SecretStr | None = Field(default=None)
+    mcp_trusted_service_token: SecretStr | None = Field(default=None)
+    mcp_operator_token: SecretStr | None = Field(default=None)
+    mcp_reader_canvases: list[str] = Field(default_factory=list)
+    mcp_trusted_service_canvases: list[str] = Field(default_factory=list)
+    mcp_operator_canvases: list[str] = Field(default_factory=list)
+    mcp_stdio_role: str = Field(default="reader", pattern="^(reader|trusted_service|operator)$")
+    mcp_stdio_canvases: list[str] = Field(default_factory=list)
+    canvas_classifications: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
+
+    @field_validator("canvas_classifications", mode="before")
+    @classmethod
+    def parse_canvas_classifications(cls, value: Any) -> dict[str, str]:
+        """Treat malformed ownership classification configuration as unknown."""
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                return {}
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(canvas): classification
+            for canvas, classification in value.items()
+            if isinstance(canvas, str)
+            and isinstance(classification, str)
+            and _CLASSIFICATION.fullmatch(classification) is not None
+        }
 
     # ── Experiment-loop workflow markers ────────────────────────────
     mcp_robot_marker: str = Field(

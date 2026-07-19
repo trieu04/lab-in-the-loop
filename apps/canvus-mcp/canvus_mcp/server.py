@@ -17,10 +17,19 @@ from __future__ import annotations
 
 import logging
 import sys
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
 
 import structlog
 
-from canvus_mcp.client import get_settings
+from canvus_mcp.access_control import AccessPolicy, Role
+from canvus_mcp.client import close_client, get_settings
+from canvus_mcp.config import Settings
+from canvus_mcp.extractors import ExtractorLimits, LocalExtractor
+from canvus_mcp.ingestion_cache import AssetCache
+from canvus_mcp.ingestion_pipeline import IngestionPipeline
+from canvus_mcp.ingestion_store import IngestionStore
 from canvus_mcp.tools import register_all
 
 log = structlog.get_logger(__name__)
@@ -64,18 +73,101 @@ RagCluster widgets, then `check_ragcluster_connections` / \
 """
 
 
+@dataclass
+class IngestionRuntime:
+    """One server-owned durable store, cache, pipeline, and access policy."""
+
+    store: IngestionStore
+    pipeline: IngestionPipeline
+    policy: AccessPolicy
+    _closed: bool = False
+
+    def close(self) -> None:
+        """Close descriptor-owning cache and database once, in dependency order."""
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self.pipeline.cache.close()
+        finally:
+            self.store.close()
+
+
+def build_ingestion_runtime(cfg: Settings) -> IngestionRuntime:
+    """Create server dependencies once; unwind every partial construction."""
+    store = IngestionStore(Path(cfg.mcp_ingestion_db_path))
+    cache: AssetCache | None = None
+    try:
+        limits = ExtractorLimits(
+            max_source_bytes=cfg.mcp_ingestion_max_source_bytes,
+            max_output_chars=cfg.mcp_ingestion_max_output_chars,
+            max_chunk_chars=cfg.mcp_ingestion_chunk_char_cap,
+            max_records=cfg.mcp_ingestion_max_records,
+            max_pdf_pages=cfg.mcp_ingestion_max_pdf_pages,
+            pdf_password_file=Path(cfg.mcp_ingestion_pdf_password_file) if cfg.mcp_ingestion_pdf_password_file else None,
+        )
+        cache = AssetCache(Path(cfg.mcp_ingestion_cache_dir))
+        pipeline = IngestionPipeline(store=store, cache=cache, extractor=LocalExtractor(limits))
+        policy = AccessPolicy(
+            store=store, reader_token=cfg.mcp_reader_token,
+            trusted_service_token=cfg.mcp_trusted_service_token, operator_token=cfg.mcp_operator_token,
+            reader_canvases=tuple(cfg.mcp_reader_canvases),
+            trusted_service_canvases=tuple(cfg.mcp_trusted_service_canvases),
+            operator_canvases=tuple(cfg.mcp_operator_canvases), stdio_role=Role(cfg.mcp_stdio_role),
+            stdio_canvases=tuple(cfg.mcp_stdio_canvases),
+        )
+        return IngestionRuntime(store=store, pipeline=pipeline, policy=policy)
+    except BaseException:
+        if cache is not None:
+            try:
+                cache.close()
+            finally:
+                store.close()
+        else:
+            store.close()
+        raise
+
+
+def _lifespan(runtime: IngestionRuntime):
+    """Close server-owned SQLite and HTTP resources for every transport."""
+    @asynccontextmanager
+    async def manage(_mcp):
+        try:
+            yield runtime
+        finally:
+            try:
+                runtime.close()
+            finally:
+                await close_client()
+    return manage
+
+
+def _classification(cfg: Settings, canvas_id: str) -> str:
+    """Only operator configuration supplies a source data classification."""
+    return cfg.canvas_classifications.get(canvas_id, "unknown")
+
+
 def build_server():  # -> FastMCP
-    """Construct the FastMCP instance with all tools registered."""
+    """Construct the FastMCP instance with a single shared ingestion lifecycle."""
     from mcp.server.fastmcp import FastMCP
 
     cfg = get_settings()
-    mcp = FastMCP(
-        "canvus-mcp",
-        instructions=INSTRUCTIONS,
-        host=cfg.mcp_host,
-        port=cfg.mcp_port,
-    )
-    register_all(mcp)
+    runtime = build_ingestion_runtime(cfg)
+    try:
+        mcp = FastMCP(
+            "canvus-mcp", instructions=INSTRUCTIONS, host=cfg.mcp_host, port=cfg.mcp_port,
+            lifespan=_lifespan(runtime),
+        )
+        register_all(
+            mcp, policy=runtime.policy, pipeline=runtime.pipeline,
+            max_chunk_chars=cfg.mcp_ingestion_chunk_char_cap,
+            max_source_bytes=cfg.mcp_ingestion_max_source_bytes,
+            classification_for_canvas=lambda canvas_id: _classification(cfg, canvas_id),
+        )
+    except BaseException:
+        runtime.close()
+        raise
+    mcp.ingestion_runtime = runtime
     return mcp
 
 

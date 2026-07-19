@@ -30,7 +30,6 @@ import time
 
 import httpx
 import pytest
-
 from canvus_sdk import Client
 
 pytestmark = pytest.mark.live

@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from canvus_sdk import Client
 
 pytestmark = pytest.mark.integration

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from canvus_sdk.errors import ValidationError
 from canvus_sdk.extras.color import (
     COLOR_BLACK,

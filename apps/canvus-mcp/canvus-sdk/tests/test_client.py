@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import pytest
 import respx
-from httpx import Response
-
 from canvus_sdk import (
     APIError,
     AuthError,
@@ -17,6 +15,7 @@ from canvus_sdk import (
     User,
 )
 from canvus_sdk._http import classify_error, is_retryable, normalise_base_url
+from httpx import Response
 
 # ---- URL normalisation -----------------------------------------------------
 

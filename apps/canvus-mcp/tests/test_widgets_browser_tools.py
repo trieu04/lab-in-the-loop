@@ -52,6 +52,11 @@ class _FakeClient:
     widgets: _FakeWidgetsResource = field(default_factory=_FakeWidgetsResource)
 
 
+class _TestPolicy:
+    def guarded(self, _action: str):
+        return lambda function: function
+
+
 class _FakeMCP:
     """Stand-in for :class:`mcp.server.fastmcp.FastMCP`.
 
@@ -81,7 +86,7 @@ def fake_client(monkeypatch: pytest.MonkeyPatch) -> _FakeClient:
 @pytest.fixture
 def tools(fake_client: _FakeClient) -> dict[str, Any]:
     mcp = _FakeMCP()
-    widgets_module.register(mcp)
+    widgets_module.register(mcp, policy=_TestPolicy())
     return mcp.tools
 
 

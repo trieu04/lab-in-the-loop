@@ -6,9 +6,8 @@ import json
 
 import pytest
 import respx
-from httpx import Response
-
 from canvus_sdk import Client, UnsupportedOperationError, ValidationError
+from httpx import Response
 
 # ---- foundations ----------------------------------------------------------
 

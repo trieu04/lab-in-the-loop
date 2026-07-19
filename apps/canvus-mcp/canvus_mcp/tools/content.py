@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from canvus_mcp.client import get_client, get_settings
-from canvus_mcp.downloads import save_bytes
+from canvus_mcp.content_download import CanvusContentDownloader
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -49,18 +49,9 @@ def register(mcp: FastMCP) -> None:
         Returns the saved file ``path``, ``mime_type``, ``size_bytes``, and
         ``sha256``. The bytes are not returned inline.
         """
-        client = get_client()
-        pdf = await client.widgets.pdfs.get(canvas_id, pdf_id)
-        data = await client.widgets.pdfs.download(canvas_id, pdf_id)
-        meta = save_bytes(
-            data,
-            get_settings().mcp_output_dir,
-            stem=f"pdf_{pdf_id}",
-            filename=getattr(pdf, "original_filename", "") or "",
-            declared_mime=getattr(pdf, "mime_type", "") or "",
-        )
-        meta.update({"canvas_id": canvas_id, "widget_id": pdf_id, "widget_type": "Pdf"})
-        return meta
+        return await CanvusContentDownloader(
+            get_client(), output_dir=get_settings().mcp_output_dir
+        ).acquire(canvas_id, "pdf", pdf_id)
 
     @mcp.tool()
     async def download_image(canvas_id: str, image_id: str) -> dict[str, Any]:
@@ -69,18 +60,9 @@ def register(mcp: FastMCP) -> None:
         Returns the saved file ``path``, ``mime_type``, ``size_bytes``, and
         ``sha256``. The bytes are not returned inline.
         """
-        client = get_client()
-        image = await client.widgets.images.get(canvas_id, image_id)
-        data = await client.widgets.images.download(canvas_id, image_id)
-        meta = save_bytes(
-            data,
-            get_settings().mcp_output_dir,
-            stem=f"image_{image_id}",
-            filename=getattr(image, "original_filename", "") or "",
-            declared_mime=getattr(image, "mime_type", "") or "",
-        )
-        meta.update({"canvas_id": canvas_id, "widget_id": image_id, "widget_type": "Image"})
-        return meta
+        return await CanvusContentDownloader(
+            get_client(), output_dir=get_settings().mcp_output_dir
+        ).acquire(canvas_id, "image", image_id)
 
     @mcp.tool()
     async def download_asset(asset_hash: str, canvas_id: str) -> dict[str, Any]:
@@ -90,15 +72,9 @@ def register(mcp: FastMCP) -> None:
         widget. ``canvas_id`` names a canvas that contains the asset (required
         by the Canvus API as a ``canvas-id`` header).
         """
-        client = get_client()
-        data = await client.assets.download_by_hash(asset_hash, canvas_id)
-        meta = save_bytes(
-            data,
-            get_settings().mcp_output_dir,
-            stem=f"asset_{asset_hash[:16]}",
-        )
-        meta.update({"canvas_id": canvas_id, "asset_hash": asset_hash})
-        return meta
+        return await CanvusContentDownloader(
+            get_client(), output_dir=get_settings().mcp_output_dir
+        ).acquire(canvas_id, "asset", asset_hash)
 
 
 __all__ = ["register"]
