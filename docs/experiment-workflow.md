@@ -159,6 +159,12 @@ Closed artifacts are classified in `scan_experiment_workflow`'s `closeds` bucket
 - Internet/general knowledge is not a substitute for internal context.
 - Mock robot results must be labelled as mock and remain consistent with the setup.
 
+## Governance at model-call boundaries
+
+Before the agent sends a setup, mock-result, or loop-decision request, the provider-neutral gateway selects a configured provider by task stage, but only after all source/evidence classifications are authorized for that provider's approved HTTPS endpoint. `unknown`/restricted or unapproved content, missing endpoint/classification authorization, unknown model pricing, or a reservation that would exceed a configured envelope closes the trigger/loop without provider dispatch. A later routing preference is available only before dispatch; an uncertain submitted request is never sent to a second provider.
+
+The gateway persists a request-digest model-call intent plus an idempotent SQLite budget hold before dispatch. Run accounting resets for each trigger; canvas totals and active reservations are rebuilt after restart. Exact provider counts are normalized when supplied (Claude input includes cache-create/read tokens). Otherwise the agent records a conservative estimate over messages, tools, response schema, schema name, and the configured output cap. Estimates govern limits but are not invoices. Known typed pre-submission transient failures may retry when due; deterministic, ambiguous, and untyped outcomes never receive a blind redispatch. Durable failure/audit data contains only safe categories, digests, counts, and approved metadata — not raw prompts, responses, secrets, or provider error text.
+
 ## Idempotency
 
 `canvus-mcp` and `lab-agent` cooperate to avoid repeated work:
@@ -198,7 +204,11 @@ Use `lab-agent once` for smoke tests or scripted operation.
 | Evidence not asserted sufficient | write one deduplicated `[EXP:Needs Input]` Browser artifact; executable setup remains pending |
 | Ambiguous domain term/acronym | deterministic dictionary-backed scan over idea + setup + evidence excerpts writes Needs Input; no guessed expansion is accepted |
 | Invalid/fabricated citation | setup writes nothing; attempt remains retryable/backoff/quarantine-eligible |
-| Loop keeps continuing | `LAB_AGENT_LOOP_MAX_ROUNDS` closes via backstop reason |
+| Locality authorization denied | no provider receives the call; render/audit a `locality_denial` closure and make no follow-on provider/canvas write |
+| Missing/unknown model pricing or a pre-dispatch budget hold denied | no provider receives the call; render/audit a `reservation_denial` closure and make no follow-on provider/canvas write |
+| Known pre-submission provider transient | release the durable hold and retry only at `next_retry_at`, up to `LAB_AGENT_MODEL_CALL_MAX_ATTEMPTS` |
+| Submitted, executed, ambiguous, or untyped provider outcome | capability-aware reconciliation only; unsupported reconciliation blocks safely with no blind redispatch |
+| Loop keeps continuing | close with the first distinct terminal reason: maximum rounds, token budget, cost budget, wall time, or no-progress; model stop remains its own reason |
 
 ## Example happy path
 

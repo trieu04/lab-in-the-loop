@@ -1,0 +1,121 @@
+[
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "406 passed, 1 warning in 3.90s",
+    "timestamp": "2026-07-19T06:10:34+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "All checks passed!",
+    "timestamp": "2026-07-19T06:10:46+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "Success: no issues found in 75 source files",
+    "timestamp": "2026-07-19T06:11:02+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "37 passed in 0.29s",
+    "timestamp": "2026-07-19T06:11:15+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run ruff check canvus_mcp tests",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "All checks passed!",
+    "timestamp": "2026-07-19T06:11:26+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run mypy canvus_mcp",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "Success: no issues found in 14 source files",
+    "timestamp": "2026-07-19T06:11:51+07:00"
+  },
+  {
+    "command": "uv run python scripts/check-workflow-contract-parity.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "self-test: OK; parity check: OK (canvus-mcp markers, lab-agent markers, and docs are aligned)",
+    "timestamp": "2026-07-19T06:12:05+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_adapters.py tests/test_policy.py tests/test_model_gateway.py tests/test_model_gateway_intents.py tests/test_durable_budget_accounting.py tests/test_submitted_intent_migration.py tests/test_submitted_intents.py tests/test_state_store_attempts.py tests/test_state_store_audit.py tests/test_state_store_leases_intents_edges.py tests/test_locality_metadata.py tests/test_locality_closures.py tests/test_budget_overshoot.py tests/test_loop_stops.py tests/test_phase5_gateway_regressions.py tests/test_phase5_loop_regressions.py tests/test_phase5_safety_regressions.py tests/test_provider_endpoint_defaults.py tests/test_durable_browser_error_payloads.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "131 passed in 2.07s",
+    "timestamp": "2026-07-19T06:12:38+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_adapters.py tests/test_policy.py tests/test_model_gateway.py tests/test_model_gateway_intents.py tests/test_durable_budget_accounting.py tests/test_submitted_intent_migration.py tests/test_submitted_intents.py tests/test_state_store_attempts.py tests/test_state_store_audit.py tests/test_state_store_leases_intents_edges.py tests/test_locality_metadata.py tests/test_locality_closures.py tests/test_budget_overshoot.py tests/test_loop_stops.py tests/test_phase5_gateway_regressions.py tests/test_phase5_loop_regressions.py tests/test_phase5_safety_regressions.py tests/test_provider_endpoint_defaults.py tests/test_durable_browser_error_payloads.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "131 passed in 2.09s",
+    "timestamp": "2026-07-19T06:12:56+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_adapters.py tests/test_policy.py tests/test_model_gateway.py tests/test_model_gateway_intents.py tests/test_durable_budget_accounting.py tests/test_submitted_intent_migration.py tests/test_submitted_intents.py tests/test_state_store_attempts.py tests/test_state_store_audit.py tests/test_state_store_leases_intents_edges.py tests/test_locality_metadata.py tests/test_locality_closures.py tests/test_budget_overshoot.py tests/test_loop_stops.py tests/test_phase5_gateway_regressions.py tests/test_phase5_loop_regressions.py tests/test_phase5_safety_regressions.py tests/test_provider_endpoint_defaults.py tests/test_durable_browser_error_payloads.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "131 passed in 2.08s",
+    "timestamp": "2026-07-19T06:13:17+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_adapters.py tests/test_policy.py tests/test_model_gateway.py tests/test_model_gateway_intents.py tests/test_durable_budget_accounting.py tests/test_submitted_intent_migration.py tests/test_submitted_intents.py tests/test_state_store_attempts.py tests/test_state_store_audit.py tests/test_state_store_leases_intents_edges.py tests/test_locality_metadata.py tests/test_locality_closures.py tests/test_budget_overshoot.py tests/test_loop_stops.py tests/test_phase5_gateway_regressions.py tests/test_phase5_loop_regressions.py tests/test_phase5_safety_regressions.py tests/test_provider_endpoint_defaults.py tests/test_durable_browser_error_payloads.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "131 passed in 2.06s",
+    "timestamp": "2026-07-19T06:13:39+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_adapters.py tests/test_provider_endpoint_defaults.py tests/test_openai_sdk_transport.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "15 passed in 1.43s",
+    "timestamp": "2026-07-19T06:14:01+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest --collect-only -q tests/test_adapters.py tests/test_provider_endpoint_defaults.py tests/test_openai_sdk_transport.py",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "15 tests collected; includes test_canonical_openai_endpoint_requests_v1_chat_completions using httpx.MockTransport",
+    "timestamp": "2026-07-19T06:14:17+07:00"
+  },
+  {
+    "command": "git diff --check",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "No output; whitespace check passed",
+    "timestamp": "2026-07-19T06:14:57+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv build --out-dir /tmp/lab-agent-phase5-v1-final-dist-40b0e05b",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "Successfully built fresh lab-agent sdist and wheel",
+    "timestamp": "2026-07-19T06:15:15+07:00"
+  },
+  {
+    "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv build --out-dir /tmp/canvus-mcp-phase5-v1-final-dist-26c8246e",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "Successfully built fresh canvus-mcp sdist and wheel",
+    "timestamp": "2026-07-19T06:15:59+07:00"
+  },
+  {
+    "command": "uv run python -c '\nfrom pathlib import Path\nimport re, sys\nroot = Path('\"'\"'/home/ntdm/dev/lap-in-the-loop'\"'\"')\ndocs = root / '\"'\"'docs'\"'\"'\nfiles = ['\"'\"'notes/use-case-lab-in-the-loop.md'\"'\"', '\"'\"'system-architecture.md'\"'\"', '\"'\"'development-roadmap.md'\"'\"', '\"'\"'experiment-workflow.md'\"'\"', '\"'\"'lab-in-the-loop-use-case-specification.md'\"'\"', '\"'\"'setup-and-operations.md'\"'\"', '\"'\"'project-changelog.md'\"'\"']\nerrors = []\nfor relative in files:\n    path = docs / relative\n    text = path.read_text(encoding='\"'\"'utf-8'\"'\"')\n    for raw in re.findall(r'\"'\"'(?<!!)\\[[^\\]]*\\]\\(([^)]+)\\)'\"'\"', text):\n        target = raw.strip().split()[0].split('\"'\"'#'\"'\"', 1)[0]\n        if not target or target.startswith(('\"'\"'#'\"'\"', '\"'\"'http://'\"'\"', '\"'\"'https://'\"'\"', '\"'\"'mailto:'\"'\"', '\"'\"'tel:'\"'\"')):\n            continue\n        if not (path.parent / target).resolve().exists():\n            errors.append(f'\"'\"'broken local link {relative} -> {raw}'\"'\"')\nfor relative in files:\n    if len((docs / relative).read_text(encoding='\"'\"'utf-8'\"'\"').splitlines()) > 800:\n        errors.append(f'\"'\"'over 800 lines: {relative}'\"'\"')\nops = (docs / '\"'\"'setup-and-operations.md'\"'\"').read_text(encoding='\"'\"'utf-8'\"'\"')\nconfig_names = ['\"'\"'LAB_AGENT_ROUTING_TABLE'\"'\"', '\"'\"'LAB_AGENT_PROVIDER_ENDPOINTS'\"'\"', '\"'\"'LAB_AGENT_PROVIDER_DATA_CLASSIFICATIONS'\"'\"', '\"'\"'LAB_AGENT_PRICING_VERSION'\"'\"', '\"'\"'LAB_AGENT_MODEL_PRICING'\"'\"', '\"'\"'LAB_AGENT_RUN_TOKEN_BUDGET'\"'\"', '\"'\"'LAB_AGENT_RUN_COST_BUDGET_USD'\"'\"', '\"'\"'LAB_AGENT_CANVAS_TOKEN_BUDGET'\"'\"', '\"'\"'LAB_AGENT_CANVAS_COST_BUDGET_USD'\"'\"', '\"'\"'LAB_AGENT_WALL_TIME_BUDGET_SECONDS'\"'\"', '\"'\"'LAB_AGENT_NO_PROGRESS_ROUNDS'\"'\"', '\"'\"'LAB_AGENT_MODEL_CALL_MAX_ATTEMPTS'\"'\"', '\"'\"'LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS'\"'\"']\nfor name in config_names:\n    if name not in ops:\n        errors.append(f'\"'\"'missing config: {name}'\"'\"')\nmarkers = {\n    '\"'\"'project-changelog.md'\"'\"': '\"'\"'## 2026-07-19 \u2014 Phase 5: governance and model routing'\"'\"',\n    '\"'\"'development-roadmap.md'\"'\"': '\"'\"'Complete for local/source gates \u2014 Phase 5 implementation verified 2026-07-19'\"'\"',\n    '\"'\"'lab-in-the-loop-use-case-specification.md'\"'\"': '\"'\"'Complete for local/source gates on 2026-07-19'\"'\"',\n    '\"'\"'system-architecture.md'\"'\"': '\"'\"'### Governance and model routing (Phase 5)'\"'\"',\n    '\"'\"'experiment-workflow.md'\"'\"': '\"'\"'## Governance at model-call boundaries'\"'\"',\n    '\"'\"'setup-and-operations.md'\"'\"': '\"'\"'### Governance and model routing'\"'\"',\n}\nfor relative, marker in markers.items():\n    if marker not in (docs / relative).read_text(encoding='\"'\"'utf-8'\"'\"'):\n        errors.append(f'\"'\"'missing status marker: {relative}'\"'\"')\narchitecture = (docs / '\"'\"'system-architecture.md'\"'\"').read_text(encoding='\"'\"'utf-8'\"'\"')\nroadmap = (docs / '\"'\"'development-roadmap.md'\"'\"').read_text(encoding='\"'\"'utf-8'\"'\"')\nspec = (docs / '\"'\"'lab-in-the-loop-use-case-specification.md'\"'\"').read_text(encoding='\"'\"'utf-8'\"'\"')\nworkflow = (docs / '\"'\"'experiment-workflow.md'\"'\"').read_text(encoding='\"'\"'utf-8'\"'\"')\nfor stale in ['\"'\"'Token/resource governance, model routing, and multi-user observability do not exist yet'\"'\"', '\"'\"'today: only `LAB_AGENT_LOOP_MAX_ROUNDS` as a runaway backstop'\"'\"', '\"'\"'today: none \u2014 mock robot only, no human-approval gate in code'\"'\"']:\n    if stale in architecture:\n        errors.append('\"'\"'stale architecture wording'\"'\"')\nif re.search(r'\"'\"'Phase 4b[^\\n]*(?:\\n[^\\n]*){0,6}?Status[^\\n]*Future'\"'\"', roadmap, re.I):\n    errors.append('\"'\"'Phase 4b roadmap status is Future'\"'\"')\nfor stale in ['\"'\"'no real cost/token threshold yet'\"'\"', '\"'\"'TBD (no per-provider/endpoint control yet)'\"'\"', '\"'\"'Phase 4b | Token/resource governance, model routing | Future |'\"'\"']:\n    if stale in spec:\n        errors.append('\"'\"'stale specification wording'\"'\"')\nif '\"'\"'| Loop keeps continuing | `LAB_AGENT_LOOP_MAX_ROUNDS` closes via backstop reason |'\"'\"' in workflow:\n    errors.append('\"'\"'stale workflow table row'\"'\"')\nchangelog = (docs / '\"'\"'project-changelog.md'\"'\"').read_text(encoding='\"'\"'utf-8'\"'\"')\nfor stale in ['\"'\"'396/396'\"'\"', '\"'\"'84/84'\"'\"']:\n    if stale in changelog:\n        errors.append(f'\"'\"'stale changelog count: {stale}'\"'\"')\nfor marker in ['\"'\"'406/406'\"'\"', '\"'\"'37/37'\"'\"', '\"'\"'131/131'\"'\"', '\"'\"'15/15'\"'\"']:\n    if marker not in changelog:\n        errors.append(f'\"'\"'missing changelog count: {marker}'\"'\"')\nfor pattern in [r'\"'\"'four'\"'\"', r'\"'\"'no flake'\"'\"']:\n    if not re.search(pattern, changelog, re.I):\n        errors.append(f'\"'\"'missing changelog marker: {pattern}'\"'\"')\nif errors:\n    print('\"'\"'AUTHORITATIVE DOCS CONTRACT FAIL: '\"'\"' + '\"'\"' | '\"'\"'.join(errors))\n    sys.exit(1)\nprint('\"'\"'AUTHORITATIVE DOCS CONTRACT PASS: seven docs local links and line caps; 13 config names; exact Phase 5 status markers; known stale wording absent; changelog markers 406/406, 37/37, 131/131, 15/15, four/no-flake'\"'\"')\n'",
+    "exitCode": 0,
+    "status": "pass",
+    "summary": "AUTHORITATIVE DOCS CONTRACT PASS: seven docs local links and line caps; 13 config names; exact Phase 5 status markers; known stale wording absent; changelog markers 406/406, 37/37, 131/131, 15/15, four/no-flake",
+    "timestamp": "2026-07-19T06:25:06+07:00"
+  }
+]

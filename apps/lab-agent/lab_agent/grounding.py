@@ -133,7 +133,14 @@ def record_grounding_audit(
     """
     decision = verdict.decision.value
     reason = verdict.reason[:200]
-    rows = ledger.audit_summary()
+    rows = [
+        {
+            "source_id": row["source_id"],
+            "tool": row["tool"],
+            "content_hash": row["content_hash"],
+        }
+        for row in ledger.audit_summary()
+    ]
     payload: dict[str, object] = {"decision": decision, "reason": reason, "evidence": rows}
     while rows and payload_size_bytes(payload) > MAX_PAYLOAD_BYTES:
         rows = rows[:-1]

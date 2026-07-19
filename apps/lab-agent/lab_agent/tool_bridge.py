@@ -16,6 +16,7 @@ from typing import Any
 from lab_agent.adapters.base import Message, ToolCall, ToolSpec
 from lab_agent.evidence import EvidenceLedger
 from lab_agent.mcp_client import MCPClient
+from lab_agent.models.governance import DataClassification
 
 # Read-only tools the model is allowed to drive during grounding.
 READ_TOOLS: frozenset[str] = frozenset(
@@ -52,11 +53,29 @@ def _is_error_content(content: str) -> bool:
     return isinstance(parsed, dict) and "error" in parsed
 
 
-def _envelope(tool: str, source_id: str, content: str) -> str:
-    """Wrap a successful read result as bounded, provenance-labelled untrusted
-    data: the model can see where this came from, but it is DATA, never
-    policy/schema/permission instructions (plan item 4)."""
-    return json.dumps({"untrusted_data": True, "tool": tool, "source_id": source_id, "content": content})
+def _classification(content: str) -> DataClassification:
+    """Read trusted locality metadata from a tool result; missing is unknown."""
+    try:
+        parsed: Any = json.loads(content)
+        raw = parsed.get("data_classification", parsed.get("classification"))
+        return DataClassification(str(raw))
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        return DataClassification.UNKNOWN
+
+
+def _envelope(
+    tool: str, source_id: str, content: str, classification: DataClassification
+) -> str:
+    """Wrap a successful read as classified, provenance-labelled untrusted data."""
+    return json.dumps(
+        {
+            "untrusted_data": True,
+            "tool": tool,
+            "source_id": source_id,
+            "data_classification": classification.value,
+            "content": content,
+        }
+    )
 
 
 async def execute_tool_calls(
@@ -77,8 +96,13 @@ async def execute_tool_calls(
             if _is_error_content(raw):
                 content = raw
             else:
-                source_id = ledger.add(call.name, call.arguments, raw) if ledger is not None else ""
-                content = _envelope(call.name, source_id, raw)
+                classification = _classification(raw)
+                source_id = (
+                    ledger.add(call.name, call.arguments, raw, classification)
+                    if ledger is not None
+                    else ""
+                )
+                content = _envelope(call.name, source_id, raw, classification)
         messages.append(
             {
                 "role": "tool",

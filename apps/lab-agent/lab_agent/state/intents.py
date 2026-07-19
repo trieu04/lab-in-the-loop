@@ -1,12 +1,10 @@
 """``side_effect_intents``: an outbox persisted before every canvas/provider
 mutation, keyed for crash-safe replay.
-
 canvus-mcp has no ``update_*``/idempotent create tools (phase-02 scope
 notes), so a caller cannot assume retrying a write is itself safe -- the
 intent row plus :mod:`lab_agent.recovery`'s live probe is what makes a
 mutation safe to retry across a restart.
 """
-
 from __future__ import annotations
 
 import sqlite3
@@ -18,6 +16,8 @@ class IntentHashMismatchError(RuntimeError):
     """Raised when an idempotency key is reused with a different input hash --
     fail closed rather than silently proceed with an ambiguous replay."""
 
+class IntentAlreadyClaimedError(RuntimeError):
+    """Another worker owns or terminally settled this provider dispatch."""
 
 def _row_to_intent(row: sqlite3.Row) -> SideEffectIntent:
     return SideEffectIntent(
@@ -35,19 +35,16 @@ def _row_to_intent(row: sqlite3.Row) -> SideEffectIntent:
         reconciled_at=row["reconciled_at"],
     )
 
-
 def get_intent(conn: sqlite3.Connection, *, idempotency_key: str) -> SideEffectIntent | None:
     row = conn.execute(
         "SELECT * FROM side_effect_intents WHERE idempotency_key=?", (idempotency_key,)
     ).fetchone()
     return _row_to_intent(row) if row is not None else None
 
-
 def prepare_intent(
     conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str, canvas_id: str, kind: str, input_hash: str
 ) -> SideEffectIntent:
     """Persist a ``pending`` intent before the mutation executes.
-
     Idempotent: re-preparing the same key with the same ``input_hash``
     returns the existing row untouched (whatever its current status). A
     different ``input_hash`` under the same key raises
@@ -86,17 +83,36 @@ def prepare_intent(
         raise RuntimeError(f"intent {idempotency_key} missing immediately after prepare")
     return intent
 
+def mark_submitted(
+    conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str
+) -> SideEffectIntent:
+    """Atomically claim one eligible intent before entering the provider SDK."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        changed = conn.execute(
+            "UPDATE side_effect_intents SET status='submitted', "
+            "attempt_count=attempt_count+1, next_retry_at=NULL, last_error=NULL, updated_at=? "
+            "WHERE idempotency_key=? AND status IN ('pending', 'failed')",
+            (clock(), idempotency_key),
+        ).rowcount
+        if changed != 1:
+            raise IntentAlreadyClaimedError(f"intent {idempotency_key!r} is not dispatchable")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return _require_intent(conn, idempotency_key)
 
 def mark_executed(conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str, external_id: str) -> SideEffectIntent:
     """Record that the mutation ran and returned ``external_id`` (not yet reconciled)."""
     now = clock()
     conn.execute(
         "UPDATE side_effect_intents SET status='executed', external_id=?, "
-        "attempt_count=attempt_count+1, updated_at=? WHERE idempotency_key=?",
+        "attempt_count=attempt_count+CASE WHEN status='submitted' THEN 0 ELSE 1 END, "
+        "updated_at=? WHERE idempotency_key=?",
         (external_id, now, idempotency_key),
     )
     return _require_intent(conn, idempotency_key)
-
 
 def mark_reconciled(
     conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str, external_id: str | None = None
@@ -117,6 +133,17 @@ def mark_reconciled(
         )
     return _require_intent(conn, idempotency_key)
 
+def mark_ambiguous(
+    conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str, error: str, external_id: str | None
+) -> SideEffectIntent:
+    """Record an ambiguous provider outcome without scheduling a blind retry."""
+    conn.execute(
+        "UPDATE side_effect_intents SET status='failed', external_id=?, last_error=?, "
+        "attempt_count=attempt_count+CASE WHEN status='submitted' THEN 0 ELSE 1 END, "
+        "updated_at=? WHERE idempotency_key=?",
+        (external_id, error, clock(), idempotency_key),
+    )
+    return _require_intent(conn, idempotency_key)
 
 def mark_failed(
     conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str, error: str, next_retry_at: float | None = None
@@ -125,11 +152,11 @@ def mark_failed(
     now = clock()
     conn.execute(
         "UPDATE side_effect_intents SET status='failed', last_error=?, next_retry_at=?, "
-        "attempt_count=attempt_count+1, updated_at=? WHERE idempotency_key=?",
+        "attempt_count=attempt_count+CASE WHEN status='submitted' THEN 0 ELSE 1 END, "
+        "updated_at=? WHERE idempotency_key=?",
         (error, next_retry_at, now, idempotency_key),
     )
     return _require_intent(conn, idempotency_key)
-
 
 def list_incomplete(conn: sqlite3.Connection, *, canvas_id: str | None = None) -> list[SideEffectIntent]:
     """Every intent not yet ``reconciled`` (pending, executed, or failed)."""
@@ -145,20 +172,21 @@ def list_incomplete(conn: sqlite3.Connection, *, canvas_id: str | None = None) -
         ).fetchall()
     return [_row_to_intent(row) for row in rows]
 
-
 def _require_intent(conn: sqlite3.Connection, idempotency_key: str) -> SideEffectIntent:
     intent = get_intent(conn, idempotency_key=idempotency_key)
     if intent is None:
         raise RuntimeError(f"intent {idempotency_key} not found (was prepare_intent called first?)")
     return intent
 
-
 __all__ = [
+    "IntentAlreadyClaimedError",
     "IntentHashMismatchError",
     "get_intent",
     "list_incomplete",
+    "mark_ambiguous",
     "mark_executed",
     "mark_failed",
     "mark_reconciled",
+    "mark_submitted",
     "prepare_intent",
 ]

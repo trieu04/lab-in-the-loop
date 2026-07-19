@@ -105,7 +105,14 @@ def test_audit_summary_excludes_excerpt_arguments_and_url():
 
     rows = ledger.audit_summary()
     expected_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
-    assert rows == [{"source_id": sid, "tool": "download_pdf", "content_hash": expected_hash}]
+    assert rows == [
+        {
+            "source_id": sid,
+            "tool": "download_pdf",
+            "content_hash": expected_hash,
+            "data_classification": "unknown",
+        }
+    ]
     blob = json.dumps(rows)
     assert "token" not in blob and "secret" not in blob and "Bearer" not in blob
 

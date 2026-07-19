@@ -1,14 +1,8 @@
 """Poll the canvus-mcp experiment-workflow snapshot and drive each trigger.
 
-One ``scan_experiment_workflow`` call per poll surfaces the pending forward
-triggers (ideas needing a setup, setups needing a robot run) and any detected
-loops; this module dispatches each to the orchestrator. Trigger idempotency is
-durable, not in-memory: every trigger (idea/setup/loop connector) owns a
-``workflow_attempts`` row (see ``lab_agent.state_store``), leased for the
-duration of its processing and marked completed/failed/quarantined afterward.
-
-A single-writer canvas lease is acquired/renewed once per cycle; a live foreign owner causes a safe skip (no write), not a crash. A trigger's failure is
-persisted durably before the next trigger runs -- one bad emit must never abort the rest of the poll.
+Each poll scans once, leases due triggers through the durable state store, and
+dispatches them to the orchestrator. A foreign canvas lease causes a safe skip;
+one failed trigger is persisted without aborting the rest of the poll.
 """
 
 from __future__ import annotations
@@ -16,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from collections.abc import Awaitable, Callable
 
 import structlog
 
@@ -24,64 +17,22 @@ from lab_agent import durable_browser, nodes
 from lab_agent.adapters.base import ModelAdapter
 from lab_agent.config import Settings
 from lab_agent.mcp_client import MCPClient
+from lab_agent.model_gateway import GovernanceContext, LocalityDeniedError
 from lab_agent.models.evidence import GroundingDecision
 from lab_agent.orchestrator import generate_setup, run_loop, run_on_robot
+from lab_agent.policy import BudgetExceededError
 from lab_agent.runtime import release_lease_with_audit
-from lab_agent.state_store import AttemptStatus, LeaseHeldByOtherError, StateStore
+from lab_agent.state_store import LeaseHeldByOtherError, StateStore
+from lab_agent.trigger_governance import close_trigger_governance_error
+from lab_agent.watch_attempts import failure_code, process_trigger
 
 log = structlog.get_logger(__name__)
 
 _ROUND_RE = re.compile(r"v(\d+)")
 
-#: One trigger's unit of work: returns (ok, detail). ``ok=False`` (e.g. a
-#: fail-closed schema-validation miss) and a raised exception are both
-#: durable failures, handled identically by ``_process_trigger``.
-_Work = Callable[[], Awaitable[tuple[bool, str]]]
-
-
 def _round_of(title: str) -> int:
     m = _ROUND_RE.search(title or "")
     return int(m.group(1)) if m else 1
-
-
-async def _process_trigger(
-    store: StateStore,
-    *,
-    canvas_id: str,
-    trigger_id: str,
-    runtime_instance_id: str,
-    settings: Settings,
-    work: _Work,
-) -> bool:
-    """Lease ``trigger_id`` if due, run ``work``, and durably record the outcome.
-
-    Returns ``True`` iff due and ``work`` succeeded; a non-due attempt returns
-    ``False`` without running ``work``.
-    """
-    store.ensure_attempt(canvas_id, trigger_id)
-    ttl = settings.attempt_lease_ttl_seconds
-    attempt = store.lease_due_attempt(canvas_id, trigger_id, lease_owner=runtime_instance_id, lease_ttl_seconds=ttl)
-    if attempt is None:
-        return False
-    store.append_audit_event(canvas_id, "attempt_leased", {"trigger_id": trigger_id})
-
-    try:
-        ok, detail = await work()
-    except Exception as exc:  # noqa: BLE001 - persist failure, keep polling other triggers
-        ok, detail = False, str(exc)[:200]
-
-    if ok:
-        store.mark_attempt_completed(canvas_id, trigger_id, lease_owner=runtime_instance_id)
-        store.append_audit_event(canvas_id, "attempt_completed", {"trigger_id": trigger_id})
-        return True
-
-    updated = store.mark_attempt_failed(
-        canvas_id, trigger_id, lease_owner=runtime_instance_id, error=detail,
-        base_seconds=settings.retry_base_seconds, max_seconds=settings.retry_max_seconds, max_attempts=settings.max_attempts,
-    )
-    event = "attempt_quarantined" if updated.status == AttemptStatus.QUARANTINED else "attempt_failed"
-    store.append_audit_event(canvas_id, event, {"trigger_id": trigger_id, "error": detail[:200]})
-    return False
 
 
 async def process_once(
@@ -91,8 +42,14 @@ async def process_once(
     store: StateStore,
     runtime_instance_id: str,
     canvas_id: str,
+    gov: GovernanceContext | None = None,
 ) -> dict[str, int]:
-    """Process every due trigger on the canvas exactly once (durable dedup)."""
+    """Process every due trigger on the canvas exactly once (durable dedup).
+
+    When ``gov`` is supplied the loop enforces the harness stop policy; the
+    ``adapter`` is expected to be a governed adapter so every provider call is
+    locality-checked, budget-accounted, and durably intent-guarded.
+    """
     counts = {"setups": 0, "runs": 0, "loops": 0}
     try:
         store.acquire_canvas_lease(
@@ -112,13 +69,27 @@ async def process_once(
 
     for idea in snap.get("ideas_needing_setup", []):
         idea_id = idea["widget_id"]
+        trigger_id = f"idea_setup:{idea_id}"
 
-        async def setup_work(idea_id: str = idea_id, idea: dict = idea) -> tuple[bool, str]:
+        async def setup_work(
+            idea_id: str = idea_id,
+            idea: dict = idea,
+            trigger_id: str = trigger_id,
+        ) -> tuple[bool, str]:
+            if gov is not None:
+                gov.start_run(trigger_id, [idea])
             idea_text = await nodes.read_note_text(mcp, canvas_id, idea_id)
-            outcome = await generate_setup(
-                mcp, adapter, settings, store, canvas_id=canvas_id, idea_text=idea_text,
-                idea_id=idea_id, ragcluster_id=idea.get("ragcluster_id", ""), round_index=1,
-            )
+            try:
+                outcome = await generate_setup(
+                    mcp, adapter, settings, store, canvas_id=canvas_id, idea_text=idea_text,
+                    idea_id=idea_id, ragcluster_id=idea.get("ragcluster_id", ""), round_index=1,
+                )
+            except (BudgetExceededError, LocalityDeniedError) as exc:
+                stop_reason = await close_trigger_governance_error(
+                    mcp, settings, store, canvas_id=canvas_id, predecessor_id=idea_id,
+                    round_index=1, error=exc,
+                )
+                return True, stop_reason.value
             if outcome.decision is GroundingDecision.EXECUTABLE:
                 log.info("setup_generated", canvas_id=canvas_id, idea_id=idea_id, setup_id=outcome.setup_id)
                 return True, ""
@@ -127,28 +98,43 @@ async def process_once(
             reason = "invalid_citation" if outcome.decision is GroundingDecision.INVALID_CITATION else "schema_validation_failed"
             return False, reason
 
-        if await _process_trigger(
-            store, canvas_id=canvas_id, trigger_id=f"idea_setup:{idea_id}",
+        if await process_trigger(
+            store, canvas_id=canvas_id, trigger_id=trigger_id,
             runtime_instance_id=runtime_instance_id, settings=settings, work=setup_work,
         ):
             counts["setups"] += 1
 
     for s in snap.get("setups_needing_run", []):
         setup_id = s["widget_id"]
+        trigger_id = f"setup_run:{setup_id}"
 
-        async def run_work(setup_id: str = setup_id, s: dict = s) -> tuple[bool, str]:
+        async def run_work(
+            setup_id: str = setup_id,
+            s: dict = s,
+            trigger_id: str = trigger_id,
+        ) -> tuple[bool, str]:
+            if gov is not None:
+                gov.start_run(trigger_id, [s])
             setup_text = await durable_browser.read_stage_text(mcp, store, canvas_id, setup_id)
-            _, result = await run_on_robot(
-                mcp, adapter, settings, store, canvas_id=canvas_id, setup_id=setup_id,
-                setup_text=setup_text, robot_id=s.get("robot_id", ""), round_index=_round_of(s.get("title", "")),
-            )
+            round_index = _round_of(s.get("title", ""))
+            try:
+                _, result = await run_on_robot(
+                    mcp, adapter, settings, store, canvas_id=canvas_id, setup_id=setup_id,
+                    setup_text=setup_text, robot_id=s.get("robot_id", ""), round_index=round_index,
+                )
+            except (BudgetExceededError, LocalityDeniedError) as exc:
+                stop_reason = await close_trigger_governance_error(
+                    mcp, settings, store, canvas_id=canvas_id, predecessor_id=setup_id,
+                    round_index=round_index, error=exc,
+                )
+                return True, stop_reason.value
             if result is None:
                 return False, "schema_validation_failed"
             log.info("robot_run", canvas_id=canvas_id, setup_id=setup_id)
             return True, ""
 
-        if await _process_trigger(
-            store, canvas_id=canvas_id, trigger_id=f"setup_run:{setup_id}",
+        if await process_trigger(
+            store, canvas_id=canvas_id, trigger_id=trigger_id,
             runtime_instance_id=runtime_instance_id, settings=settings, work=run_work,
         ):
             counts["runs"] += 1
@@ -157,16 +143,24 @@ async def process_once(
         cid = loop.get("loop_connector_id", "")
         if not cid:
             continue
+        trigger_id = f"loop:{cid}"
 
-        async def loop_work(loop: dict = loop) -> tuple[bool, str]:
-            summary = await run_loop(mcp, adapter, settings, store, canvas_id=canvas_id, loop=loop)
+        async def loop_work(
+            loop: dict = loop,
+            trigger_id: str = trigger_id,
+        ) -> tuple[bool, str]:
+            if gov is not None:
+                gov.start_run(trigger_id, [loop])
+            summary = await run_loop(
+                mcp, adapter, settings, store, canvas_id=canvas_id, loop=loop, gov=gov
+            )
             if summary.stopped_reason in ("schema_validation_failed", "invalid_citation"):
                 return False, summary.stopped_reason
             log.info("loop_processed", canvas_id=canvas_id, rounds=summary.rounds, reason=summary.stopped_reason)
             return True, ""
 
-        if await _process_trigger(
-            store, canvas_id=canvas_id, trigger_id=f"loop:{cid}",
+        if await process_trigger(
+            store, canvas_id=canvas_id, trigger_id=trigger_id,
             runtime_instance_id=runtime_instance_id, settings=settings, work=loop_work,
         ):
             counts["loops"] += 1
@@ -181,15 +175,17 @@ async def run_watch(
     store: StateStore,
     runtime_instance_id: str,
     canvas_id: str,
+    gov: GovernanceContext | None = None,
 ) -> None:
     """Poll forever, processing due triggers each cycle (Ctrl-C to stop)."""
     log.info("watch_start", canvas_id=canvas_id, interval=settings.watch_poll_seconds)
     try:
         while True:
             try:
-                await process_once(mcp, adapter, settings, store, runtime_instance_id, canvas_id)
+                await process_once(mcp, adapter, settings, store, runtime_instance_id, canvas_id, gov)
             except Exception as exc:  # noqa: BLE001 - keep watching across cycle-level errors
-                log.warning("watch_cycle_error", canvas_id=canvas_id, error=str(exc))
+                error_code, _ = failure_code(exc)
+                log.warning("watch_cycle_error", canvas_id=canvas_id, error=error_code)
             await asyncio.sleep(settings.watch_poll_seconds)
     finally:
         release_lease_with_audit(store, runtime_instance_id, canvas_id)

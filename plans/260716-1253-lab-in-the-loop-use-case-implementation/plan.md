@@ -11,7 +11,7 @@ blocks: []
 work_type: feature
 spec_waived: "SDD mode disabled (takumi.sddMode: off)"
 created: 2026-07-16
-progress: "Phase 4 of 9 complete (21d delivered, 34d remaining)"
+progress: "Phase 5 of 9 complete (26d delivered, 29d remaining)"
 ---
 
 # Lab-in-the-Loop Use-Case Implementation
@@ -27,7 +27,7 @@ Contracts stay additive and MVP-compatible; generated artifacts become dynamic H
 | 2 | [Durable harness core](phase-02-establish-durable-harness-core.md) | 6d | complete | FR-019, NFR-006/008 |
 | 3 | [HTML Browser artifact widgets](phase-03-upgrade-generated-artifacts-to-browser-widgets.md) | 7d | complete | FR-002/009/010/021, NFR-004/005/008/010 |
 | 4 | [Grounding & evidence](phase-04-strengthen-grounding-and-evidence.md) | 5d | complete | FR-001/015/016, NFR-004, BR-003 |
-| 5 | [Governance & model routing](phase-05-add-governance-and-model-routing.md) | 5d | pending | FR-013/014, NFR-002/003/009 |
+| 5 | [Governance & model routing](phase-05-add-governance-and-model-routing.md) | 5d | complete | FR-013/014, NFR-002/003/009 |
 | 6 | [Resumable multimodal ingestion](phase-06-build-resumable-multimodal-ingestion.md) | 6d | pending | FR-020, NFR-007 |
 | 7 | [In-silico & approval gates](phase-07-implement-in-silico-and-approval-gates.md) | 8d | pending | UC-03, FR-003/004/005, BR-006/007/009 |
 | 8 | [Execution, analysis & knowledge](phase-08-integrate-execution-analysis-and-knowledge.md) | 8d | pending | FR-006/007/008/009/010/017/018, BR-008 |

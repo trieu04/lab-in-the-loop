@@ -10,6 +10,7 @@ dictionary (see :mod:`lab_agent.grounding`), and only writes an
 from __future__ import annotations
 
 from lab_agent.adapters.base import ModelAdapter
+from lab_agent.artifact_provenance import model_provenance
 from lab_agent.config import Settings
 from lab_agent.evidence import EvidenceLedger
 from lab_agent.grounding import (
@@ -20,6 +21,7 @@ from lab_agent.grounding import (
 )
 from lab_agent.mcp_client import MCPClient
 from lab_agent.models.evidence import GroundingDecision
+from lab_agent.models.governance import TaskStage
 from lab_agent.orchestrator_support import ground_and_emit_setup, write_setup_node
 from lab_agent.state_store import StateStore
 
@@ -72,6 +74,10 @@ async def generate_setup(
     setup_id = await write_setup_node(
         mcp, store, settings, canvas_id=canvas_id, setup=setup, idea_text=idea_text, idea_id=idea_id,
         round_index=round_index, predecessor_id=idea_id, edge_kind="idea_setup",
+        provenance=model_provenance(
+            adapter, settings, TaskStage.SETUP, source_widget_id=idea_id,
+            trigger_id=f"setup/predecessor:{idea_id}/round:{round_index}",
+        ),
     )
     return SetupOutcome(setup_id, setup, verdict.decision, verdict.reason)
 

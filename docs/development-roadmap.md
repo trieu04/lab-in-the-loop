@@ -16,6 +16,7 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 | Durable harness core (local-disk, single-host) | Complete | SQLite WAL ledger: attempts/retry/quarantine, single-writer canvas leases, side-effect intent recovery, hash-chained audit log, operator commands; see Phase 3 below and [system architecture](system-architecture.md) → "Durable harness core" |
 | Generated artifact Browser service | Delivered for local/source gates; deployment gates pending | Setup/Result/Closed and generated Needs Input status/prompt artifacts use Browser widgets backed by `ArtifactStore`; legacy Notes stay readable. Formal temper/review is sealed; live external reachability and production TLS/private-ingress validation remain operational gates. |
 | Grounding/evidence gate | Complete | Per-run bounded evidence ledger, deterministic source ids, citation validation before writes, untrusted-data envelope, approved acronym dictionary scan across idea/setup/evidence excerpts, explicit Needs Input for insufficient evidence/ambiguity, and metadata-only durable audit. Future wiki/KG/vector sources remain adapters/external gates. |
+| Governance and model routing | Complete for local/source gates | Provider-neutral task-stage routing; pre-dispatch locality/known-pricing authorization; exact/estimated usage; restart-safe reservations/intents; typed retry/reconciliation; and terminal stop closures. Final local verification: `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED. Organization-approved endpoint/classification matrix, price maintenance, invoice reconciliation, and live SDK/API checks remain operational gates. |
 | Real robot integration | Future | Mock-only for now |
 | Flywheel/in-silico gates | Future | Documented, not implemented |
 
@@ -173,21 +174,29 @@ Success criteria (met):
 
 ## Phase 4b — Token/resource governance and model routing
 
-**Status:** Future
+**Status:** Complete for local/source gates — Phase 5 implementation verified 2026-07-19: `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED; external approval/operations remain pending
 
 Goal: give the harness/orchestrator control over cost, provider selection, and where data is allowed to flow.
 
-Tasks:
+Completed:
 
-- Add token/resource budgets and cost thresholds per run and per canvas.
-- Add task-based model routing (e.g. cheaper model for result rendering, stronger model for setup design) on top of the existing `openai`/`claude` adapter factory.
-- Add data-locality controls so sensitive canvas content can be restricted to specific providers/endpoints.
-- Extend loop stop policies beyond `LAB_AGENT_LOOP_MAX_ROUNDS`: cost-based stop, wall-clock stop, no-progress stop.
+- Added provider-neutral task-stage routing over the existing `openai`/`claude` adapter factory. `setup`, `mock_result`, and `loop_decision` use a configuration-only ordered provider preference with locality-aware pre-dispatch fallback.
+- Added fail-closed evidence classification and endpoint authorization before provider dispatch. Credential-gated canonical OpenAI/Claude endpoints are defaults; explicit endpoint configuration controls the SDK destination; unknown/custom providers remain denied.
+- Added normalized `exact`/`estimated`/`unavailable` usage. Claude exact input includes cache-creation/read tokens; estimates conservatively cover provider-visible messages, tools, response schema, schema name, and output cap, and are not invoices.
+- Added versioned model-price checks and durable SQLite reservations for per-trigger run and per-canvas token/cost envelopes. Unknown pricing denies dispatch even without a numeric cost cap; a trigger resets its run accounting while canvas totals/active holds survive restart.
+- Added durable model-call intents, idempotent reserve/commit/release, bounded typed pre-submission retries, capability-aware submitted/ambiguous reconciliation, and no blind redispatch.
+- Added distinct round, token, cost, wall-time, no-progress, locality, and reservation terminal closures, rendered/audited before any later provider or canvas write.
 
-Success criteria:
+Success criteria (met locally):
 
 - A run can be capped by token/cost budget, not only round count.
-- Model/provider choice can vary per task type without code changes.
+- Model/provider choice can vary per task type without orchestration code changes.
+- A governed request cannot leave the process without locality authorization, known pricing, a durable intent, and a reservation.
+
+Still operational/external:
+
+- The organization must approve and maintain the provider endpoint/classification matrix and versioned model prices.
+- Live provider SDK/API compatibility, endpoint reachability, price/invoice reconciliation, and production policy approval are not proven by local tests.
 
 ## Phase 4c — Async multimodal ingestion
 

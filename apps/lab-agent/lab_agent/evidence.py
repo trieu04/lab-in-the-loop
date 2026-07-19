@@ -15,6 +15,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from lab_agent.models.governance import DataClassification
 from lab_agent.state_store import MAX_PAYLOAD_BYTES
 
 #: Cap on what a single evidence record keeps in memory, so one huge download
@@ -58,6 +59,7 @@ class EvidenceRecord:
     tool: str
     content_hash: str
     excerpt: str
+    data_classification: DataClassification
 
 
 @dataclass
@@ -73,8 +75,14 @@ class EvidenceLedger:
     max_records: int = 64
     _records: dict[str, EvidenceRecord] = field(default_factory=dict)
 
-    def add(self, tool: str, arguments: dict[str, Any], content: str) -> str:
-        """Record a successful read; return its deterministic source id.
+    def add(
+        self,
+        tool: str,
+        arguments: dict[str, Any],
+        content: str,
+        data_classification: DataClassification = DataClassification.UNKNOWN,
+    ) -> str:
+        """Record a successful classified read; return its deterministic source id.
 
         Idempotent for repeated identical calls. Once :attr:`max_records` is
         reached, further distinct reads are still assigned a (deterministic,
@@ -89,6 +97,7 @@ class EvidenceLedger:
                 tool=tool,
                 content_hash=_content_hash(content),
                 excerpt=content[:EXCERPT_MAX_CHARS],
+                data_classification=data_classification,
             )
         return source_id
 
@@ -132,7 +141,12 @@ class EvidenceLedger:
         rows: list[dict[str, str]] = []
         total = 2  # the enclosing "[" "]" of the eventual list encoding
         for record in self._records.values():
-            row = {"source_id": record.source_id, "tool": record.tool, "content_hash": record.content_hash}
+            row = {
+                "source_id": record.source_id,
+                "tool": record.tool,
+                "content_hash": record.content_hash,
+                "data_classification": record.data_classification.value,
+            }
             row_bytes = len(json.dumps(row, separators=(",", ":")).encode("utf-8")) + 1
             if total + row_bytes > AUDIT_BYTE_CAP:
                 break

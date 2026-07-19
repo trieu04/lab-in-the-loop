@@ -112,11 +112,55 @@ Runtime bounds:
 
 ```bash
 LAB_AGENT_MAX_TOOL_STEPS=8
+LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS=4096  # Settings default; optional in .env
 LAB_AGENT_WATCH_POLL_SECONDS=30
 LAB_AGENT_LOOP_MAX_ROUNDS=25
 ```
 
 `LAB_AGENT_LOOP_MAX_ROUNDS` is only a runaway backstop. The model's `LoopDecision` is the intended stop condition.
+
+### Governance and model routing
+
+`once` and `watch` always construct the governed adapter. Every model call is routed by task stage, authorized for data locality, price-checked, reserved in SQLite, intent-guarded, and checked against terminal stop policy before a later canvas write. Complete the following configuration before operating against a real canvas; an absent/invalid authorization or unpriced model denies dispatch rather than treating it as free or safe.
+
+```bash
+# Optional task-stage provider order (JSON). Omitted stage -> LAB_AGENT_MODEL_PROVIDER.
+LAB_AGENT_ROUTING_TABLE={"setup":["claude","openai"],"mock_result":["openai"],"loop_decision":["openai"]}
+
+# Provider -> approved HTTPS endpoint and permitted classifications (JSON).
+# The current .env.example supplies these explicit values.
+LAB_AGENT_PROVIDER_ENDPOINTS={"openai":"https://api.openai.com/v1","claude":"https://api.anthropic.com"}
+LAB_AGENT_PROVIDER_DATA_CLASSIFICATIONS={"openai":["public","internal"],"claude":["public","internal"]}
+
+# Versioned model-price table (JSON); rates are USD per 1,000 tokens.
+# The current template is intentionally unpriced and therefore cannot dispatch.
+LAB_AGENT_PRICING_VERSION=unset
+LAB_AGENT_MODEL_PRICING={}
+
+# Optional limits. Leave these commented/omitted for no numeric envelope.
+# Pricing remains mandatory for dispatch even when cost limits are omitted.
+# LAB_AGENT_RUN_TOKEN_BUDGET=200000
+# LAB_AGENT_RUN_COST_BUDGET_USD=5.0
+# LAB_AGENT_CANVAS_TOKEN_BUDGET=1000000
+# LAB_AGENT_CANVAS_COST_BUDGET_USD=25.0
+
+# Optional wall-time ceiling; the other two values have the defaults shown.
+# LAB_AGENT_WALL_TIME_BUDGET_SECONDS=3600
+LAB_AGENT_NO_PROGRESS_ROUNDS=3
+LAB_AGENT_MODEL_CALL_MAX_ATTEMPTS=3
+```
+
+Replace the template's empty pricing table with actual organization-approved rates before dispatch. `LAB_AGENT_PRICING_VERSION` is stamped on estimates so an operator can reconcile them against a maintained rate table. A model absent from `LAB_AGENT_MODEL_PRICING`, or a missing input/output rate, makes cost `unavailable` and denies governed dispatch even if every cost-budget variable is omitted. Usage/cost estimates never equal a provider invoice.
+
+The routing keys are `setup`, `mock_result`, and `loop_decision`; `in_silico` and `analysis` are vocabulary for future stages, not current workflow calls. The first configured, locality-authorized provider in a stage's order is selected. A later provider can be used only as a pre-dispatch fallback; the gateway never changes provider after a submission.
+
+Locality authorization is evaluated before SDK dispatch against source/evidence classifications. `unknown` is denied, and all classifications in a call must be allowed by the selected provider; an unlisted provider, classification, or non-HTTPS/missing endpoint is denied. The Settings default derives canonical built-in endpoints only when the matching OpenAI/Anthropic credential is present (`https://api.openai.com/v1` and `https://api.anthropic.com`). The template deliberately supplies explicit endpoint overrides. `LAB_AGENT_PROVIDER_ENDPOINTS` is the authoritative endpoint passed to the SDK. For an OpenAI-compatible deployment, set the same HTTPS URL in both `LAB_AGENT_OPENAI_BASE_URL` and `LAB_AGENT_PROVIDER_ENDPOINTS["openai"]`; a different explicit endpoint overrides the legacy base URL. There is no dynamic custom-provider adapter: unknown provider names remain fail-closed.
+
+Provider usage is normalized as `exact`, `estimated`, or `unavailable`. Exact usage comes from the SDK; Claude input totals include cache-creation and cache-read tokens. If counts are omitted, a conservative estimate includes serialized messages, tools, response schema, schema name, and `LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS` (the hard request/output cap). Estimates drive reservations but are explicitly not invoices. Missing or unknown usage is never silently zero-priced.
+
+A logical model call persists its digest-backed intent and a durable reservation before dispatch. Holds are transactional and idempotently `reserve`d, then `commit`ted from normalized usage or `release`d only when dispatch is known not to have happened. Per-trigger run accounting resets at each trigger; per-canvas committed totals and active holds survive process restart. Known typed pre-submission transients retry only after `next_retry_at` and only up to `LAB_AGENT_MODEL_CALL_MAX_ATTEMPTS`. Deterministic errors do not retry. Submitted, executed, ambiguous, and untyped outcomes are reconciled only by a provider capability when available; otherwise they remain blocked — never blindly redispatched. Durable records use fixed failure categories, hashes/digests, and approved metadata; prompts, responses, secrets, and raw provider error text are not persisted.
+
+The terminal closures are distinct: model decision, maximum rounds, token budget, cost budget, wall time, no progress, locality denial, and reservation denial. The closure is rendered and audited; no subsequent provider call or canvas write follows it. External provider/locality approval, rate-table maintenance, live endpoint/SDK/API validation, and invoice reconciliation remain operator responsibilities.
 
 Durable harness (local SQLite WAL ledger — see [system architecture](system-architecture.md) → "Durable harness core"):
 
@@ -340,7 +384,7 @@ After `LAB_AGENT_MAX_ATTEMPTS` consecutive failures, a trigger stops being retri
 
 ```bash
 uv run lab-agent list-quarantined --canvas <canvas-id>
-# inspect last_error in the output, fix the underlying cause if any, then:
+# inspect the fixed safe failure category in the output, fix the underlying cause if any, then:
 uv run lab-agent reset --canvas <canvas-id> --trigger <trigger_id>
 ```
 

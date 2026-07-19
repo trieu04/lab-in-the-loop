@@ -35,6 +35,7 @@ class IntentStatus(StrEnum):
     """Lifecycle of one ``side_effect_intents`` row (idempotency_key)."""
 
     PENDING = "pending"
+    SUBMITTED = "submitted"
     EXECUTED = "executed"
     RECONCILED = "reconciled"
     FAILED = "failed"

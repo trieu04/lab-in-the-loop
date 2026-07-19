@@ -5,8 +5,8 @@
 | Field | Value |
 |---|---|
 | Status | Draft for review |
-| Version | 1.0 |
-| Date | 2026-07-16 |
+| Version | 1.1 |
+| Date | 2026-07-19 |
 | Source vision | [docs/notes/use-case-lab-in-the-loop.md](notes/use-case-lab-in-the-loop.md) (original meeting notes, excluded from normalization) |
 | Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lap-in-the-loop` repository |
 | Owner / Approver | Pending |
@@ -86,8 +86,9 @@ apps/lab-agent   ── watcher/orchestrator: read to ground, model propose, orc
   │
   ├─ OpenAI adapter
   ├─ Claude adapter
+  ├─ governed gateway (task routing, locality/pricing, normalized usage, stop policy)
   ├─ artifact service (capability-protected Browser HTML)
-  └─ local SQLite WAL ledger (attempts, leases, intents, audit/outbox, artifact records/tokens/widgets)
+  └─ local SQLite WAL ledger (attempts, leases, model/canvas intents, budget reservations, audit/outbox, artifact records/tokens/widgets)
 ```
 
 Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-agent`'s local SQLite WAL ledger for attempts, leases, side-effect intents/outbox, audit, and canonical generated-artifact records. The Phase 3 artifact service serves generated Setup/Result/Closed and generated Needs Input prompt/status artifacts as capability-protected Browser widgets; `{idea: ...}` and human-authored approval/review/input responses remain Notes. Target components — Knowledge Retrieval Service, independent Execution Orchestrator beyond today's `lab-agent`, Flywheel wrapper, Knowledge Update Service, In-silico service — are all `[Future/Proposed]`, not yet existing as separate modules (see `docs/system-architecture.md` § "Target harness boundary (proposed)").
@@ -138,8 +139,8 @@ Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-a
 **Dependencies**
 
 - `apps/canvus-mcp` must run with valid credentials (`CANVUS_API_URL`, `CANVUS_API_KEY`) for `lab-agent` to function.
-- Model adapter (`openai` or `claude`) must be available; OpenAI-compatible endpoint (`LAB_AGENT_OPENAI_BASE_URL`) used for Ollama/vLLM/internal model `[MVP partial]`.
-- Durable local operation depends on the SQLite WAL ledger at `LAB_AGENT_STATE_DB_PATH`; it is local-disk/single-host scoped and must be backed up/restored intentionally. The same DB contains generated-artifact records, versions, token hashes, and Browser widget mappings.
+- Model adapter (`openai` or `claude`) must be available, selected by task-stage routing, locality-authorized for every evidence classification, and priced in the configured versioned table; otherwise governed dispatch is denied. OpenAI-compatible operation uses explicit matching `LAB_AGENT_OPENAI_BASE_URL`/`LAB_AGENT_PROVIDER_ENDPOINTS["openai"]`, not a named new provider `[MVP partial]`.
+- Durable local operation depends on the SQLite WAL ledger at `LAB_AGENT_STATE_DB_PATH`; it is local-disk/single-host scoped and must be backed up/restored intentionally. The same DB contains generated-artifact records, versions, token hashes, Browser widget mappings, model-call intents, and budget reservations.
 - Browser artifact writes depend on a configured `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` reachable by intended Canvus clients; production requires HTTPS/private ingress. Live external reachability/TLS verification is a deployment gate, not proven by this repo.
 - Target components (Flywheel, in-silico, knowledge/versioning service, wiki/KG/vector retrieval services) are **not yet in existence** — all use cases involving them are `[Future]`. The current grounding gate accepts future retrieval sources only as adapters/external gates.
 
@@ -147,9 +148,10 @@ Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-a
 
 - Model receives only read tools (`READ_TOOLS` in `lab_agent/tool_bridge.py`); successful reads are wrapped as `untrusted_data` and captured in a per-run evidence ledger; all writes go through orchestrator (`lab_agent/nodes.py`) — strict read/write separation.
 - Must not hard-code dependence on any specific provider (`code-standards.md` § "Provider and harness boundaries").
-- `LAB_AGENT_LOOP_MAX_ROUNDS` is the only loop backstop currently available — no real cost/token threshold yet.
-- Durable idempotency and artifact storage are scoped to one local host and one active writer per canvas; multi-host/shared-store deployment is a future Postgres-or-equivalent migration trigger.
-- Capability URLs are bearer secrets; full token-bearing URLs must not be logged, audited, printed, pasted into model context, or copied into reports.
+- Governed dispatch requires a configured HTTPS endpoint/classification allowlist and known versioned model pricing. Unknown/restricted classifications, endpoint/provider omissions, missing price, or failed reservation deny dispatch; external organization approval, rate maintenance, live endpoint/SDK/API validation, and invoice reconciliation remain operator gates.
+- Usage is normalized as `exact`, `estimated`, or `unavailable`; Claude exact input includes cache-create/read tokens. Estimates cover provider-visible messages, tools, response schema, schema name, and output cap for governance only — never provider invoices.
+- Durable idempotency, model-call intents/reservations, and artifact storage are scoped to one local host and one active writer per canvas; run accounting resets per trigger while canvas totals/active holds survive restart. Multi-host/shared-store deployment is a future Postgres-or-equivalent migration trigger.
+- Capability URLs are bearer secrets; full token-bearing URLs must not be logged, audited, printed, pasted into model context, or copied into reports. Provider prompts, responses, secrets, and raw error text likewise do not enter durable intent/audit records.
 - Harness-first architectural direction is **`[Proposed]`**, not yet ratified — new designs should not assume approval.
 
 ---
@@ -194,8 +196,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | FR-LITL-010 | Update versioned knowledge base (no overwrite) | Must | `[Future]` — no Knowledge Update Service |
 | FR-LITL-011 | Propose next round of experiments (redesign) | Must | `[MVP]` when `LoopDecision.proceed=true` |
 | FR-LITL-012 | Decide to continue/stop loop (`LoopDecision`) | Must | `[MVP]` |
-| FR-LITL-013 | Backstop to prevent infinite loop (max round, cost threshold) | Must (safety) | `[MVP partial]` — only `LAB_AGENT_LOOP_MAX_ROUNDS`, no real cost/token threshold |
-| FR-LITL-014 | Operate model-provider-agnostic (Claude/OpenAI/Ollama/vLLM/internal) | Must | `[MVP partial]` — 2 named adapters; others via OpenAI-compatible `base_url` |
+| FR-LITL-013 | Backstop to prevent infinite loop (max round, cost threshold) | Must (safety) | `[MVP]` — model decision plus distinct max-round, token, cost, wall-time, no-progress, locality, and reservation closures; no writes follow a terminal closure |
+| FR-LITL-014 | Operate model-provider-agnostic (Claude/OpenAI/Ollama/vLLM/internal) | Must | `[MVP partial]` — provider-neutral task-stage routing over 2 named adapters; other compatible deployments use the explicitly approved OpenAI-compatible endpoint, not a dedicated adapter |
 | FR-LITL-015 | Respond explicitly when internal evidence is insufficient ("insufficient evidence") | Should | `[MVP]` — writes deduplicated `[EXP:Needs Input]`; executable setup remains pending |
 | FR-LITL-016 | Handle ambiguous acronyms: detect → approved dictionary → ask confirmation | Should | `[MVP partial]` — local approved dictionary and Needs Input exist; external wiki/KG/vector lookup remains Future |
 | FR-LITL-017 | Handle Flywheel job failure: show failed, preserve data path, allow rerun | Should | `[Future]` |
@@ -261,11 +263,12 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | Ambiguous acronym (e.g., `BIA`) | Detect → retrieve dict → ask confirm → regenerate | `[MVP partial]` — approved local dictionary scan and Needs Input exist; external retrieval-backed dictionary remains Future |
 | Flywheel job fails | Show failed, preserve data path, allow rerun, don't update KB | `[Future]` — Flywheel doesn't exist |
 | New data conflicts old knowledge | Create conflict note, keep both hypotheses | `[Future]` — no knowledge store |
-| Infinite loop | Max iteration, stop condition, cost threshold | `[MVP partial]` — only `LAB_AGENT_LOOP_MAX_ROUNDS`, no cost/plateau threshold |
+| Infinite loop | Max iteration, stop condition, cost threshold | `[MVP]` — max-round, token/cost, wall-time, and no-progress closures are distinct/audited; locality/reservation denial also closes before follow-on writes |
 | MCP server unavailable | — | `[MVP]` CLI fails/logs warning, watcher continues polling |
 | Model does not emit correct schema | — | `[MVP]` current run writes nothing; canvas stays pending; durable attempt is failed/backed off/quarantine-eligible |
+| Provider call uncertain after submission | Do not duplicate charged/side-effecting call | `[MVP]` submitted/executed/ambiguous intent reconciles only with provider capability; otherwise it blocks safely with no blind redispatch |
 | Human rejection at gate | Reject design/result, request revise | `[Future]` — no gate to reject |
-| Resource/budget rejection | Lab lead rejects due to insufficient resources/budget | `[Future]` — no budget field/gate |
+| Resource/budget rejection | Harness denies numeric/price-unavailable model dispatch; lab-lead resource approval remains separate | `[MVP partial]` — per-run/per-canvas token/cost reservations and unknown-price denial exist; no human lab-resource approval gate |
 | Duplicate/retry/idempotency failure | Don't create duplicate on retry | `[MVP]` — connector graph checks plus durable `workflow_attempts` and side-effect intents; generated Browser artifacts use title tags and bucket probes, while legacy Note recovery remains available for migrated canvases |
 
 **Business rules reference:** BR-LITL-001, BR-LITL-002, BR-LITL-003, BR-LITL-004, BR-LITL-006.
@@ -553,14 +556,14 @@ Fields still required by the full vision but not yet implemented as separate typ
 | ID | Requirement | Target | Status |
 |---|---|---|---|
 | NFR-LITL-001 | Security: Canvus credential only in `.env` git-ignored; model receives only read tools; downloaded bytes don't enter model context by default | No credential/secret leaks to canvas or model context | `[MVP]` |
-| NFR-LITL-002 | Data locality: some data must not be sent to external provider | TBD (no per-provider/endpoint control yet) | `[Future]` — roadmap Phase 4b |
-| NFR-LITL-003 | Model independence: not Claude-only | 3+ providers run same workflow, no code changes | `[MVP partial]` — only 2 named adapters; Ollama/vLLM/internal via OpenAI-compatible `base_url` |
+| NFR-LITL-002 | Data locality: some data must not be sent to external provider | Every call requires endpoint + classification authorization before dispatch | `[MVP]` — unknown/restricted/unapproved classifications, endpoints, and providers deny; organization approval matrix remains operational |
+| NFR-LITL-003 | Model independence: not Claude-only | 3+ providers run same workflow, no code changes | `[MVP partial]` — provider-neutral stage routing across 2 named adapters; OpenAI-compatible operation requires an explicit matching endpoint override |
 | NFR-LITL-004 | Traceability: each setup cites internal sources used | 100% of executable setup writes have valid ledger citations or no write occurs | `[MVP]` local Phase 4 tests pass; future external retrieval adapters remain Future |
 | NFR-LITL-005 | Reproducibility/versioning: knowledge version never overwrites | Each update creates new version with full metadata | `[Future]` — no Versioning Service |
 | NFR-LITL-006 | Reliability: retry/resume, idempotency durable across restart | Idempotency survives watcher restart | `[MVP]` — local SQLite WAL ledger with attempts/leases/intents/audit; multi-host/shared-store durability remains `[Future]` |
 | NFR-LITL-007 | Performance/scalability: chunking/caching/resumable for large multimodal | Large ingest case (e.g., ~4 days) resumes after interruption | `[Future]` — roadmap Phase 4c |
 | NFR-LITL-008 | Observability: structured log, metrics, health check, multi-user dashboard | TBD (no specific metrics yet) | `[Future]` — roadmap Phase 7; currently structured logs plus durable audit events, but no metrics/dashboard/health-check stack |
-| NFR-LITL-009 | Cost/token governance: budget/cost threshold, model routing by task | TBD (no real cost/token threshold yet) | `[Future]` — roadmap Phase 4b; currently only `LAB_AGENT_LOOP_MAX_ROUNDS` (round count, not cost) |
+| NFR-LITL-009 | Cost/token governance: budget/cost threshold, model routing by task | Configured run/canvas envelopes, known versioned pricing, and task-stage routing | `[MVP]` — durable reserve/commit/release; exact/estimated usage; unknown price denies even without cost caps; estimates are not invoices |
 | NFR-LITL-010 | Accessibility/operability: CLI `once`/`watch`, admin commands, clear `.env` config, troubleshooting docs | Workflow and operator commands documented | `[MVP]` — `setup-and-operations.md` |
 
 ---
@@ -575,7 +578,9 @@ Fields still required by the full vision but not yet implemented as separate typ
 | Retrieved evidence excerpts | Prompt injection or sensitive-data leakage | Successful read results are `untrusted_data`; durable audit stores ids/hashes/reasons only and trims rows to payload cap | `[MVP]` |
 | Artifact Browser URLs | Bearer capability leak or cross-canvas access | Private bind by default; reachable public base URL through HTTPS/private ingress in production; tokens stored as hashes; no access logs/full URL output; artifact/canvas scope checks; strict CSP/same-origin assets | `[MVP infrastructure]` — live reachability/TLS verification pending |
 | Model output | Domain fact hallucination, fabricated citations, guessed acronyms | Ground with RagCluster/read tools; validate citations against per-run ledger; scan idea/setup/evidence excerpts against approved dictionary; schema is structured | `[MVP partial]` |
-| Loop autonomy | Runaway execution | Model stop decision + `LAB_AGENT_LOOP_MAX_ROUNDS` backstop | `[MVP partial]` |
+| Model provider dispatch | Unapproved data flow, unknown price, duplicate/ambiguous submission | Classify/authorize endpoint before dispatch; require known price, durable intent/reservation; typed retry and capability-aware reconciliation only | `[MVP]` local/source gates; organization approval, price maintenance, live API checks remain operational |
+| Provider telemetry/errors | Raw prompt/response/secret/diagnostic persistence | Durable records contain fixed categories, digests, counts, and approved metadata only | `[MVP]` |
+| Loop autonomy | Runaway execution or side effects after terminal stop | Model decision plus max-round/token/cost/wall-time/no-progress/locality/reservation closures; one closure then no further provider/canvas writes | `[MVP]` |
 | Wet-lab authorization | Unapproved experiment execution | 5-step canonical chain (below) + Gate 1-5 | `[Future]` — no gate code |
 
 **Mandatory wet-lab authorization chain (canonical, consistent across README/system-architecture/roadmap):**
@@ -588,7 +593,7 @@ AI design → in-silico validation → scientist review → lab lead approval �
 
 Post-silico review state is also missing from current `DecisionState`; this is a gap in state model, not evidence gates are implemented.
 
-**Privacy/data governance:** Sensitive data is not sent to external model provider per data-locality requirement `[Future]`. No PII-handling specifically specified in original vision.
+**Privacy/data governance:** Model dispatch applies fail-closed source/evidence classification and provider endpoint authorization before content leaves the process `[MVP]`; unknown/restricted/unapproved classifications deny. The repository does not itself approve an organization's provider/locality matrix, validate live endpoints/SDKs, or establish PII policy; those remain external operator controls.
 
 ---
 
@@ -618,7 +623,7 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 | Phase 2 | Demo canvas operation (end-to-end mock loop) | Pending | UC-LITL-02 happy path |
 | Phase 3 | Harness contracts, persistent loop state, generated Browser artifacts | Partially complete — durable local state and generated Browser artifact infrastructure shipped; cross-implementation harness contracts and live public-base/TLS deployment gates remain Future/Pending | FR-LITL-019, FR-LITL-021, NFR-LITL-006, NFR-LITL-010 |
 | Phase 4 | Stronger grounding (ledger/citations/acronym/Needs Input) | Complete — 314/314 `lab-agent` tests, focused `canvus-mcp` marker tests 8/8, reviewer score 9.6/10 SEALED; wiki/KG/vector sources remain Future adapters | FR-LITL-001, FR-LITL-015, FR-LITL-016, NFR-LITL-004 |
-| Phase 4b | Token/resource governance, model routing | Future | FR-LITL-013, NFR-LITL-002, NFR-LITL-009 |
+| Phase 4b | Token/resource governance, model routing | Complete for local/source gates on 2026-07-19 — routing/locality/pricing/budgets/intents/reconciliation/stops verified; `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED; organization approval matrix, maintained prices, and live provider checks remain operational | FR-LITL-013, NFR-LITL-002, NFR-LITL-009 |
 | Phase 4c | Async multimodal ingestion | Future | FR-LITL-020, NFR-LITL-007 |
 | Phase 5 | In-silico validation gate | Future | UC-LITL-03, FR-LITL-003 |
 | Phase 6 | In-silico + human approval + Flywheel + lab integration | Future | FR-LITL-004, FR-LITL-005, FR-LITL-006, FR-LITL-008, FR-LITL-010, BR-LITL-006, BR-LITL-009 |

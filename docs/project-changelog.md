@@ -1,5 +1,31 @@
 # Project Changelog
 
+## 2026-07-19 — Phase 5: governance and model routing
+
+### Added
+
+- Provider-neutral governed dispatch over the named OpenAI/Claude adapters. Workflow stages (`setup`, `mock_result`, `loop_decision`) use a configuration-backed ordered routing table; locality authorization is evaluated before any provider receives content.
+- Fail-closed locality policy: source/evidence classification plus an approved HTTPS endpoint and provider classification allowlist are required. Credential-gated canonical OpenAI/Claude endpoints are defaults; explicit endpoint configuration overrides them and is passed to the SDK. Custom OpenAI-compatible use requires a matching explicit endpoint; unknown/custom provider names are not dynamically accepted.
+- Normalized usage states: `exact`, `estimated`, and `unavailable`. Claude exact input includes cache-creation and cache-read counts. Conservative estimates include serialized messages, tools, response schema, schema name, and the configured output cap.
+- Versioned pricing checks, per-trigger run/per-canvas SQLite budget reservations, and idempotent reserve/commit/release accounting. Unknown/missing pricing denies governed dispatch even when numeric cost caps are unset.
+- Durable model-call intents with submission/execution/reconciliation states, bounded `next_retry_at` retries for typed pre-submission transient failures, and capability-aware recovery for submitted/ambiguous outcomes. No uncertain request is blindly redispatched.
+- Distinct terminal closures for model decision, maximum rounds, token budget, cost budget, wall time, no progress, locality denial, and reservation denial; terminal stops are rendered/audited before any later provider or canvas write.
+
+### Changed
+
+- Production `once`/`watch` execution now uses the governed gateway for every model call. A working provider credential alone is insufficient: endpoint/locality authorization and known model pricing are also required.
+- Durable provider-related records now use safe fixed categories, digests, counts, and approved metadata rather than raw provider errors, prompts, responses, or secrets.
+- Documentation now treats governance/routing/locality/budgets as implemented local/source behavior and preserves Phase 4 grounding/evidence semantics.
+
+### Verified
+
+- 2026-07-19 sealed local gates: `lab-agent` 406/406, `canvus-mcp` 37/37, focused Phase 5 matrix 131/131 on the initial run plus three exact repeats (four runs total, no flakes); endpoint/factory/adapter focused validation 15/15 also passed. Reviewer cycle 3 sealed at 9.7/10. Ruff, mypy, workflow parity, `git diff --check`, and both package builds passed. Coverage was not measured because coverage tooling is absent.
+
+### Not claimed
+
+- This release does not establish an organization-approved provider/locality matrix, production rate table, invoice-accurate cost, live provider SDK/API compatibility, endpoint reachability, or external authorization.
+- No real robot, wet-lab approval, Flywheel, in-silico, wiki/KG/vector, or multi-host deployment is introduced.
+
 ## 2026-07-18 — Phase 4: grounded setup evidence and ambiguity gates
 
 ### Added

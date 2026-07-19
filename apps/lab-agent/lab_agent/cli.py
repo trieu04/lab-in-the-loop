@@ -28,11 +28,12 @@ import structlog
 import uvicorn
 
 from lab_agent import admin
-from lab_agent.adapters.factory import get_adapter
+from lab_agent.adapters.factory import get_adapters
 from lab_agent.artifact_server import create_artifact_app
 from lab_agent.artifact_store import ArtifactStore
 from lab_agent.config import Settings, get_settings
 from lab_agent.mcp_client import MCPClient
+from lab_agent.model_gateway import GovernedAdapter, build_context
 from lab_agent.runtime import (
     RuntimeContext,
     RuntimeStartupError,
@@ -130,16 +131,22 @@ async def _run(args: argparse.Namespace) -> int:
 
         if args.provider:
             settings.model_provider = args.provider
-        adapter = get_adapter(settings)
+        # Governance is the production path: every provider call is routed by
+        # task stage, locality-authorized, budget-accounted, and durably
+        # intent-guarded, and each loop enforces the harness stop policy.
+        gov = build_context(ctx.store, settings, args.canvas, get_adapters(settings))
+        adapter = GovernedAdapter(gov)
         async with MCPClient(settings.mcp_url) as mcp:
             if args.command == "watch":
                 # `run_watch` releases the lease itself in its own `finally`
                 # (covers both a clean loop exit and Ctrl-C/KeyboardInterrupt).
-                await run_watch(mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas)
+                await run_watch(
+                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas, gov
+                )
                 return 0
             try:
                 counts = await process_once(
-                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas
+                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas, gov
                 )
             finally:
                 # `once` is a single cycle followed by a clean shutdown: release

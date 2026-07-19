@@ -14,7 +14,7 @@ The design deliberately separates reads from writes:
 
 ## Current MVP vs. target harness (status note)
 
-Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), OpenAI/Claude adapter-factory model choices, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, and a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history (see "Durable harness core (Phase 2)", "Generated artifact Browser service (Phase 3 implementation)", and "Grounding/evidence gate (Phase 4)" below).
+Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), a provider-neutral governed model gateway over the OpenAI/Claude adapter factory, task-stage routing and fail-closed locality/pricing checks, durable run/canvas budget reservations and model-call intents, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, and a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history (see the Phase 2–5 sections below).
 
 A 2026-07-16 architecture-recovery review (recovered from a separate `rag-canvus` session; see [project changelog](project-changelog.md)) recommends evolving this into an **independent, provider-neutral harness/orchestrator**, with the Claude Code skill/MCP registration as an optional developer/operator/demo interface rather than the runtime or source of truth for workflow logic, policy, grounding, and schemas. That recommendation is the session's final conclusion but was **not explicitly ratified by the project owner** — the architecture-choice prompt that would have confirmed it was interrupted. Treat it as **proposed direction**, not an implemented architecture. See "Target harness boundary (proposed)" below and the [roadmap](development-roadmap.md) for the phases this implies.
 
@@ -38,6 +38,8 @@ apps/lab-agent
   ├─ polls scan_experiment_workflow
   ├─ dispatches pending workflow steps, leased via a durable SQLite ledger
   ├─ grounds model using read-only tools and a per-run evidence ledger
+  ├─ classifies evidence, authorizes locality, routes task stages, and reserves budgets before model dispatch
+  ├─ normalizes exact/estimated/unavailable usage and reconciles durable model-call intents
   ├─ validates citations, sufficiency, and ambiguity before setup writes
   ├─ writes setup/result/closed and generated needs-input nodes as crash-safe Browser artifacts
   ├─ serves capability-protected artifact HTML
@@ -82,7 +84,10 @@ Key modules:
 | Module | Responsibility |
 |---|---|
 | `lab_agent/cli.py` | CLI commands: `once`, `watch`, durable operator commands, `serve-artifacts` |
-| `lab_agent/config.py` | MCP URL, provider, model, bounds |
+| `lab_agent/config.py` | MCP URL, adapters, runtime bounds, task routing, locality allowlists/endpoints, versioned pricing, resource budgets, and stop/retry settings |
+| `lab_agent/model_gateway.py` / `governance_context.py` | Provider-neutral governed dispatch: stage routing, locality authorization, durable intent/reservation lifecycle, normalized usage/cost accounting, and reconciliation guard |
+| `lab_agent/policy/*` | Pure routing, locality, pricing, budget-reservation, and stop policies used before provider/canvas writes |
+| `lab_agent/model_request.py` / `provider_endpoints.py` | Provider-visible request digest/conservative usage estimate and credential-gated canonical endpoint defaults/HTTPS validation |
 | `lab_agent/mcp_client.py` | MCP transport client |
 | `lab_agent/watch.py` | Poll loop and pending-trigger dispatcher |
 | `lab_agent/orchestrator.py` | Mock robot result, loop continuation/closure, and next-round setup grounding via `orchestrator_setup.generate_setup` |
@@ -103,7 +108,7 @@ Key modules:
 | `lab_agent/adapters/*` | OpenAI and Claude model adapters; `factory.py` selects by `settings.model_provider` |
 | `lab_agent/runtime.py` | Process-wide `RuntimeContext` (durable `StateStore` + a fresh-per-process `runtime_instance_id`), built once at CLI startup; fails closed on any integrity/audit-chain problem before canvas work starts |
 | `lab_agent/state_store.py` | Public facade over the durable SQLite ledger — the only module CLI/orchestrator code is meant to call into for durable-harness reads/writes |
-| `lab_agent/state/*` | Internal ledger implementation behind the facade: `connection.py` (WAL setup + versioned SQL migration runner with checksum drift detection), `attempts.py`/`attempts_retry.py` (workflow-attempt lifecycle: create/lease/complete, and backoff/quarantine/reset, split across two modules for the line budget), `leases.py` (single-writer canvas lease), `intents.py` (side-effect outbox rows), `audit.py` (hash-chained audit log), `edges.py` (`orchestrator_edges`), `models.py` (dataclasses/enums) |
+| `lab_agent/state/*` | Internal ledger implementation behind the facade: `connection.py` (WAL setup + versioned SQL migration runner with checksum drift detection), `attempts.py`/`attempts_retry.py` (workflow-trigger lifecycle: create/lease/complete, and backoff/quarantine/reset), `leases.py` (single-writer canvas lease), `intents.py` (side-effect and model-call intent states, retry/reconciliation metadata), `budget_reservations.py` (transactional run/canvas holds), `audit.py` (hash-chained audit log), `edges.py` (`orchestrator_edges`), `models.py` (dataclasses/enums) |
 | `lab_agent/recovery.py` | `idempotency_key`/`input_hash` and `reconcile_or_execute` — the generic intent-before-mutation, probe-before-create outbox algorithm |
 | `lab_agent/canvas_probe.py` | Production `live_probe` callables (`probe_browser_by_tag`, `probe_note_by_tag`, `probe_connector`) that re-derive canvas state from MCP read tools to detect a crash-after-effect; fail closed on any MCP/parse error. Browser probes cover generated Setup/Result/Closed/Needs Input buckets; legacy Note probes still cover setup/result/closed notes via `scan_experiment_workflow` |
 | `lab_agent/durable_browser.py` | Crash-safe generated-artifact Browser writes: require public base URL, persist/get artifact, issue token, create/repair Browser in place, map widget id, and connect it; later model reads pull text from `ArtifactStore` before falling back to legacy Notes |
@@ -132,6 +137,18 @@ Setup generation now fails visible before canvas writes instead of trusting prom
 - Durable grounding audit stores only decision, truncated reason, and evidence ids/tool/content hashes. It uses the same 4096-byte payload cap as the audit store and deterministically trims newest evidence rows to fit; raw excerpts, tool arguments, credentials, and capability URLs are not persisted.
 
 Future wiki/KG/vector sources can feed this boundary as retrieval adapters or external gates. They are not current hard dependencies, and no real external integrations or wet-lab autonomy are claimed.
+
+### Governance and model routing (Phase 5)
+
+Every production model call flows through `GovernedAdapter`/`model_gateway.py`; workflow code names a `TaskStage` rather than a provider. The routing table maps a stage to an ordered provider preference. The first constructed provider that is authorized for the call's classifications wins; a later preference is an explicit, auditable fallback. A provider dispatch never falls through to another provider after a call was submitted.
+
+Before dispatch, locality classifies source metadata and any retrieved `untrusted_data` envelopes. An unknown or restricted classification, missing/invalid endpoint, or absent provider allowlist entry denies the call before provider content is sent. Built-in OpenAI (`https://api.openai.com/v1`) and Claude (`https://api.anthropic.com`) HTTPS endpoints are credential-gated defaults; explicit `LAB_AGENT_PROVIDER_ENDPOINTS` overrides are the endpoints passed to the SDKs. A custom OpenAI-compatible deployment must explicitly use the same HTTPS URL in its endpoint approval and `LAB_AGENT_OPENAI_BASE_URL`; unknown/custom provider names are not dynamically constructed and fail closed.
+
+The gateway normalizes SDK usage as `exact`, `estimated`, or `unavailable`. Exact counts are provider-reported; Claude exact input includes cache-creation and cache-read tokens. When an SDK omits counts, the gateway makes a conservative `estimated` reservation from serialized messages, tools, response schema, schema name, and the configured output ceiling (`LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS`). These values are governance estimates, **not provider invoices**. Cost requires a configured rate for the selected model and carries `LAB_AGENT_PRICING_VERSION`; missing usage or missing/invalid model pricing is unavailable and denies dispatch even when no cost cap is set. Pricing configuration/version and an organization-approved provider/locality matrix remain operator-owned controls, not claims this repository can establish.
+
+Before an SDK call, the gateway persists a request-digest model-call intent and an idempotent SQLite reservation under `BEGIN IMMEDIATE`; both the per-trigger run envelope and the all-runs-per-canvas envelope include committed and active holds. A trigger starts a fresh run envelope, while committed canvas usage and held reservations reconstruct after restart. A known-not-dispatched typed transient releases its hold and may retry only at `next_retry_at`, up to `LAB_AGENT_MODEL_CALL_MAX_ATTEMPTS`. Deterministic failures do not retry. Submitted, executed, ambiguous, or untyped outcomes are never blindly redispatched: a provider may reconcile only when it implements the capability; otherwise processing remains safely blocked. Durable intent/audit data stores fixed failure categories, request-id digests/approved metadata, and counts — never prompts, responses, secrets, or raw provider error text.
+
+A committed response is checked before any subsequent model or canvas write. Terminal closure reasons are distinct and rendered/audited: model decision, maximum rounds, token budget, cost budget, wall time, no progress, locality denial, and reservation denial. Once a terminal reason is selected, the loop emits one closure and performs no further provider or canvas writes for that run.
 
 ### Generated artifact Browser service (Phase 3 implementation)
 
@@ -243,7 +260,9 @@ The canvas remains the source of *workflow* state — the agent treats connector
 | Downloaded PDFs/images | Sensitive data | Written to ignored `downloads/`; bytes not in model context by default |
 | Retrieved evidence text | Prompt injection or data leakage | Read results wrapped as `untrusted_data`; model has no write tools; durable audit stores ids/hashes/reasons only |
 | Model output | Hallucinated domain facts, fabricated citations, guessed acronyms | Ground via RagCluster/read tools; validate citations against per-run ledger; scan idea/setup/evidence excerpts with approved dictionary; structured schemas |
-| Loop autonomy | Runaway rounds | Model stop decision plus `LAB_AGENT_LOOP_MAX_ROUNDS` backstop |
+| Provider dispatch | Sending unapproved data, unpriced calls, duplicate/ambiguous submission | Classify before dispatch; require HTTPS endpoint + locality allowlist + known versioned model price; durable intent, reservation, typed retry, and capability-aware reconciliation; no blind redispatch |
+| Provider telemetry/errors | Prompt, response, secret, or provider-diagnostic persistence | Normalize only approved usage/count metadata; durable intents/audits use fixed categories, digests, and metadata rather than raw provider errors, prompts, or responses |
+| Loop autonomy | Runaway rounds or writes after terminal governance stop | Model decision plus max-round/token/cost/wall-time/no-progress/locality/reservation closures; one rendered/audited closure and no later provider/canvas write |
 
 ## Integration boundary with `rag-canvus`
 
@@ -267,10 +286,10 @@ It is optional and separate from the primary `canvus-mcp` + `lab-agent` loop. Th
 
 - Canvus event watching/scanning (today: `lab_agent/watch.py`).
 - A durable workflow state machine, with idempotency, retry, resume, failure recovery, and audit/version history (today: **implemented for local-disk, single-host scope** — see "Durable harness core (Phase 2)" above; a shared/replicated store for multi-host deployment remains future, see "Local-disk, single-host scope" above).
-- Policy and approval gates (today: none — mock robot only, no human-approval gate in code).
-- Token/resource budgets, model routing, cost thresholds, loop limits, and stop conditions (today: only `LAB_AGENT_LOOP_MAX_ROUNDS` as a runaway backstop, plus the model's own `LoopDecision`).
+- Policy and human-approval gates (today: provider/locality/pricing/budget/stop governance is implemented; mock robot only and no human-approval gate in code).
+- Token/resource budgets, model routing, cost thresholds, loop limits, and stop conditions (today: implemented for task-stage routing, configured budgets, price availability, max rounds, wall time, no progress, locality, and reservation denial; organization approval matrices and price maintenance remain operator gates).
 - Retrieval/grounding against internal wiki, knowledge graph, documents, and experiment history (today: RagCluster/read-tool context plus an approved acronym dictionary; no KG/wiki/vector DB integration).
-- Context packaging and evidence tracking, model adapter/router selection, and structured-output validation (today: per-run evidence ledger + citation/ambiguity gate, adapter factory, and fail-closed `orchestrator_support.coerce_or_fail`/`_emit_validated`; provider-specific but not policy-aware).
+- Context packaging and evidence tracking, model adapter/router selection, and structured-output validation (today: per-run evidence ledger + citation/ambiguity gate, provider-neutral governed adapter/router, and fail-closed `orchestrator_support.coerce_or_fail`/`_emit_validated`).
 - Tool/action routing to Canvus, Flywheel, in-silico simulation, and robotic/human lab execution (today: mock only; no Flywheel/in-silico wiring).
 - Async, chunked, cached, resumable multimodal ingestion rather than one model call per document (today: whole-file downloads via `canvus_mcp/downloads.py`; no chunking/caching/resume).
 
@@ -283,7 +302,9 @@ Under this proposal, the Claude Code skill/MCP registration becomes an **optiona
 - Flywheel/in-silico gates are represented in docs and roadmap, not implemented as live integrations.
 - The durable harness is local-disk, single-host, single-active-writer-per-canvas scoped (SQLite WAL) — not a shared/replicated store; see "Local-disk, single-host scope" above for the Postgres/multi-host migration trigger.
 - External live Canvus reachability to the artifact public base URL and production TLS/private-ingress verification remain operational gates; this repository documents the requirement but does not prove deployment.
-- Token/resource governance, model routing, and multi-user observability do not exist yet — these are the target-harness items above, not current behavior.
+- Governance is local/source-tested, not an external authorization: operators must maintain approved provider/locality classifications, HTTPS endpoints, and versioned model prices. This repository does not verify live provider SDK/API behavior, endpoint reachability, organization approval, or invoice reconciliation.
+- The gateway has only named `openai` and `claude` adapters; an OpenAI-compatible endpoint is an explicit `openai` override, not a dynamically approved new provider.
+- Multi-user observability remains future work.
 
 ## References
 

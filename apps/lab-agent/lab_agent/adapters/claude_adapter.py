@@ -10,14 +10,55 @@ tool, matching the OpenAI adapter's behaviour.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NoReturn
 
-from anthropic import AsyncAnthropic
+from anthropic import (
+    APIConnectionError,
+    APIStatusError,
+    AsyncAnthropic,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    PermissionDeniedError,
+    RateLimitError,
+    UnprocessableEntityError,
+)
 
-from lab_agent.adapters.base import AdapterResponse, Message, ToolCall, ToolSpec
+from lab_agent.adapters.base import (
+    AdapterResponse,
+    AmbiguousProviderError,
+    DeterministicProviderError,
+    Message,
+    ToolCall,
+    ToolSpec,
+    TransientProviderError,
+    normalize_usage,
+)
+from lab_agent.models.governance import Usage
 
 EMIT_TOOL = "emit_result"
-_MAX_TOKENS = 4096
+
+
+def _usage_from(resp: Any, model: str) -> Usage:
+    """Normalize an Anthropic ``Message`` into a provider-neutral :class:`Usage`.
+
+    The Messages API reports input/output counts plus optional prompt-cache
+    creation/read counts. All input categories count toward the conservative
+    token total; pricing still uses the configured provider-neutral input rate.
+    Missing usage stays ``UNAVAILABLE`` rather than inventing exact counts.
+    """
+    raw = getattr(resp, "usage", None)
+    prompt_tokens = getattr(raw, "input_tokens", None)
+    if prompt_tokens is not None:
+        prompt_tokens += int(getattr(raw, "cache_creation_input_tokens", 0) or 0)
+        prompt_tokens += int(getattr(raw, "cache_read_input_tokens", 0) or 0)
+    return normalize_usage(
+        provider="claude",
+        model=model,
+        request_id=getattr(resp, "id", None),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=getattr(raw, "output_tokens", None),
+    )
 
 
 def _split_system(messages: list[Message]) -> tuple[str, list[Message]]:
@@ -66,12 +107,35 @@ def _tool_param(spec: ToolSpec) -> dict[str, Any]:
     }
 
 
+def _raise_provider_error(exc: Exception) -> NoReturn:
+    request_id = getattr(exc, "request_id", None)
+    if isinstance(
+        exc,
+        (
+            BadRequestError,
+            AuthenticationError,
+            PermissionDeniedError,
+            NotFoundError,
+            UnprocessableEntityError,
+        ),
+    ):
+        raise DeterministicProviderError(str(exc), request_id) from exc
+    if isinstance(exc, RateLimitError):
+        raise TransientProviderError(str(exc), request_id) from exc
+    if isinstance(exc, (APIConnectionError, APIStatusError)):
+        raise AmbiguousProviderError(str(exc), request_id) from exc
+    raise exc
+
+
 class ClaudeAdapter:
     """Adapter over :class:`anthropic.AsyncAnthropic`."""
 
-    def __init__(self, api_key: str, model: str) -> None:
-        self._client = AsyncAnthropic(api_key=api_key)
+    def __init__(
+        self, api_key: str, model: str, base_url: str | None = None, max_output_tokens: int = 4096
+    ) -> None:
+        self._client = AsyncAnthropic(api_key=api_key, base_url=base_url or None)
         self._model = model
+        self._max_output_tokens = max_output_tokens
 
     async def generate(
         self,
@@ -80,9 +144,17 @@ class ClaudeAdapter:
         response_schema: dict[str, Any] | None = None,
         schema_name: str = "result",
     ) -> AdapterResponse:
+        try:
+            return await self._generate(messages, tools, response_schema, schema_name)
+        except (APIConnectionError, APIStatusError) as exc:
+            _raise_provider_error(exc)
+
+    async def _generate(
+        self, messages: list[Message], tools: list[ToolSpec] | None,
+        response_schema: dict[str, Any] | None, schema_name: str,
+    ) -> AdapterResponse:
         system, rest = _split_system(messages)
         claude_messages = _to_claude_messages(rest)
-
         if response_schema is not None:
             emit = ToolSpec(
                 name=EMIT_TOOL,
@@ -91,20 +163,21 @@ class ClaudeAdapter:
             )
             resp = await self._client.messages.create(  # type: ignore[call-overload]
                 model=self._model,
-                max_tokens=_MAX_TOKENS,
+                max_tokens=self._max_output_tokens,
                 system=system or None,
                 messages=claude_messages,
                 tools=[_tool_param(emit)],
                 tool_choice={"type": "tool", "name": EMIT_TOOL},
             )
+            usage = _usage_from(resp, self._model)
             for block in resp.content:
                 if block.type == "tool_use":
-                    return AdapterResponse(parsed=dict(block.input))
-            return AdapterResponse(parsed={})
+                    return AdapterResponse(parsed=dict(block.input), usage=usage)
+            return AdapterResponse(parsed={}, usage=usage)
 
         kwargs: dict[str, Any] = {
             "model": self._model,
-            "max_tokens": _MAX_TOKENS,
+            "max_tokens": self._max_output_tokens,
             "system": system or None,
             "messages": claude_messages,
         }
@@ -119,7 +192,9 @@ class ClaudeAdapter:
                 text_parts.append(block.text)
             elif block.type == "tool_use":
                 calls.append(ToolCall(id=block.id, name=block.name, arguments=dict(block.input)))
-        return AdapterResponse(text="\n".join(text_parts) or None, tool_calls=calls)
+        return AdapterResponse(
+            text="\n".join(text_parts) or None, tool_calls=calls, usage=_usage_from(resp, self._model)
+        )
 
 
 __all__ = ["ClaudeAdapter"]

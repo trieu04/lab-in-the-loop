@@ -1,9 +1,4 @@
-"""Runtime configuration for the Lab-in-the-Loop agent.
-
-All environment variables carry the ``LAB_AGENT_`` prefix. A single settings
-instance is built lazily and reused, mirroring the pattern in
-``canvus_mcp.client.get_settings``.
-"""
+"""Runtime configuration for the Lab-in-the-Loop agent."""
 
 from __future__ import annotations
 
@@ -12,16 +7,14 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from lab_agent.provider_endpoints import default_provider_endpoints
+
 
 class Settings(BaseSettings):
     """Environment-backed settings for the agent."""
 
     model_config = SettingsConfigDict(
-        env_prefix="LAB_AGENT_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-        case_sensitive=False,
+        env_prefix="LAB_AGENT_", env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
     )
 
     # ── canvus-mcp endpoint ─────────────────────────────────────────
@@ -56,6 +49,9 @@ class Settings(BaseSettings):
         default=8,
         ge=1,
         description="Hard cap on tool-use iterations per model turn (guards runaway loops).",
+    )
+    model_max_output_tokens: int = Field(
+        default=4096, ge=1, description="Hard provider output cap used for requests and reservations."
     )
     watch_poll_seconds: float = Field(
         default=30.0,
@@ -122,6 +118,70 @@ class Settings(BaseSettings):
         description="Public base URL Canvus clients use to reach the artifact service "
         "(e.g. 'https://lab.internal'). Empty until a deployment target is chosen; "
         "never used to construct auth -- capability tokens are opaque and hashed in the DB.",
+    )
+
+    # ── Governance: task-stage routing (Phase 5, NFR-LITL-003) ──────
+    routing_table: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Stage -> ordered provider preference (JSON in env). A stage "
+        "absent here falls back to `model_provider`; the first preferred provider "
+        "that is both configured and locality-authorized wins. No provider branch "
+        "ever lives in orchestration code -- routing is pure config.",
+    )
+
+    # ── Governance: data-locality allowlist (NFR-LITL-002, fail closed) ──
+    provider_endpoints: dict[str, str] = Field(
+        default_factory=default_provider_endpoints,
+        description="Provider -> approved HTTPS endpoint. Empty, invalid, or unlisted is denied before dispatch.",
+    )
+    provider_data_classifications: dict[str, list[str]] = Field(
+        default_factory=lambda: {
+            "openai": ["public", "internal"],
+            "claude": ["public", "internal"],
+        },
+        description="Provider -> classifications it may receive. A restricted or "
+        "unknown-classified source is denied unless the provider is explicitly "
+        "listed for it; an unlisted provider receives nothing (default deny).",
+    )
+
+    # ── Governance: per-run/per-canvas budgets (NFR-LITL-009) ───────
+    run_token_budget: int | None = Field(
+        default=None, description="Max total tokens per loop run (None = unbounded)."
+    )
+    run_cost_budget_usd: float | None = Field(
+        default=None, description="Max estimated USD per loop run (None = unbounded)."
+    )
+    canvas_token_budget: int | None = Field(
+        default=None, description="Max total tokens per canvas across runs (None = unbounded)."
+    )
+    canvas_cost_budget_usd: float | None = Field(
+        default=None, description="Max estimated USD per canvas across runs (None = unbounded)."
+    )
+
+    # ── Governance: pricing (versioned; estimates are labelled, never billed) ──
+    pricing_version: str = Field(
+        default="unset",
+        description="Version tag stamped on every cost estimate for invoice reconciliation.",
+    )
+    model_pricing: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description="Model id -> {'input_per_1k', 'output_per_1k'} (JSON in env). A model "
+        "absent here has UNKNOWN pricing -- cost is surfaced as unavailable, never zero.",
+    )
+
+    # ── Governance: stop policy (FR-LITL-013) ───────────────────────
+    wall_time_budget_seconds: float | None = Field(
+        default=None, description="Max wall-clock seconds per loop run (None = unbounded)."
+    )
+    no_progress_rounds: int = Field(
+        default=3, ge=1,
+        description="Consecutive rounds with an identical result signature that trip the "
+        "no-progress stop.",
+    )
+    model_call_max_attempts: int = Field(
+        default=3, ge=1,
+        description="Bounded dispatch attempts for one logical model call after known "
+        "non-dispatched transient failures. Ambiguous outcomes are held for reconciliation.",
     )
 
 

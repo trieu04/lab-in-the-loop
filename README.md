@@ -14,10 +14,10 @@ This is the final recommendation of that review, but the transcript it came from
 
 What exists today is an MVP, not the target production harness:
 
-- Model providers are the `openai`/`claude` adapter-factory choices in `lab-agent`; OpenAI-compatible `base_url` covers Ollama/vLLM/Azure-style endpoints, but there are no dedicated named adapters for them.
-- Robot/lab execution is mock by design.
-- Loop/trigger idempotency, retry, quarantine, single-writer canvas leasing, the audit trail, and canonical generated-artifact records are durable across restarts via a local SQLite ledger (`.state/lab_agent.db`) — see [system architecture](docs/system-architecture.md) → "Durable harness core" and "Generated artifact Browser service". This is local-disk, single-host scoped; a shared/replicated store for multi-host or multi-writer deployment is still future work.
-- There is no retrieval/knowledge-graph grounding, token/resource governance, Flywheel/in-silico integration, or multi-user observability yet. These are future-phase items (see roadmap).
+- Model providers are the `openai`/`claude` adapter-factory choices in `lab-agent`. A provider-neutral governed gateway selects the configured provider/model by task stage (`setup`, `mock_result`, or `loop_decision`) only after data-locality authorization; OpenAI-compatible deployments remain the `openai` adapter, not dedicated named adapters.
+- Every production model call is intent-guarded, locality-authorized, price-checked, durably reserved, and usage-accounted before a later canvas write. The gateway records normalized provider usage as `exact`, `estimated`, or `unavailable`; estimates are conservative governance inputs, not provider invoices.
+- Loop/trigger idempotency, retry, quarantine, single-writer canvas leasing, model-call intents, durable budget reservations, the audit trail, and canonical generated-artifact records survive restarts via a local SQLite ledger (`.state/lab_agent.db`). Run envelopes reset for each trigger; canvas totals and active reservations reconstruct after restart. This is local-disk, single-host scoped; a shared/replicated store for multi-host or multi-writer deployment is still future work.
+- Robot/lab execution is mock by design. Wiki/knowledge-graph retrieval, Flywheel/in-silico integration, external provider/locality approval, production price maintenance, live provider SDK/API checks, and multi-user observability remain operational or future-phase work.
 
 ## What this repo contains
 
@@ -97,7 +97,9 @@ Use user scope so the server is available from every project. Restart Claude Cod
 ```bash
 cd ~/dev/lap-in-the-loop/apps/lab-agent
 cp .env.example .env
-# Fill LAB_AGENT_MCP_URL, model API key, and LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL
+# Fill LAB_AGENT_MCP_URL, a model API key, LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL,
+# provider endpoint/locality approval, and versioned model pricing.
+# See docs/setup-and-operations.md for the governed configuration contract.
 uv sync --extra dev
 uv run lab-agent serve-artifacts      # separate process; private bind by default
 uv run lab-agent once --canvas <canvas-id>

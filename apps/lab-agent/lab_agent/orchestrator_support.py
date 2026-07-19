@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from lab_agent import durable_browser, nodes, render
 from lab_agent.config import Settings
 from lab_agent.mcp_client import MCPClient
-from lab_agent.models.artifact import ArtifactType
+from lab_agent.models.artifact import ArtifactProvenance, ArtifactType
 from lab_agent.models.experiment import ExperimentResult, ExperimentSetup, LoopDecision
 from lab_agent.models.states import DecisionState
 from lab_agent.orchestrator_emit import (
@@ -71,6 +71,7 @@ async def write_setup_node(
     round_index: int,
     predecessor_id: str,
     edge_kind: str,
+    provenance: ArtifactProvenance | None = None,
 ) -> str:
     """Write an already-validated ExperimentSetup as a Browser artifact; return its id."""
     title = f"{nodes.EXP_SETUP} {version(round_index)}] {idea_text[:40]}"
@@ -82,7 +83,7 @@ async def write_setup_node(
     return await durable_browser.write_artifact_browser_durable(
         mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.SETUP,
         state=DecisionState.RUNNING, title=title, payload=payload,
-        provenance=durable_browser.provenance_for(
+        provenance=provenance or durable_browser.provenance_for(
             settings,
             source_widget_id=idea_id,
             trigger_id=f"setup/predecessor:{predecessor_id}/round:{round_index}",
@@ -102,6 +103,7 @@ async def write_result_node(
     setup_id: str,
     robot_id: str,
     round_index: int,
+    provenance: ArtifactProvenance | None = None,
 ) -> str:
     """Write an already-validated ExperimentResult as a Browser artifact; return its id."""
     title = f"{nodes.EXP_RESULT} {version(round_index)}]"
@@ -113,7 +115,7 @@ async def write_result_node(
     return await durable_browser.write_artifact_browser_durable(
         mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.RESULT,
         state=DecisionState.ANALYSIS_COMPLETE, title=title, payload=payload,
-        provenance=durable_browser.provenance_for(
+        provenance=provenance or durable_browser.provenance_for(
             settings,
             source_widget_id=setup_id,
             trigger_id=f"result/setup:{setup_id}/round:{round_index}",
@@ -133,9 +135,19 @@ async def write_closed_node(
     reason: str,
     backstop: bool,
     round_index: int,
-    result_id: str,
+    result_id: str = "",
+    predecessor_id: str = "",
+    edge_kind: str = "result_closed",
+    discriminator: str = "",
+    provenance: ArtifactProvenance | None = None,
 ) -> str:
-    """Write the terminal [EXP:Closed] Browser artifact, linked from the last result."""
+    """Write one terminal [EXP:Closed] Browser artifact from its predecessor."""
+    predecessor = predecessor_id or result_id
+    default_lineage = (
+        f"closed/result:{result_id}/round:{round_index}"
+        if result_id and not predecessor_id
+        else f"closed/predecessor:{predecessor}/round:{round_index}"
+    )
     body = render.render_decision(decision) + (f"\n\n({reason})" if backstop else "")
     title = f"{nodes.CLOSED} after {version(round_index)}"
     payload = {
@@ -145,13 +157,13 @@ async def write_closed_node(
     return await durable_browser.write_artifact_browser_durable(
         mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.CLOSED,
         state=DecisionState.CLOSED, title=title, payload=payload,
-        provenance=durable_browser.provenance_for(
+        provenance=provenance or durable_browser.provenance_for(
             settings,
-            source_widget_id=result_id,
-            trigger_id=f"closed/result:{result_id}/round:{round_index}",
+            source_widget_id=predecessor,
+            trigger_id=default_lineage,
         ),
-        discriminator=f"closed/result:{result_id}/round:{round_index}",
-        round_index=round_index, predecessor_id=result_id, edge_kind="result_closed",
+        discriminator=discriminator or default_lineage,
+        round_index=round_index, predecessor_id=predecessor, edge_kind=edge_kind,
     )
 
 

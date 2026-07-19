@@ -10,7 +10,7 @@
 ## Overview
 
 - Priority: P1
-- Status: pending
+- Status: complete
 - Effort: 5d
 - Description: Put provider selection, data-locality, usage accounting, budgets, and stop policies under harness control while preserving the existing provider adapters. No gateway service or provider rewrite.
 
@@ -73,15 +73,15 @@ Policy is deterministic configuration plus typed models. Provider SDKs remain is
 
 ## Todo List
 
-- [ ] Adapter usage normalized for OpenAI and Claude
-- [ ] Routing/locality/budget/stop policy implemented
-- [ ] Task-stage model routing wired through existing factory
-- [ ] Provider calls use durable intents/reconciliation and budget-bounded retries
-- [ ] Token/cost/wall-time/no-progress stops audited and rendered
-- [ ] Locality denial occurs before provider call
-- [ ] Pricing and policy configuration documented
-- [ ] Policy/usage/stop regression tests pass
-- [ ] Architecture, roadmap, operations, canonical spec, and changelog updated
+- [x] Adapter usage normalized for OpenAI and Claude
+- [x] Routing/locality/budget/stop policy implemented
+- [x] Task-stage model routing wired through existing factory
+- [x] Provider calls use durable intents/reconciliation and budget-bounded retries
+- [x] Token/cost/wall-time/no-progress stops audited and rendered
+- [x] Locality denial occurs before provider call
+- [x] Pricing and policy configuration documented
+- [x] Policy/usage/stop regression tests pass
+- [x] Architecture, roadmap, operations, canonical spec, and changelog updated
 
 ## Success Criteria / Validation
 
