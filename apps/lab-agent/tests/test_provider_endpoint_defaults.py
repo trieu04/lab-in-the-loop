@@ -12,8 +12,13 @@ from lab_agent.config import Settings
 from lab_agent.policy import build_locality_policy
 
 
+def build_isolated_settings(**values: object) -> Settings:
+    """Build settings without dotenv or inherited runtime configuration."""
+    return Settings(_env_file=None, _env_prefix="__TEST_NO_ENV__", **values)
+
+
 def test_builtin_provider_endpoints_default_to_their_canonical_https_origins() -> None:
-    settings = Settings(openai_api_key="openai-key", anthropic_api_key="anthropic-key")
+    settings = build_isolated_settings(openai_api_key="openai-key", anthropic_api_key="anthropic-key")
 
     assert settings.provider_endpoints == {
         "openai": "https://api.openai.com/v1",
@@ -25,7 +30,7 @@ def test_builtin_provider_endpoints_default_to_their_canonical_https_origins() -
 
 
 def test_no_key_configuration_has_no_implicit_provider_endpoint() -> None:
-    settings = Settings()
+    settings = build_isolated_settings()
 
     assert settings.provider_endpoints == {}
     with pytest.raises(ValueError, match="HTTPS endpoint"):
@@ -51,7 +56,7 @@ def test_explicit_endpoint_overrides_defaults_and_invalid_endpoint_is_denied(mon
 
     monkeypatch.setattr(openai_adapter, "OpenAIAdapter", RecordingOpenAIAdapter)
     monkeypatch.setattr(claude_adapter, "ClaudeAdapter", RecordingClaudeAdapter)
-    settings = Settings(
+    settings = build_isolated_settings(
         openai_api_key="openai-key",
         anthropic_api_key="anthropic-key",
         model_max_output_tokens=73,
@@ -68,17 +73,19 @@ def test_explicit_endpoint_overrides_defaults_and_invalid_endpoint_is_denied(mon
         "claude": "https://claude.example",
         "claude_limit": 73,
     }
-    invalid = Settings(openai_api_key="openai-key", provider_endpoints={"openai": "not-a-url"})
+    invalid = build_isolated_settings(
+        openai_api_key="openai-key", provider_endpoints={"openai": "not-a-url"}
+    )
     assert not build_locality_policy(invalid).authorize("openai", []).allowed
     assert not build_locality_policy(invalid).authorize("custom", []).allowed
     with pytest.raises(ValueError, match="HTTPS endpoint"):
         build_provider_adapter("openai", invalid)
 
-    missing = Settings(openai_api_key="openai-key", provider_endpoints={})
+    missing = build_isolated_settings(openai_api_key="openai-key", provider_endpoints={})
     with pytest.raises(ValueError, match="HTTPS endpoint"):
         build_provider_adapter("openai", missing)
 
-    legacy_base_url = Settings(
+    legacy_base_url = build_isolated_settings(
         openai_api_key="openai-key", openai_base_url="https://legacy.example"
     )
     build_provider_adapter("openai", legacy_base_url)
@@ -90,7 +97,9 @@ def test_explicit_endpoint_overrides_defaults_and_invalid_endpoint_is_denied(mon
 async def test_cli_builds_governed_context_with_legacy_canonical_endpoints(monkeypatch, tmp_path) -> None:
     from lab_agent import cli
 
-    settings = Settings(openai_api_key="openai-key", state_db_path=str(tmp_path / "state.db"))
+    settings = build_isolated_settings(
+        openai_api_key="openai-key", state_db_path=str(tmp_path / "state.db")
+    )
     runtime = SimpleNamespace(store=object(), runtime_instance_id="worker")
     captured: dict[str, object] = {}
 
@@ -115,7 +124,7 @@ async def test_cli_builds_governed_context_with_legacy_canonical_endpoints(monke
     monkeypatch.setattr(cli, "get_adapters", get_adapters)
     monkeypatch.setattr(cli, "build_context", build_context)
     monkeypatch.setattr(cli, "GovernedAdapter", lambda context: context)
-    monkeypatch.setattr(cli, "MCPClient", lambda _: FakeMCP())
+    monkeypatch.setattr(cli, "MCPClient", lambda _url, _token, **_limits: FakeMCP())
     monkeypatch.setattr(cli, "release_lease_with_audit", lambda *args: True)
 
     async def process_once(*args: object) -> dict[str, int]:

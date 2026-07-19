@@ -18,12 +18,15 @@ from lab_agent import prompts
 from lab_agent.adapters.base import Message, ModelAdapter
 from lab_agent.config import Settings
 from lab_agent.evidence import EvidenceLedger
-from lab_agent.loop import emit_structured, run_tool_loop
+from lab_agent.loop import ToolLoopLimits, emit_structured, run_tool_loop
 from lab_agent.mcp_client import MCPClient
+from lab_agent.model_boundary import model_argument_limits, model_text_limits
 from lab_agent.models.experiment import ExperimentResult, ExperimentSetup, LoopDecision
+from lab_agent.result_safety import ResultLimits, sanitize_text
 from lab_agent.tool_bridge import select_read_tools
 
 log = structlog.get_logger(__name__)
+
 
 _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
@@ -51,14 +54,18 @@ def coerce_or_fail(model_cls: type[BaseModel], parsed: dict[str, Any]) -> Any:
 
 
 async def _emit_validated(
-    adapter: ModelAdapter, messages: list[Message], model_cls: type[_ModelT], stage: str
+    adapter: ModelAdapter, messages: list[Message], model_cls: type[_ModelT], stage: str,
+    transcript_max_bytes: int = 256 * 1024,
 ) -> _ModelT | None:
     """Emit and validate one structured node; on schema failure log and return
     ``None`` (fail-closed, never fabricated fields) so callers skip the write."""
     try:
         return coerce_or_fail(
             model_cls,
-            await emit_structured(adapter, messages, model_cls.model_json_schema(), model_cls.__name__),
+            await emit_structured(
+                adapter, messages, model_cls.model_json_schema(), model_cls.__name__,
+                transcript_max_bytes=transcript_max_bytes,
+            ),
         )
     except SchemaValidationError as exc:
         log.warning("schema_validation_failed", stage=stage, model=exc.model_name, payload=exc.payload)
@@ -81,37 +88,64 @@ async def ground_and_emit_setup(
     ``ledger``, if given, records every successful read the model performs so
     the grounding gate can validate the setup's citations against it.
     """
-    read_tools = select_read_tools(await mcp.list_tools())
+    read_tools = select_read_tools(await mcp.list_tools(), settings.mcp_server_namespace)
     hint = f" Knowledge scope RagCluster id: {ragcluster_id}." if ragcluster_id else ""
     user = f"Canvas id: {canvas_id}.{hint}\n\nExperiment idea: {idea_text}"
     if prior:
         user += f"\n\nBuild on the previous round:\n{prior}"
+    result_limits = model_text_limits(settings)
+    safe_user = sanitize_text(user, result_limits)
+    if safe_user is None:
+        log.warning("model_input_unavailable", stage="setup")
+        return None
     messages: list[Message] = [
         {"role": "system", "content": prompts.SETUP_SYSTEM},
-        {"role": "user", "content": user},
+        {"role": "user", "content": safe_user},
     ]
-    await run_tool_loop(adapter, mcp, messages, read_tools, settings.max_tool_steps, ledger)
-    return await _emit_validated(adapter, messages, ExperimentSetup, "setup")
+    await run_tool_loop(
+        adapter, mcp, messages, read_tools, settings.max_tool_steps, ledger,
+        namespace=settings.mcp_server_namespace, limits=result_limits,
+        argument_limits=model_argument_limits(settings),
+        run_limits=ToolLoopLimits(
+            settings.model_tool_calls_per_turn, settings.model_tool_calls_per_run,
+            settings.model_transcript_max_bytes,
+        ),
+    )
+    return await _emit_validated(
+        adapter, messages, ExperimentSetup, "setup", settings.model_transcript_max_bytes,
+    )
 
 
-async def emit_result(adapter: ModelAdapter, setup_text: str) -> ExperimentResult | None:
+async def emit_result(
+    adapter: ModelAdapter, setup_text: str, *, settings: Settings | None = None,
+) -> ExperimentResult | None:
     """Emit an ExperimentResult for a rendered setup (no write)."""
+    limits = model_text_limits(settings) if settings else ResultLimits()
+    user = sanitize_text(f"Experiment setup:\n{setup_text}", limits)
+    if user is None:
+        log.warning("model_input_unavailable", stage="result")
+        return None
     messages: list[Message] = [
-        {"role": "system", "content": prompts.RESULT_SYSTEM},
-        {"role": "user", "content": f"Experiment setup:\n{setup_text}"},
+        {"role": "system", "content": prompts.RESULT_SYSTEM}, {"role": "user", "content": user},
     ]
-    return await _emit_validated(adapter, messages, ExperimentResult, "result")
+    cap = settings.model_transcript_max_bytes if settings else 256 * 1024
+    return await _emit_validated(adapter, messages, ExperimentResult, "result", cap)
 
 
 async def emit_decision(
-    adapter: ModelAdapter, setup_text: str, result_text: str
+    adapter: ModelAdapter, setup_text: str, result_text: str, *, settings: Settings | None = None,
 ) -> LoopDecision | None:
     """Emit a LoopDecision for a setup/result pair (no write)."""
+    limits = model_text_limits(settings) if settings else ResultLimits()
+    user = sanitize_text(f"Setup:\n{setup_text}\n\nResult:\n{result_text}", limits)
+    if user is None:
+        log.warning("model_input_unavailable", stage="decision")
+        return None
     messages: list[Message] = [
-        {"role": "system", "content": prompts.DECIDE_SYSTEM},
-        {"role": "user", "content": f"Setup:\n{setup_text}\n\nResult:\n{result_text}"},
+        {"role": "system", "content": prompts.DECIDE_SYSTEM}, {"role": "user", "content": user},
     ]
-    return await _emit_validated(adapter, messages, LoopDecision, "decision")
+    cap = settings.model_transcript_max_bytes if settings else 256 * 1024
+    return await _emit_validated(adapter, messages, LoopDecision, "decision", cap)
 
 
 __all__ = [

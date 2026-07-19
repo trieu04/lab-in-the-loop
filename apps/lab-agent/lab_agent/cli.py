@@ -136,7 +136,12 @@ async def _run(args: argparse.Namespace) -> int:
         # intent-guarded, and each loop enforces the harness stop policy.
         gov = build_context(ctx.store, settings, args.canvas, get_adapters(settings))
         adapter = GovernedAdapter(gov)
-        async with MCPClient(settings.mcp_url) as mcp:
+        async with MCPClient(
+            settings.mcp_url,
+            settings.mcp_bearer_token,
+            result_max_bytes=settings.mcp_result_max_bytes,
+            max_content_items=settings.mcp_result_max_items,
+        ) as mcp:
             if args.command == "watch":
                 # `run_watch` releases the lease itself in its own `finally`
                 # (covers both a clean loop exit and Ctrl-C/KeyboardInterrupt).

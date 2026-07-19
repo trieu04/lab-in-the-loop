@@ -11,6 +11,12 @@ from lab_agent.adapters.base import (
 )
 from lab_agent.config import Settings
 from lab_agent.governance_context import GovernanceContext, build_context
+from lab_agent.model_boundary import (
+    ModelInputSafetyError,
+    model_argument_limits,
+    model_text_limits,
+    require_safe_transcript,
+)
 from lab_agent.model_request import SubmittedCallReconciler, request_digest
 from lab_agent.models.governance import StopReason, TaskStage, UsageStatus
 from lab_agent.policy import estimate_cost
@@ -43,6 +49,7 @@ async def governed_generate(
     response_schema: dict | None = None,
     schema_name: str = "result",
 ) -> AdapterResponse:
+    require_safe_transcript(messages, text_limits=model_text_limits(ctx.settings), argument_limits=model_argument_limits(ctx.settings), max_bytes=ctx.settings.model_transcript_max_bytes)
     preferences = [provider for provider in ctx.routing.preferences(stage) if provider in ctx.adapters]
     allowed = ctx.locality.allowed_providers(preferences, ctx.classifications)
     if not allowed:
@@ -114,22 +121,16 @@ async def governed_generate(
         raise ModelCallExhaustedError(
             f"model call for {stage.value!r} exhausted its attempt bound"
         )
-    estimated_usage = ctx.estimate_usage(
-        decision.provider, decision.model, messages, tools, response_schema, schema_name
-    )
+    estimated_usage = ctx.estimate_usage(decision.provider, decision.model, messages, tools, response_schema, schema_name)
     estimated_tokens = estimated_usage.total_tokens
-    estimated_cost = estimate_cost(
-        estimated_usage, ctx.settings.model_pricing, ctx.settings.pricing_version
-    )
+    estimated_cost = estimate_cost(estimated_usage, ctx.settings.model_pricing, ctx.settings.pricing_version)
     reservation = ctx.budget.reserve(
         estimated_tokens, estimated_cost,
         reservation_id=f"{key}:{intent.attempt_count + 1}", intent_key=f"{key}:{intent.attempt_count + 1}",
     )
     ctx.store.mark_intent_submitted(key)
     try:
-        response = await adapter.generate(
-            messages, tools=tools, response_schema=response_schema, schema_name=schema_name
-        )
+        response = await adapter.generate(messages, tools=tools, response_schema=response_schema, schema_name=schema_name)
     except (BudgetExceededError, LocalityDeniedError):
         raise
     except DeterministicProviderError:
@@ -156,10 +157,7 @@ async def governed_generate(
     ctx.routed_models[stage] = decision
     usage = response.usage or estimated_usage
     if usage.status is UsageStatus.UNAVAILABLE:
-        usage = ctx.estimate_usage(
-            decision.provider, decision.model, messages, tools, response_schema, schema_name,
-            response, usage.request_id,
-        )
+        usage = ctx.estimate_usage(decision.provider, decision.model, messages, tools, response_schema, schema_name, response, usage.request_id)
     cost = estimate_cost(usage, ctx.settings.model_pricing, ctx.settings.pricing_version)
     external_id = usage.request_id or ""
     ctx.store.mark_intent_executed(key, external_id=external_id)
@@ -195,5 +193,6 @@ class GovernedAdapter:
         )
 __all__ = [
     "GovernanceContext", "GovernedAdapter", "LocalityDeniedError", "ModelCallExhaustedError",
+    "ModelInputSafetyError",
     "ModelCallInFlightError", "PostResponseBudgetExceededError", "build_context", "governed_generate",
 ]

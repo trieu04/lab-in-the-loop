@@ -70,11 +70,7 @@ async def run_loop(
     idea_id = loop.get("idea_id", "")
     idea_text = await nodes.read_note_text(mcp, canvas_id, idea_id) if idea_id else ""
 
-    summary = LoopSummary(
-        rounds=max(0, round_index - 1),
-        setup_ids=[setup_id],
-        result_ids=[result_id],
-    )
+    summary = LoopSummary(rounds=max(0, round_index - 1), setup_ids=[setup_id], result_ids=[result_id])
     tracker = make_stop_tracker(gov) if gov is not None else None
 
     while True:
@@ -86,7 +82,7 @@ async def run_loop(
         ):
             return summary
         try:
-            decision = await emit_decision(adapter, setup_text, result_text)
+            decision = await emit_decision(adapter, setup_text, result_text, settings=settings)
         except (BudgetExceededError, LocalityDeniedError) as exc:
             return await close_governance_error(
                 mcp, settings, store, summary, canvas_id=canvas_id,
@@ -130,7 +126,7 @@ async def run_loop(
         prior = f"Setup:\n{setup_text}\n\nResult:\n{result_text}\n\nFocus next: {decision.next_focus}"
         next_idea_text = idea_text or decision.next_focus
 
-        ledger = EvidenceLedger()
+        ledger = EvidenceLedger(settings.model_evidence_max_items, settings.model_evidence_max_bytes)
         try:
             next_setup = await ground_and_emit_setup(
                 mcp, adapter, settings, canvas_id=canvas_id, idea_text=next_idea_text,
@@ -163,7 +159,7 @@ async def run_loop(
             return _fail_closed(summary, "invalid_citation")
 
         try:
-            next_result = await emit_result(adapter, render.render_setup(next_setup))
+            next_result = await emit_result(adapter, render.render_setup(next_setup), settings=settings)
         except (BudgetExceededError, LocalityDeniedError) as exc:
             return await close_governance_error(
                 mcp, settings, store, summary, canvas_id=canvas_id,

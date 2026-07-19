@@ -51,7 +51,7 @@ async def generate_setup(
     sufficiency claim with zero/fabricated/mixed-invalid citations writes
     nothing and is retryable exactly like a schema failure (INVALID_CITATION).
     """
-    ledger = EvidenceLedger()
+    ledger = EvidenceLedger(settings.model_evidence_max_items, settings.model_evidence_max_bytes)
     setup = await ground_and_emit_setup(
         mcp, adapter, settings, canvas_id=canvas_id, idea_text=idea_text,
         ragcluster_id=ragcluster_id, prior=prior, ledger=ledger,

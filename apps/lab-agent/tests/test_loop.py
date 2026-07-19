@@ -109,7 +109,7 @@ async def test_run_tool_loop_ledger_ids_match_across_repeated_reads():
 
     import json
 
-    note_json = json.dumps({"id": "n", "widget_type": "Note", "title": "", "text": "same content", "url": ""})
+    note_json = json.dumps({"id": "n", "widget_type": "Note", "title": "", "text": "same content"})
     expected_id = compute_source_id("get_note", {"note_id": "n"}, note_json)
     assert ledger.known(expected_id)
     assert len(ledger.audit_summary()) == 1  # one distinct read, not two

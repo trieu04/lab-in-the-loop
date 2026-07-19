@@ -65,18 +65,15 @@ def test_ledger_excerpt_is_bounded_even_for_huge_content():
     assert len(record.excerpt) == EXCERPT_MAX_CHARS
 
 
-def test_ledger_max_records_caps_storage_but_ids_stay_deterministic():
-    """Once the bound is hit, further distinct reads still get a
-    reproducible id but are not stored -- so they correctly fail
-    ``known``/``validate_citations`` rather than being silently trusted."""
+def test_ledger_max_records_rejects_unretained_evidence():
+    """A full ledger returns no id, so an unretained read cannot look citeable."""
     ledger = EvidenceLedger(max_records=2)
     id1 = ledger.add("get_note", {"note_id": "n1"}, "a")
     id2 = ledger.add("get_note", {"note_id": "n2"}, "b")
     id3 = ledger.add("get_note", {"note_id": "n3"}, "c")
 
     assert ledger.known(id1) and ledger.known(id2)
-    assert not ledger.known(id3)  # dropped once the ledger is full
-    assert id3 == compute_source_id("get_note", {"note_id": "n3"}, "c")  # id still deterministic
+    assert id3 == "" and not ledger.known(id3)
 
 
 def test_validate_citations_requires_at_least_one_and_all_known():
@@ -100,11 +97,11 @@ def test_audit_summary_excludes_excerpt_arguments_and_url():
     """Durable audit rows carry only source_id/tool/content_hash -- never the
     excerpt, arguments, credentials, or a capability URL."""
     ledger = EvidenceLedger()
-    secret = "https://lab.test/artifacts/abc?token=super-secret credential=xyz"
-    sid = ledger.add("download_pdf", {"url": secret, "auth": "Bearer abc"}, secret)
+    content = "safe document content"
+    sid = ledger.add("download_pdf", {"url": "https://lab.test/artifacts/abc"}, content)
 
     rows = ledger.audit_summary()
-    expected_hash = hashlib.sha256(secret.encode("utf-8")).hexdigest()
+    expected_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
     assert rows == [
         {
             "source_id": sid,
@@ -115,6 +112,14 @@ def test_audit_summary_excludes_excerpt_arguments_and_url():
     ]
     blob = json.dumps(rows)
     assert "token" not in blob and "secret" not in blob and "Bearer" not in blob
+
+
+def test_ledger_rejects_unsafe_input_without_creating_a_source_id():
+    ledger = EvidenceLedger()
+
+    assert ledger.add("get_note", {"authToken": "reader-secret"}, "safe note") == ""
+    assert ledger.add("get_note", {}, "Cookie: session=reader-secret") == ""
+    assert ledger.audit_summary() == []
 
 
 def test_audit_summary_stays_under_byte_cap_with_many_records():

@@ -84,7 +84,11 @@ class GovernanceContext:
                 payload = json.loads(str(message.get("content") or ""))
             except (json.JSONDecodeError, TypeError):
                 continue
-            if isinstance(payload, dict) and payload.get("untrusted_data") is True:
+            if isinstance(payload, dict) and (
+                payload.get("untrusted_data") is True
+                or payload.get("operational_status") is True
+                or (payload.get("error") == "tool_result_unavailable")
+            ):
                 sources.append({"data_classification": payload.get("data_classification")})
         if not sources:
             return

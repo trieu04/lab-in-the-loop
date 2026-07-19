@@ -6,7 +6,7 @@ import json
 
 from lab_agent.adapters.base import ToolCall, ToolSpec
 from lab_agent.evidence import EvidenceLedger, compute_source_id
-from lab_agent.tool_bridge import READ_TOOLS, _bare_name, execute_tool_calls, select_read_tools
+from lab_agent.tool_bridge import READ_TOOLS, execute_tool_calls, select_read_tools, tool_identity
 from tests.fakes import FakeMCP
 
 
@@ -20,9 +20,11 @@ def test_select_read_tools_keeps_only_read_subset():
     assert kept == {"get_note", "check_ragcluster_connections"}
 
 
-def test_bare_name_strips_namespacing():
-    assert _bare_name("mcp__canvus__get_note") == "get_note"
-    assert _bare_name("get_note") == "get_note"
+def test_tool_identity_accepts_only_exact_configured_namespacing():
+    assert tool_identity("mcp__canvus__get_note") == "get_note"
+    assert tool_identity("get_note") == "get_note"
+    assert tool_identity("mcp__other__get_note") is None
+    assert tool_identity("mcp__canvus__get_note__extra") is None
 
 
 def test_select_read_tools_handles_namespaced_names():
@@ -40,7 +42,7 @@ async def test_execute_tool_calls_runs_allowed_and_blocks_writes():
     messages = await execute_tool_calls(mcp, calls)  # type: ignore[arg-type]
     assert [m["tool_call_id"] for m in messages] == ["1", "2"]
     assert "clusters" in messages[0]["content"]
-    assert "not permitted" in messages[1]["content"]
+    assert messages[1]["content"] == '{"error":"tool_result_unavailable","data_classification":"unknown"}'
     # The blocked write must not have created a note.
     assert mcp.notes == {}
 
@@ -52,6 +54,7 @@ def test_read_tools_allowlist_unchanged():
         {
             "scan_server", "list_canvases", "check_ragcluster_connections",
             "check_widget_connections", "get_note", "get_widget", "download_pdf",
+            "get_ingestion_status", "read_ingestion_chunks",
         }
     )
 
@@ -93,6 +96,24 @@ async def test_ledger_excludes_blocked_writes_and_error_payloads():
     await execute_tool_calls(mcp, calls, ledger)  # type: ignore[arg-type]
 
     assert len(ledger.audit_summary()) == 0  # nothing captured from either call
+
+
+async def test_sensitive_tool_arguments_are_rejected_before_mcp_dispatch():
+    class RecordingMCP:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, dict[str, object]]] = []
+
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> str:
+            self.calls.append((name, arguments))
+            return '{"chunks":[]}'
+
+    mcp = RecordingMCP()
+    message = (await execute_tool_calls(
+        mcp, [ToolCall(id="1", name="get_note", arguments={"authToken": "reader-secret"})]
+    ))[0]
+
+    assert mcp.calls == []
+    assert message["content"] == '{"error":"tool_result_unavailable","data_classification":"unknown"}'
 
 
 async def test_untrusted_data_envelope_does_not_grant_embedded_instructions():

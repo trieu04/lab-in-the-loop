@@ -25,7 +25,7 @@ async def run_on_robot(
     round_index: int,
 ) -> tuple[str, ExperimentResult | None]:
     """Mock a robot run and emit its validated experiment-result node."""
-    result = await emit_result(adapter, setup_text)
+    result = await emit_result(adapter, setup_text, settings=settings)
     if result is None:
         return "", None
     result_id = await write_result_node(
