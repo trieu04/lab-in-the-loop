@@ -62,10 +62,55 @@ async def test_trigger_classification_replaces_prior_call_metadata(store) -> Non
 class ClassifiedToolMCP(FakeMCP):
     async def call_tool(self, name: str, arguments: dict[str, object]) -> str:
         if name == "get_note":
-            return json.dumps(
-                {"data_classification": "restricted", "text": "sensitive evidence"}
-            )
+            return json.dumps({"data_classification": "restricted", "text": "sensitive evidence"})
         return await super().call_tool(name, arguments)
+
+
+class SameCanvasToolMCP(FakeMCP):
+    """The producer stamps the trigger canvas's own operator classification."""
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> str:
+        if name == "get_note":
+            return json.dumps({"data_classification": "internal", "text": "same-canvas evidence"})
+        return await super().call_tool(name, arguments)
+
+
+async def test_same_canvas_internal_read_keeps_later_turn_authorized(store) -> None:
+    """A read stamped with the trigger canvas's own classification must NOT
+    poison the run: the second governed turn stays authorized. This is the
+    live-demo regression -- an unstamped read fail-closed to ``unknown`` and
+    denied the second setup turn, closing the experiment instead of running it.
+    """
+    call = ToolCall(id="tool-1", name="get_note", arguments={"note_id": "note-1"})
+    inner = SpyAdapter(
+        [AdapterResponse(text="read evidence", tool_calls=[call]), AdapterResponse(text="setup")]
+    )
+    context = build_context(
+        store,
+        _settings(),
+        "canvas",
+        {"openai": inner},
+        [{"data_classification": "internal"}],
+    )
+    governed = GovernedAdapter(context)
+    messages = list(MESSAGES)
+    first = await governed.generate(messages)
+    messages.append(
+        {
+            "role": "assistant",
+            "content": first.text,
+            "tool_calls": [tool.as_message_dict() for tool in first.tool_calls],
+        }
+    )
+    messages.extend(
+        await execute_tool_calls(SameCanvasToolMCP(), first.tool_calls, EvidenceLedger())
+    )
+
+    second = await governed.generate(messages)
+
+    assert second.text == "setup"
+    assert inner.calls == 2
+    assert context.classifications == [DataClassification.INTERNAL]
 
 
 async def test_retrieved_evidence_classification_denies_later_provider_turn(store) -> None:
@@ -139,7 +184,9 @@ async def test_watch_applies_trigger_classification_before_first_turn(store) -> 
     assert len(generated) == 1
     assert generated[0]["title"].startswith("[EXP:Closed]")
     assert mcp.connectors == [("idea-1", generated[0]["id"])]
-    denied = [event for event in store.list_audit_events("canvas") if event.event == "locality_denied"]
+    denied = [
+        event for event in store.list_audit_events("canvas") if event.event == "locality_denied"
+    ]
     assert denied[0].payload["classifications"] == ["restricted"]
 
 
@@ -161,5 +208,7 @@ async def test_watch_missing_trigger_metadata_stays_unknown_and_denies(store) ->
 
     assert inner.calls == 0
     assert len([row for key, row in mcp.notes.items() if key != "idea-1"]) == 1
-    denied = [event for event in store.list_audit_events("canvas") if event.event == "locality_denied"]
+    denied = [
+        event for event in store.list_audit_events("canvas") if event.event == "locality_denied"
+    ]
     assert denied[0].payload["classifications"] == ["unknown"]

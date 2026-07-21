@@ -25,10 +25,10 @@ def register_all(
 ) -> None:
     """Register every module, passing the same policy and ingestion lifecycle."""
     scan.register(mcp)
-    content.register(mcp)
+    content.register(mcp, classification_for_canvas=classification_for_canvas)
     widgets.register(mcp, policy=policy)
-    connections.register(mcp)
-    experiments.register(mcp)
+    connections.register(mcp, classification_for_canvas=classification_for_canvas)
+    experiments.register(mcp, classification_for_canvas=classification_for_canvas)
     ingestion.register(
         mcp,
         policy=policy,

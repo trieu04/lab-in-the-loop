@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
+import structlog
+
 from lab_agent.adapters.base import (
     DeterministicProviderError,
     ProviderCallError,
@@ -14,6 +16,19 @@ from lab_agent.state_store import AttemptStatus, StateStore
 
 Work = Callable[[], Awaitable[tuple[bool, str]]]
 _SAFE_FAILURE_DETAILS = frozenset({"invalid_citation", "schema_validation_failed"})
+_SKIP_REASONS = {
+    AttemptStatus.COMPLETED: (AttemptStatus.COMPLETED.value, AttemptStatus.COMPLETED.value),
+    AttemptStatus.QUARANTINED: (AttemptStatus.QUARANTINED.value, AttemptStatus.QUARANTINED.value),
+    AttemptStatus.FAILED: (AttemptStatus.FAILED.value, "retry_backoff"),
+    AttemptStatus.RUNNING: (AttemptStatus.RUNNING.value, "active_lease"),
+}
+log = structlog.get_logger(__name__)
+
+
+def _skip_status_and_reason(status: AttemptStatus | None) -> tuple[str, str]:
+    if status is None:
+        return "unknown", "not_due"
+    return _SKIP_REASONS.get(status, ("unknown", "not_due"))
 
 
 def failure_code(exc: Exception) -> tuple[str, bool]:
@@ -49,6 +64,17 @@ async def process_trigger(
         lease_ttl_seconds=settings.attempt_lease_ttl_seconds,
     )
     if attempt is None:
+        observed_attempt = store.get_attempt(canvas_id, trigger_id)
+        status, reason = _skip_status_and_reason(
+            observed_attempt.status if observed_attempt else None
+        )
+        log.info(
+            "attempt_skipped",
+            canvas_id=canvas_id,
+            trigger_id=trigger_id,
+            status=status,
+            reason=reason,
+        )
         return False
     store.append_audit_event(canvas_id, "attempt_leased", {"trigger_id": trigger_id})
 
@@ -74,7 +100,9 @@ async def process_trigger(
         max_seconds=settings.retry_max_seconds,
         max_attempts=1 if quarantine else settings.max_attempts,
     )
-    event = "attempt_quarantined" if updated.status is AttemptStatus.QUARANTINED else "attempt_failed"
+    event = (
+        "attempt_quarantined" if updated.status is AttemptStatus.QUARANTINED else "attempt_failed"
+    )
     store.append_audit_event(canvas_id, event, {"trigger_id": trigger_id, "error": detail})
     return False
 

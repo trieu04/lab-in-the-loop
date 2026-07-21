@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from canvus_mcp.client import get_client, get_settings
@@ -15,8 +16,13 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
 
-def register(mcp: FastMCP) -> None:
-    """Attach connection-check tools to ``mcp``."""
+def register(mcp: FastMCP, *, classification_for_canvas: Callable[[str], str]) -> None:
+    """Attach connection-check tools to ``mcp``.
+
+    Both reads stamp the operator's ``data_classification`` for the inspected
+    canvas so the model boundary inherits authoritative locality instead of
+    fail-closing an unclassified read to ``unknown``.
+    """
 
     @mcp.tool()
     async def check_widget_connections(canvas_id: str, widget_id: str) -> dict[str, Any]:
@@ -28,10 +34,16 @@ def register(mcp: FastMCP) -> None:
         """
         client = get_client()
         marker = get_settings().mcp_ragcluster_marker
+        data_classification = classification_for_canvas(canvas_id)
         widgets = await client.widgets.list(canvas_id)
         index = ConnectorIndex.build(widgets, marker)
         if widget_id not in index.widgets_by_id:
-            return {"canvas_id": canvas_id, "widget_id": widget_id, "found": False}
+            return {
+                "canvas_id": canvas_id,
+                "widget_id": widget_id,
+                "found": False,
+                "data_classification": data_classification,
+            }
         conns = connections_for_widget(index, widget_id)
         target = index.widgets_by_id[widget_id]
         return {
@@ -41,6 +53,7 @@ def register(mcp: FastMCP) -> None:
             "is_ragcluster": is_ragcluster_widget(target, marker),
             "incoming_count": len(conns["incoming"]),
             "outgoing_count": len(conns["outgoing"]),
+            "data_classification": data_classification,
             **conns,
         }
 
@@ -64,6 +77,7 @@ def register(mcp: FastMCP) -> None:
         """
         client = get_client()
         marker = get_settings().mcp_ragcluster_marker
+        data_classification = classification_for_canvas(canvas_id)
         widgets = await client.widgets.list(canvas_id)
         index = ConnectorIndex.build(widgets, marker)
 
@@ -98,6 +112,7 @@ def register(mcp: FastMCP) -> None:
             "marker": marker,
             "ragcluster_count": len(index.ragcluster_ids),
             "clusters": clusters,
+            "data_classification": data_classification,
         }
 
 

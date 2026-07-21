@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from canvus_mcp import experiments as exp
@@ -31,7 +32,11 @@ async def _build_index(canvas_id: str) -> ConnectorIndex:
     return ConnectorIndex.build(widgets, get_settings().mcp_ragcluster_marker)
 
 
-def register(mcp: FastMCP) -> None:
+def register(
+    mcp: FastMCP,
+    *,
+    classification_for_canvas: Callable[[str], str],
+) -> None:
     """Attach experiment-workflow tools to ``mcp``."""
 
     @mcp.tool()
@@ -66,6 +71,11 @@ def register(mcp: FastMCP) -> None:
         """
         index = await _build_index(canvas_id)
         result = exp.scan_workflow(index, _markers())
+        data_classification = classification_for_canvas(canvas_id)
+        for bucket in ("ideas_needing_setup", "setups_needing_run", "loops"):
+            result[bucket] = [
+                {**item, "data_classification": data_classification} for item in result[bucket]
+            ]
         result["canvas_id"] = canvas_id
         return result
 
