@@ -44,6 +44,21 @@ def test_browser_setup_and_result_are_recognized():
     assert snap["ideas"] == []
 
 
+def test_browser_setup_and_result_are_recognized_from_name_fallback():
+    """If a Browser widget surfaces its label under ``name`` instead of
+    ``title``, the scan path should still classify it."""
+    widgets = [
+        {"id": "setup1", "widget_type": "Browser", "title": "", "name": "[EXP:Setup v001] A+B"},
+        _w("robot1", "Note", title="Robot_arm"),
+        {"id": "result1", "widget_type": "Browser", "title": "", "name": "[EXP:Result v001]"},
+        _conn("c1", "setup1", "robot1"),
+        _conn("c2", "robot1", "result1"),
+    ]
+    snap = scan_workflow(_index(widgets), M)
+    assert [b["widget_id"] for b in snap["setups"]] == ["setup1"]
+    assert [b["widget_id"] for b in snap["results"]] == ["result1"]
+
+
 def test_mixed_note_and_browser_graph_detects_loop():
     """A canvas with a Note setup and Browser result (mixed during migration)
     still forms a loop -- classification does not require both ends to match

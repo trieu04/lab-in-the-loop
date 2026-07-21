@@ -1,5 +1,44 @@
 # Project Changelog
 
+## 2026-07-20 — Browser widget label fallback fix
+
+### Fixed
+
+- `canvus-mcp` now writes Browser labels to both `title` and `name`, and the experiment-workflow scan/classification path keeps accepting either field. Generated Setup/Result/Closed/Needs Input Browser artifacts no longer depend on a single Browser label field surviving the live server round-trip.
+
+### Verified
+
+- `canvus-mcp` Browser/classification suites 27/27 passed; `lab-agent` browser suites 17/17 passed.
+
+## 2026-07-20 — Phase 4: canvas-classification propagation fix
+
+### Fixed
+
+- `scan_experiment_workflow` now attaches the configured canvas classification to every actionable idea, setup, and loop entry before `lab-agent` begins the governed model-call path. An unmapped, malformed, or unsupported classification remains `unknown` and is denied before provider dispatch.
+
+## 2026-07-19 — Implementation-plan Phase 6 / roadmap Phase 4c: resumable local-source multimodal ingestion
+
+### Added
+
+- Separate single-host SQLite/WAL ingestion state with immutable SHA-256-checked migrations for `assets`, canvas-scoped `sources`, jobs, deterministic units, leases, attempts, completed chunks, and cancellation/authorization records. SHA-256 identifies raw content; extractor version identifies derived work. Chunks and unit completion commit atomically, and stale lease generations cannot complete.
+- Protected raw acquisition and storage: byte-counted streaming before final persistence, ignored local runtime artifacts, owner-only `0700` cache directories and `0600` entries, descriptor-confined no-follow traversal, regular-file/owner/mode/inode/digest checks, and no raw bytes, paths, or capability URLs in model context.
+- Bounded deterministic local extraction for strict UTF-8 text, CSV/TSV, JSON records, PNG/JPEG/GIF metadata, and PDF pages. Malformed, encrypted, oversized, and unsupported inputs return typed outcomes. Video and non-CSV/TSV spreadsheet extraction remain explicit unsupported/external gates.
+- Standalone leased `IngestionWorker` component with lease renewal, graceful stop, expired-lease reclaim, restart safety, retry/backoff, poison-unit handling, cancellation, and completed-unit preservation. It is intentionally not run inside the MCP server; no worker console command is registered.
+- Authenticated ingestion MCP operations: reader status/chunks; trusted-service enqueue plus existing canvas mutations; operator retry/cancel. Static `SecretStr` tokens, exact canvas allowlists, strict one-Bearer HTTP calls, reader-default stdio, and metadata-only denial audit protect ingestion access. Existing non-ingestion reads/downloads retain anonymous compatibility.
+- `lab-agent` integration for exact allowlisted `get_ingestion_status` and `read_ingestion_chunks` only. Status is bounded operational/non-citeable data; chunks are bounded untrusted evidence with scalar provenance/classification. Mutation tools and arbitrary namespace suffixes are rejected, inbound results/envelopes are bounded, and Phase 5 locality runs before every later provider call.
+
+### Verified
+
+- Final sealed local Phase 6 gates: `canvus-mcp` full suite **134 passed** and focused suite **77 passed**; `lab-agent` full suite **480 passed** and focused suite **122 passed**.
+- Ruff, mypy, compileall, lockfile checks, package builds, workflow-contract parity, tracked/untracked whitespace checks, and Phase 7 isolation passed. Real local streamable-HTTP authorization and subprocess crash/restart proofs passed.
+- Final inspection: **9.7/10**, `criticalCount: 0`, `decision: SEALED`. Known deprecation warnings remain. Statement and branch coverage were unavailable in the authoritative locked-environment run because coverage tooling is absent; ephemeral non-authoritative coverage was not used as final evidence.
+
+### Not claimed
+
+- No production deployment approval, hosted CI, live credentials, live Canvus validation, or large-format validation.
+- No automatic ingestion retention/cleanup, operator capacity policy, distributed queue, object store, or multi-host worker topology. An external queue/object-store migration remains conditional on measured sustained backlog/throughput, disk pressure, availability/SLO failure, or a multi-host requirement; no numerical threshold is implemented.
+- No Flywheel, in-silico, real robot, wet-lab approval, wiki/KG/vector, or other Phase 7+ deployment work is introduced.
+
 ## 2026-07-19 — Phase 5: governance and model routing
 
 ### Added

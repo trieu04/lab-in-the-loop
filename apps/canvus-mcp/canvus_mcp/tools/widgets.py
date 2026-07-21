@@ -88,6 +88,7 @@ def register(mcp: FastMCP, *, policy: AccessPolicy | None = None) -> None:
             payload["size"] = {"width": width, "height": height}
         if title is not None:
             payload["title"] = title
+            payload["name"] = title
         if transparent_mode is not None:
             payload["transparent_mode"] = transparent_mode
         browser = await get_client().widgets.browsers.create(canvas_id, payload)
@@ -113,6 +114,7 @@ def register(mcp: FastMCP, *, policy: AccessPolicy | None = None) -> None:
             payload["url"] = url
         if title is not None:
             payload["title"] = title
+            payload["name"] = title
         if transparent_mode is not None:
             payload["transparent_mode"] = transparent_mode
         if x is not None and y is not None:

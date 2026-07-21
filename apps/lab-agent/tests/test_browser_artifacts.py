@@ -115,7 +115,7 @@ async def test_missing_public_base_url_fails_closed_before_browser_call(store):
     adapter = ScriptedAdapter({"ExperimentSetup": SETUP})
     with pytest.raises(ArtifactUrlError):
         await generate_setup(
-            mcp, adapter, Settings(), store, canvas_id="c", idea_text="try X",
+            mcp, adapter, Settings(artifact_public_base_url=""), store, canvas_id="c", idea_text="try X",
             idea_id="idea1", ragcluster_id="rag1", round_index=1,
         )
     assert [w for w in mcp.notes.values() if w["widget_type"] == "Browser"] == []  # no Browser created
@@ -124,7 +124,9 @@ async def test_missing_public_base_url_fails_closed_before_browser_call(store):
 async def test_missing_public_base_url_leaves_attempt_retryable(store):
     mcp = FakeMCP(note_text={"idea1": "{idea: try X}"}, workflow=IDEA_WORKFLOW)
     adapter = ScriptedAdapter({"ExperimentSetup": SETUP})
-    counts = await process_once(mcp, adapter, Settings(), store, "rt1", "c")  # empty base URL
+    counts = await process_once(
+        mcp, adapter, Settings(artifact_public_base_url=""), store, "rt1", "c"
+    )  # empty base URL
 
     assert counts["setups"] == 0
     assert [w for w in mcp.notes.values() if w["widget_type"] == "Browser"] == []

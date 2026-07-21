@@ -103,6 +103,7 @@ async def test_create_browser_default_payload_shape_is_unchanged(
     assert canvas_id == "canvas1"
     assert payload == {"url": "https://example.test/a", "location": {"x": 1.0, "y": 2.0}}
     assert "title" not in payload
+    assert "name" not in payload
     assert "transparent_mode" not in payload
 
 
@@ -121,6 +122,7 @@ async def test_create_browser_with_title_and_transparent_mode(
     )
     _canvas_id, payload = fake_client.widgets.browsers.create_calls[0]
     assert payload["title"] == "[EXP:Setup v001] A+B"
+    assert payload["name"] == "[EXP:Setup v001] A+B"
     assert payload["transparent_mode"] is True
     assert payload["size"] == {"width": 640.0, "height": 480.0}
 
@@ -131,6 +133,7 @@ async def test_create_browser_returns_dumped_sdk_result(
     result = await tools["create_browser"]("canvas1", "https://example.test/x", title="t")
     assert result["id"] == "b-new"
     assert result["title"] == "t"
+    assert result["name"] == "t"
 
 
 # ---- update_browser ---------------------------------------------------------
@@ -160,6 +163,7 @@ async def test_update_browser_url_title_and_transparent_mode(
     assert payload == {
         "url": "https://example.test/new",
         "title": "[EXP:Result v002]",
+        "name": "[EXP:Result v002]",
         "transparent_mode": False,
     }
 
@@ -193,3 +197,4 @@ async def test_update_browser_returns_dumped_sdk_result(
     result = await tools["update_browser"]("canvas1", "b1", title="[EXP:Closed] after v001")
     assert result["id"] == "b1"
     assert result["title"] == "[EXP:Closed] after v001"
+    assert result["name"] == "[EXP:Closed] after v001"
