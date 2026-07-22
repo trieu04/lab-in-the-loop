@@ -17,6 +17,7 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 | Generated artifact Browser service | Delivered for local/source gates; deployment gates pending | Setup/Result/Closed and generated Needs Input status/prompt artifacts use Browser widgets backed by `ArtifactStore`; legacy Notes stay readable. Formal temper/review is sealed; live external reachability and production TLS/private-ingress validation remain operational gates. |
 | Grounding/evidence gate | Complete | Per-run bounded evidence ledger, deterministic source ids, citation validation before writes, untrusted-data envelope, approved acronym dictionary scan across idea/setup/evidence excerpts, explicit Needs Input for insufficient evidence/ambiguity, and metadata-only durable audit. Future wiki/KG/vector sources remain adapters/external gates. |
 | Governance and model routing | Complete for local/source gates | Provider-neutral task-stage routing; pre-dispatch locality/known-pricing authorization; exact/estimated usage; restart-safe reservations/intents; typed retry/reconciliation; and terminal stop closures. Final local verification: `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED. Organization-approved endpoint/classification matrix, price maintenance, invoice reconciliation, and live SDK/API checks remain operational gates. |
+| Resumable local-source ingestion | Complete for local/source gates (2026-07-19) | Separate SQLite/WAL ingestion ledger and protected cache; SHA-256/extractor-version dedup; standalone leased worker component; bounded local extractors; authenticated canvas-scoped status/chunk reads; evidence/locality integration. No deployment approval, worker CLI, queue/object store, automatic retention, hosted CI, live credentials, or large-format validation is claimed. |
 | Real robot integration | Future | Mock-only for now |
 | Flywheel/in-silico gates | Future | Documented, not implemented |
 
@@ -200,21 +201,34 @@ Still operational/external:
 
 ## Phase 4c — Async multimodal ingestion
 
-**Status:** Future
+**Status:** Complete for local-source implementation — 2026-07-19; deployment and capacity policy remain external gates
 
-Goal: support PDF/image/video/table ingestion at scale without blocking the loop on one large model call (UC §11).
+Goal: support bounded local PDF/image/table/text ingestion without blocking the loop on one opaque model call (UC §11).
 
-Tasks:
+Completed:
 
-- Chunk large documents/media instead of sending them whole to one model call.
-- Cache extracted/summarized content so repeated scans do not re-process unchanged assets.
-- Make ingestion resumable and track progress for long-running extractions.
-- Add modality-specific extraction (PDF text, image/video description, tabular data) ahead of setup generation.
+- Added a separate single-host SQLite/WAL ingestion ledger with immutable SHA-256-checked migrations for assets, canvas-scoped sources, jobs, deterministic units, leases, attempts, chunks, and cancellation state.
+- Made source identity SHA-256 and derived-work identity SHA-256 plus extractor version; unchanged content reuses work while a new extractor version creates new derived work.
+- Added byte-counted streaming acquisition, a protected ignored raw cache (`0700` directories, `0600` files, descriptor-confined no-follow access), and no model-visible raw bytes, paths, or capability URLs.
+- Added bounded strict UTF-8 text, CSV/TSV, JSON, image-metadata, and PDF-page extraction with typed malformed/encrypted/oversized/unsupported outcomes.
+- Added a standalone leased worker component with renewal, stale-generation rejection, atomic chunk/completion, retry/backoff, poison, cancellation, graceful stop, and restart reclaim. The MCP server does not start it and no worker console command is registered.
+- Added static reader/trusted-service/operator roles, exact canvas allowlists, strict Bearer ingestion calls, reader-only stdio default, bounded status/chunk reads, and metadata-only denial audit. Existing non-ingestion anonymous reads/downloads remain compatible.
+- Added exact ingestion read allowlisting to `lab-agent`: status is operational/non-citeable; chunks become bounded untrusted evidence and Phase 5 locality applies before every later provider call.
 
-Success criteria:
+Final local validation sealed: `canvus-mcp` full suite **134 passed** and focused suite **77 passed**; `lab-agent` full suite **480 passed** and focused suite **122 passed**. Ruff, mypy, compileall, lockfile checks, package builds, workflow parity, tracked/untracked whitespace checks, and Phase 7 isolation passed. Real local streamable-HTTP authorization and subprocess crash/restart proofs passed. Final inspection is **9.7/10**, `criticalCount: 0`, `decision: SEALED`. Known deprecation warnings remain. Statement/branch coverage is unclaimed because authoritative hosted/locked-environment coverage tooling was unavailable; no ephemeral coverage result is treated as final evidence.
 
-- A multi-day/large-asset ingestion case can resume after interruption without redoing completed chunks.
-- Ingestion progress is observable, not a single opaque long-running call.
+Still external/operator-owned:
+
+- Hosted CI, live credentials, and live Canvus deployment validation.
+- Large-format/video/non-CSV/TSV spreadsheet extractor validation; video and those spreadsheet formats remain unsupported/external gates.
+- Cache/DB retention, operator capacity policy, backups, and disk monitoring. There is no automatic cleanup.
+- Any external queue/object-store migration. Trigger it only from measured sustained backlog/throughput, disk pressure, availability/SLO failure, or a multi-host requirement; no distributed implementation or numeric threshold exists today.
+
+Success criteria met locally:
+
+- Interrupted work resumes unfinished units without redoing completed chunks, and progress/status is readable without scheduling work.
+- Re-enqueueing unchanged content reuses its job/cache; a new extractor version invalidates only derived work.
+- Model context sees only bounded extracted chunk evidence and scalar provenance, never raw bytes or local storage/capability details.
 
 ## Phase 5 — In-silico validation gate
 

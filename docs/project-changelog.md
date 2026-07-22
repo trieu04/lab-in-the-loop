@@ -1,6 +1,17 @@
 # Project Changelog
 
-## 2026-07-20 — Browser widget label fallback fix
+## 2026-07-21 — Experiment-loop HTML, version accumulation, and min-rounds fixes
+
+### Fixed
+
+- **Artifact HTML rendering**: a single experiment now renders seamlessly inline (payload sections as headings in one continuous flow) instead of splitting one experiment across per-section tabs. Tabs now separate *multiple* experiments only — one tab per experiment (`Exp001`, `Exp002`, ...), ordered oldest→latest, with the latest experiment selected by default.
+- **Loop version accumulation**: successive generated setup rounds converge on one idea-scoped setup widget and successive result rounds on one setup-scoped result widget, each accumulating an append-only version history, instead of creating a new widget per round. Discriminators are now `setup/idea:{idea_id}` and `result/setup:{setup_id}`; `write_artifact_browser_durable` appends a new canonical version when payload/state/round/provenance change.
+- **Min-rounds bias**: a new `LAB_AGENT_LOOP_MIN_ROUNDS` setting (default 2) overrides an early model STOP until at least that many experiments exist, so the loop no longer emits `experiment_loop_stopped` after a single experiment. Governance and max-rounds backstops are never overridden and still stop immediately.
+
+### Verified
+
+- 17 focused `lab-agent` tests pass (render inline/tabs, min-rounds enforcement, version accumulation, durable-browser error-payload + recovery); Ruff, mypy, and workflow contract parity all pass.
+
 
 ### Fixed
 

@@ -47,6 +47,55 @@ CANVUS_MCP_RAGCLUSTER_MARKER=RAGCluster_
 
 Secrets stay in `.env`; `.env` is git-ignored.
 
+### Canvas classification for governed dispatch
+
+Leave `CANVUS_CANVAS_CLASSIFICATIONS={}` as the safe default until an operator assigns a class. Its JSON key must exactly match the canvas id passed to `lab-agent --canvas`; supported values are `public`, `internal`, and `restricted`.
+
+```bash
+# Placeholder only: replace <exact-canvas-id>; do not use a real canvas id in shared examples.
+CANVUS_CANVAS_CLASSIFICATIONS={"<exact-canvas-id>":"internal"}
+```
+
+An unmapped, malformed, or unsupported value becomes `unknown`. `unknown` denies the trigger before provider dispatch.
+
+### Implementation-plan Phase 6 ingestion configuration and access (roadmap Phase 4c)
+
+The ingestion ledger/cache is local-only state, separate from `lab-agent`'s state DB. Configure the following `CANVUS_MCP_*` values only when overriding defaults. Paths are process-working-directory-relative unless absolute.
+
+| Variable | Default / constraint | Purpose |
+|---|---|---|
+| `CANVUS_MCP_INGESTION_DB_PATH` | `./.state/ingestion.db` | SQLite/WAL ingestion ledger |
+| `CANVUS_MCP_INGESTION_CACHE_DIR` | `./.state/ingestion-cache` | private immutable raw-byte cache |
+| `CANVUS_MCP_INGESTION_WORKER_CONCURRENCY` | `2`; integer `1`–`4` | value available to an embedding worker runner; not wired by the MCP server |
+| `CANVUS_MCP_INGESTION_LEASE_SECONDS` | `60`; `>= 0.1` | value available to an embedding worker runner; not wired by the MCP server |
+| `CANVUS_MCP_INGESTION_MAX_ATTEMPTS` | `3`; integer `1`–`10` | value available to an embedding worker runner; not wired by the MCP server |
+| `CANVUS_MCP_INGESTION_MAX_SOURCE_BYTES` | `10485760`; `>= 1` | streaming acquisition and extractor source cap |
+| `CANVUS_MCP_INGESTION_MAX_OUTPUT_CHARS` | `16000`; `>= 1` | extractor output cap per unit |
+| `CANVUS_MCP_INGESTION_MAX_RECORDS` | `500`; `>= 1` | CSV/TSV and JSON record cap |
+| `CANVUS_MCP_INGESTION_MAX_PDF_PAGES` | `200`; `>= 1` | PDF page cap |
+| `CANVUS_MCP_INGESTION_CHUNK_CHAR_CAP` | `8000`; integer `1`–`8000` | maximum persisted/read chunk characters |
+| `CANVUS_MCP_INGESTION_PDF_PASSWORD_FILE` | unset | optional regular, non-symlink password file; it must be owner-only (no group/other bits), at most 256 bytes, valid UTF-8, and outside the repository |
+
+Do not configure a password directly in `.env`. Encrypted PDFs without a password that meets this file contract return the typed `encrypted` outcome. Local extractors support strict UTF-8 text, CSV/TSV, JSON records, PNG/JPEG/GIF metadata, and PDF page text; malformed, oversized, and unsupported sources return typed outcomes. Video and spreadsheets other than CSV/TSV are not supported by this implementation. The server reads the three worker-setting values but does not construct a worker; any separate embedding runner must explicitly pass them to `IngestionWorker` rather than assuming the environment starts or configures one.
+
+Ingestion access is static and canvas-scoped. Leave token examples blank and put exact JSON canvas allowlists in the role that needs them:
+
+```bash
+CANVUS_MCP_READER_TOKEN=
+CANVUS_MCP_TRUSTED_SERVICE_TOKEN=
+CANVUS_MCP_OPERATOR_TOKEN=
+CANVUS_MCP_READER_CANVASES=[]
+CANVUS_MCP_TRUSTED_SERVICE_CANVASES=[]
+CANVUS_MCP_OPERATOR_CANVASES=[]
+CANVUS_MCP_STDIO_ROLE=reader
+CANVUS_MCP_STDIO_CANVASES=[]
+CANVUS_CANVAS_CLASSIFICATIONS={}
+```
+
+`CANVUS_MCP_STDIO_ROLE` is one of `reader`, `trusted_service`, or `operator` and defaults to `reader`; its scope is `CANVUS_MCP_STDIO_CANVASES`. The three role token values are secrets. `reader` can only read ingestion status/chunks; `trusted_service` can additionally enqueue ingestion and make existing canvas mutations; `operator` can additionally retry/cancel. HTTP ingestion requests must carry exactly one valid `Authorization: Bearer <token>` header. The classification map is operator-owned JSON keyed by exact canvas id; unmapped or malformed entries are `unknown`.
+
+Existing non-ingestion reads/downloads retain their anonymous compatibility behavior. That compatibility does not permit enqueue, retry, cancel, or any authenticated ingestion read.
+
 ## Run `canvus-mcp`
 
 ```bash
@@ -60,6 +109,10 @@ Default MCP endpoint:
 ```text
 http://127.0.0.1:8931/mcp
 ```
+
+`canvus-mcp` is the only Canvus package console command (`canvus-mcp`, optionally `canvus-mcp --stdio`). Its server constructs the ingestion store/cache/auth runtime but does **not** start an `IngestionWorker`; no ingestion-worker console command is registered in the current `pyproject.toml`. An operator embedding the supported `IngestionWorker` component must run it as a separate process against the same configured ingestion DB/cache and give it a stable, unique owner value. On normal stop, call `stop()` so it stops claiming new units while already claimed units finish; restart recovery reclaims expired leases. Do not run a worker inside the MCP server process.
+
+There is also no application-level implementation-plan Phase 6 / roadmap Phase 4c ingestion `integrity`, backup, or restore CLI. The `lab-agent integrity`/`backup` commands below apply only to `LAB_AGENT_STATE_DB_PATH`, not `CANVUS_MCP_INGESTION_DB_PATH`. Treat the ingestion DB/cache as operator-managed local state: back it up and retain/prune it only through an approved operational procedure, with the service stopped or SQLite/WAL-consistent handling selected by the operator.
 
 ### Register with Claude Code (optional)
 
@@ -118,6 +171,29 @@ LAB_AGENT_LOOP_MAX_ROUNDS=25
 ```
 
 `LAB_AGENT_LOOP_MAX_ROUNDS` is only a runaway backstop. The model's `LoopDecision` is the intended stop condition.
+
+### Authenticated bounded MCP reads
+
+Implementation-plan Phase 6 (roadmap Phase 4c) adds the following `LAB_AGENT_*` MCP and model-boundary settings. Result limits apply before an inbound tool result can reach an evidence ledger or transcript; argument, call-count, transcript, and ledger limits bound model use:
+
+| Variable | Default / constraint | Purpose |
+|---|---|---|
+| `LAB_AGENT_MCP_BEARER_TOKEN` | unset; blank becomes unset | optional Bearer credential sent to `canvus-mcp`; keep it secret |
+| `LAB_AGENT_MCP_SERVER_NAMESPACE` | `canvus`; 1–64 ASCII letters/digits/`_`/`-` | exact namespace accepted for MCP tool names |
+| `LAB_AGENT_MCP_RESULT_MAX_DEPTH` | `8`; `1`–`16` | nested result depth cap |
+| `LAB_AGENT_MCP_RESULT_MAX_CONTAINERS` | `256`; `1`–`4096` | container-count cap |
+| `LAB_AGENT_MCP_RESULT_MAX_STRING_CHARS` | `8192`; `1`–`32768`, no greater than byte cap | individual string cap |
+| `LAB_AGENT_MCP_RESULT_MAX_BYTES` | `32768`; `1024`–`1048576` | total result/envelope byte cap |
+| `LAB_AGENT_MCP_RESULT_MAX_ITEMS` | `256`; `1`–`4096` | collection-item cap |
+| `LAB_AGENT_MCP_ARGUMENT_MAX_BYTES` | `32768`; `1024`–`1048576` | serialized tool-argument byte cap |
+| `LAB_AGENT_MCP_ARGUMENT_MAX_ITEMS` | `256`; `1`–`4096` | tool-argument collection-item cap |
+| `LAB_AGENT_MODEL_TOOL_CALLS_PER_TURN` | `8`; `1`–`64` | maximum dispatched calls from one model turn |
+| `LAB_AGENT_MODEL_TOOL_CALLS_PER_RUN` | `32`; `1`–`512`, not below per-turn cap | aggregate dispatched calls for one run |
+| `LAB_AGENT_MODEL_TRANSCRIPT_MAX_BYTES` | `262144`; `4096`–`4194304` | provider-visible transcript byte cap |
+| `LAB_AGENT_MODEL_EVIDENCE_MAX_BYTES` | `131072`; `1024`–`4194304` | per-run evidence-ledger byte cap |
+| `LAB_AGENT_MODEL_EVIDENCE_MAX_ITEMS` | `64`; `1`–`4096` | per-run evidence-ledger item cap |
+
+`LAB_AGENT_MCP_BEARER_TOKEN` is deliberately blank in `.env.example`. Configure it with the reader token for model-facing ingestion status/chunk reads; `lab-agent` never receives ingestion mutation authority. It exact-matches only `get_ingestion_status` and `read_ingestion_chunks` (bare or under the configured namespace), rejects `enqueue_ingestion`/`retry_ingestion`/`cancel_ingestion`, and turns malformed, unsafe, or over-bound results into a fixed sanitized error without reflecting paths, credentials, capability URLs, or diagnostics. Status is operational/non-citeable; completed chunks are bounded untrusted evidence carrying only scalar provenance/classification and become model-citeable only after the ledger retains them. The Phase 5 locality policy is evaluated before every subsequent provider call.
 
 ### Governance and model routing
 
@@ -241,6 +317,10 @@ uv run lab-agent backup --to <path>
 
 `<trigger_id>` comes from `list-quarantined`'s output (e.g. `idea_setup:<widget_id>`, `setup_run:<widget_id>`, `loop:<connector_id>`). `reset` only succeeds on an attempt that is actually quarantined; it prints `ERROR: ...` and exits `1` otherwise — there is no bulk/blind reset.
 
+### Workflow attempt recovery
+
+Failed attempts wait and retry after backoff. Fix the cause before using the targeted `reset --canvas <canvas-id> --trigger <trigger_id>` command for a quarantined attempt. Completed attempts remain immutable: do not reset them; use a new trigger or a separately reviewed recovery mechanism.
+
 ### Restore drill
 
 There is intentionally **no** command that overwrites a live ledger from a backup — an operator restoring from backup does so explicitly, outside `lab-agent`, so a live ledger is never silently clobbered. To verify a backup file is restorable:
@@ -252,6 +332,14 @@ LAB_AGENT_STATE_DB_PATH=/tmp/restore-drill.db uv run lab-agent integrity
 ```
 
 A clean `OK: SQLite integrity and audit chain verified.` confirms the backup is a valid, restorable ledger. To actually restore, stop `lab-agent` and `serve-artifacts`, replace the live `LAB_AGENT_STATE_DB_PATH` file with the backup copy (including its `-wal`/`-shm` siblings if present), and restart — attempts/leases/audit history and generated artifact records/tokens/widget mappings resume exactly as of the backup, so any trigger completed after the backup was taken is safely reprocessed (not silently lost) rather than duplicated, because completion state for anything *before* the backup is preserved.
+
+## Demo preflight
+
+Check these independent gates before a governed demo:
+
+1. **Classification and provider allowlist:** the exact `--canvas` id has a `public`, `internal`, or `restricted` classification, and the selected provider's configured allowlist permits that class.
+2. **Artifact reachability:** `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` is configured and reachable by intended Canvus clients.
+3. **Pricing approval:** an operator-approved `LAB_AGENT_PRICING_VERSION` is set and the selected model has an entry in `LAB_AGENT_MODEL_PRICING`.
 
 ## Seed a canvas
 
@@ -333,11 +421,13 @@ Check:
 
 ### Downloads appear in git status
 
-Downloads should be ignored under:
+Downloads and ingestion runtime artifacts should be ignored under:
 
 ```text
 apps/canvus-mcp/downloads/
 downloads/
+apps/canvus-mcp/.state/
+.state/
 ```
 
 If new generated paths appear, add them to `.gitignore` before staging.
@@ -412,4 +502,6 @@ and check the audit log (or wait for the first instance's lease to expire/releas
 - Treat token-bearing artifact URLs as secrets: do not copy them into tickets, logs, audit payloads, model prompts, or reports.
 - Keep `LAB_AGENT_ARTIFACT_BIND_HOST` private unless an intentional ingress is in front of it. Production ingress must provide HTTPS/private network access; live external Canvus reachability and TLS verification are deployment gates, not guaranteed by local tests.
 - Serve artifact CSS/JS from the same origin as the artifact HTML; do not add third-party assets without a CSP/security review.
+- Treat the implementation-plan Phase 6 / roadmap Phase 4c ingestion DB, cache, raw files, and PDF password file as protected operational data. Do not copy their paths, raw bytes, or capability URLs into model input, audit data, tickets, or reports. There is no automatic ingestion retention/cleanup: the operator owns backup, retention, disk monitoring, and pruning policy.
+- Keep this topology single-host. Evaluate an external queue/object-store migration only from measured sustained backlog/throughput, disk pressure, availability/SLO failure, or a multi-host requirement; the repository provides neither that infrastructure nor numerical migration thresholds.
 - Use the migration script in dry-run mode first, then mirror apply only on a backed-up state DB. Phase 3 has no destructive migration path for legacy Notes.

@@ -18,9 +18,9 @@ The result-to-setup back-edge means: “analyse this result against this setup a
 |---|---|---|---|
 | `RAGCluster_` | Image | User/system | Knowledge scope, usually fed by docs/PDFs/notes |
 | `{idea: ...}` | Note | User | Experiment idea/request grounded in a RagCluster |
-| `[EXP:Setup vNNN]` | Browser (generated) or legacy Note | Agent | Structured experiment design for round N |
+| `[EXP:Setup vNNN]` | Browser (generated) or legacy Note | Agent | Structured experiment design; one widget per idea, each round appended as version `vNNN` |
 | `Robot_` | Any widget/title marker | User/system | Mock execution target |
-| `[EXP:Result vNNN]` | Browser (generated) or legacy Note | Agent | Clearly mock result for round N |
+| `[EXP:Result vNNN]` | Browser (generated) or legacy Note | Agent | Clearly mock result; one widget per setup, each round appended as version `vNNN` |
 | `[EXP:Closed]` | Browser (generated) or legacy Note | Agent | Stop decision, reason, confidence, next action |
 | `[EXP:Needs Input]` | Browser (generated prompt/status) | Agent | Infrastructure marker for requesting human input; the human response is a Note |
 
@@ -86,9 +86,9 @@ Agent action:
 
 1. Read current setup and result.
 2. Ask model for `LoopDecision`.
-3. If STOP: create `[EXP:Closed]`, connect result → closed.
-4. If CONTINUE: create next setup, connect result → next setup, run mock robot, create next result.
-5. Repeat until model stops or the safety backstop is reached.
+3. If STOP **and** at least `loop_min_rounds` experiments exist: create `[EXP:Closed]`, connect result → closed. An early STOP before the minimum is overridden so the loop biases toward more than one experiment; a governance or max-rounds backstop is never overridden and stops immediately.
+4. If CONTINUE (or an early STOP was overridden): create the next setup, connect result → next setup, run mock robot, create the next result. Successive rounds **append into the same setup widget and the same result widget as new versions** (the setup artifact is idea-scoped, the result artifact setup-scoped), not a fresh widget per round.
+5. Repeat until the model stops at/after the minimum, or a governance/safety backstop is reached.
 
 ## Generated artifact payload markers
 
@@ -147,7 +147,7 @@ Closed artifacts are classified in `scan_experiment_workflow`'s `closeds` bucket
 
 ### Needs Input artifact
 
-`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, reason hash, optional context, round, and `NEEDS_REVIEW` artifact state. Grounding uses it for explicit insufficient-evidence or unresolved-ambiguity outcomes, keyed by `(canvas, predecessor_id, reason_hash)` so repeated polls for the same reason converge on one Browser artifact and connector. This is infrastructure for a request/status marker only. The implementation does not yet provide future approval workflow transitions, approve/reject buttons, or wet-lab gate enforcement; the human-authored response remains a separate Note.
+`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, reason hash, optional context, round, and `NEEDS_REVIEW` artifact state. Grounding uses it for explicit insufficient-evidence or unresolved-ambiguity outcomes, keyed by `(canvas, predecessor_id, reason_hash)` so repeated polls for the same reason converge on one Browser artifact and connector. New generated Browser artifacts are positioned near their source/predecessor widget when Canvus geometry is available: setups near ideas, results near setups, closed nodes to the right of their predecessor (normally a result), and Needs Input prompts below their predecessor; missing, malformed, or unusable geometry falls back to the deterministic legacy grid. This is infrastructure for a request/status marker only. The implementation does not yet provide future approval workflow transitions, approve/reject buttons, or wet-lab gate enforcement; the human-authored response remains a separate Note.
 
 ## Implementation-plan Phase 6 ingestion as grounding (roadmap Phase 4c)
 
@@ -227,6 +227,7 @@ Use `lab-agent once` for smoke tests or scripted operation.
 | Ingestion source malformed/encrypted/oversized/unsupported | worker persists a typed terminal unit failure; chunks are not fabricated; operator retry/cancel remains canvas-scoped |
 | Ingestion worker interrupted | expired lease is reclaimed by a later worker; current-generation atomic completion prevents duplicate/stale chunks |
 | Ingestion read/auth/result bound denied | fixed sanitized denial/error; no mutation, raw-path disclosure, evidence insertion, or provider call follows |
+| Model stops after a single experiment | override the early stop and run at least `loop_min_rounds` experiments (default 2) before honoring a model stop; governance/backstop reasons are never overridden |
 | Loop keeps continuing | close with the first distinct terminal reason: maximum rounds, token budget, cost budget, wall time, or no-progress; model stop remains its own reason |
 
 ## Example happy path
@@ -269,7 +270,7 @@ Two different layers call `canvus-mcp` tools, and they are not the same tool set
 
 - `create_note` — still used for user/legacy Note paths; generated Setup/Result/Closed/Needs Input prompt artifacts are no longer created as Notes.
 - `create_browser` — creates generated artifact Browser widgets.
-- `update_browser` — repairs marker/title/name/location and rotates token-bearing capability URLs in place without recreating the widget or breaking connectors.
+- `update_browser` — repairs marker/title/name and rotates token-bearing capability URLs in place without recreating the widget, breaking connectors, or undoing manual placement.
 - `create_connector`
 
 `canvus-mcp` also exposes `create_image`; it remains available for direct/manual use and is not part of the automated generated-artifact write path.

@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Draft for review |
-| Version | 1.1 |
+| Version | 1.2 |
 | Date | 2026-07-19 |
 | Source vision | [docs/notes/use-case-lab-in-the-loop.md](notes/use-case-lab-in-the-loop.md) (original meeting notes, excluded from normalization) |
 | Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lap-in-the-loop` repository |
@@ -89,9 +89,14 @@ apps/lab-agent   ── watcher/orchestrator: read to ground, model propose, orc
   ├─ governed gateway (task routing, locality/pricing, normalized usage, stop policy)
   ├─ artifact service (capability-protected Browser HTML)
   └─ local SQLite WAL ledger (attempts, leases, model/canvas intents, budget reservations, audit/outbox, artifact records/tokens/widgets)
+
+apps/canvus-mcp ingestion runtime
+  ├─ separate SQLite/WAL ledger (assets/sources/jobs/units/leases/attempts/chunks)
+  ├─ protected SHA-256 raw cache and bounded local extractors
+  └─ authenticated canvas-scoped status/chunk MCP reads
 ```
 
-Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-agent`'s local SQLite WAL ledger for attempts, leases, side-effect intents/outbox, audit, and canonical generated-artifact records. The Phase 3 artifact service serves generated Setup/Result/Closed and generated Needs Input prompt/status artifacts as capability-protected Browser widgets; `{idea: ...}` and human-authored approval/review/input responses remain Notes. Target components — Knowledge Retrieval Service, independent Execution Orchestrator beyond today's `lab-agent`, Flywheel wrapper, Knowledge Update Service, In-silico service — are all `[Future/Proposed]`, not yet existing as separate modules (see `docs/system-architecture.md` § "Target harness boundary (proposed)").
+Current system boundary `[MVP]` consists of the 2 runtime apps plus separate local SQLite/WAL ledgers: `lab-agent` persists attempts, leases, side-effect intents/outbox, audit, and canonical generated-artifact records; `canvus-mcp` persists bounded local-source ingestion assets, sources, jobs, units, leases, attempts, chunks, and cancellation state. The ingestion cache keeps SHA-256 raw bytes outside model context; only bounded extracted chunks can become untrusted evidence. The Phase 3 artifact service serves generated Setup/Result/Closed and generated Needs Input prompt/status artifacts as capability-protected Browser widgets; `{idea: ...}` and human-authored approval/review/input responses remain Notes. Target components — Knowledge Retrieval Service, independent Execution Orchestrator beyond today's `lab-agent`, Flywheel wrapper, Knowledge Update Service, In-silico service — are all `[Future/Proposed]`, not yet existing as separate modules (see `docs/system-architecture.md` § "Target harness boundary (proposed)").
 
 ---
 
@@ -142,13 +147,14 @@ Current system boundary `[MVP]` consists of the 2 runtime apps above plus `lab-a
 - Model adapter (`openai` or `claude`) must be available, selected by task-stage routing, locality-authorized for every evidence classification, and priced in the configured versioned table; otherwise governed dispatch is denied. OpenAI-compatible operation uses explicit matching `LAB_AGENT_OPENAI_BASE_URL`/`LAB_AGENT_PROVIDER_ENDPOINTS["openai"]`, not a named new provider `[MVP partial]`.
 - Durable local operation depends on the SQLite WAL ledger at `LAB_AGENT_STATE_DB_PATH`; it is local-disk/single-host scoped and must be backed up/restored intentionally. The same DB contains generated-artifact records, versions, token hashes, Browser widget mappings, model-call intents, and budget reservations.
 - Browser artifact writes depend on a configured `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` reachable by intended Canvus clients; production requires HTTPS/private ingress. Live external reachability/TLS verification is a deployment gate, not proven by this repo.
+- Local-source ingestion depends on `CANVUS_MCP_INGESTION_DB_PATH` and `CANVUS_MCP_INGESTION_CACHE_DIR`, static role tokens/exact canvas scopes, an optional restrictive PDF password file, and an independently managed worker. The MCP server does not run a worker, has no worker CLI, and has no ingestion backup/restore/integrity CLI.
 - Target components (Flywheel, in-silico, knowledge/versioning service, wiki/KG/vector retrieval services) are **not yet in existence** — all use cases involving them are `[Future]`. The current grounding gate accepts future retrieval sources only as adapters/external gates.
 
 **Constraints**
 
 - Model receives only read tools (`READ_TOOLS` in `lab_agent/tool_bridge.py`); successful reads are wrapped as `untrusted_data` and captured in a per-run evidence ledger; all writes go through orchestrator (`lab_agent/nodes.py`) — strict read/write separation.
 - Must not hard-code dependence on any specific provider (`code-standards.md` § "Provider and harness boundaries").
-- Governed dispatch requires a configured HTTPS endpoint/classification allowlist and known versioned model pricing. Unknown/restricted classifications, endpoint/provider omissions, missing price, or failed reservation deny dispatch; external organization approval, rate maintenance, live endpoint/SDK/API validation, and invoice reconciliation remain operator gates.
+- Governed dispatch requires a configured HTTPS endpoint/classification allowlist and known versioned model pricing. `scan_experiment_workflow` copies the canvas classification into every actionable idea/setup/loop entry, and `lab-agent` supplies it to the trigger governance context before the first governed model call. Unknown/restricted classifications, endpoint/provider omissions, missing price, or failed reservation deny dispatch; external organization approval, rate maintenance, live endpoint/SDK/API validation, and invoice reconciliation remain operator gates.
 - Usage is normalized as `exact`, `estimated`, or `unavailable`; Claude exact input includes cache-create/read tokens. Estimates cover provider-visible messages, tools, response schema, schema name, and output cap for governance only — never provider invoices.
 - Durable idempotency, model-call intents/reservations, and artifact storage are scoped to one local host and one active writer per canvas; run accounting resets per trigger while canvas totals/active holds survive restart. Multi-host/shared-store deployment is a future Postgres-or-equivalent migration trigger.
 - Capability URLs are bearer secrets; full token-bearing URLs must not be logged, audited, printed, pasted into model context, or copied into reports. Provider prompts, responses, secrets, and raw error text likewise do not enter durable intent/audit records.
@@ -203,7 +209,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | FR-LITL-017 | Handle Flywheel job failure: show failed, preserve data path, allow rerun | Should | `[Future]` |
 | FR-LITL-018 | Create conflict note when new data contradicts old knowledge | Should | `[Future]` |
 | FR-LITL-019 | Idempotency: no duplicate setup/result/closed/connector loop-processing | Must | `[MVP]` — durable local SQLite attempts + side-effect intents/outbox; local-disk, single-host scope |
-| FR-LITL-020 | Ingest large multimodal data with chunking/caching/resumable capability | Should | `[Future]` |
+| FR-LITL-020 | Ingest large multimodal data with chunking/caching/resumable capability | Should | `[MVP partial]` — complete local-source contract: SHA-256/extractor-version dedup, leased resumable units, bounded chunks/status, authenticated canvas scope, and evidence/locality integration. Video and spreadsheets other than CSV/TSV remain unsupported/external gates. |
 | FR-LITL-021 | Represent workflow as directed node + connector on canvas | Must | `[MVP]` |
 | FR-LITL-022 | Clearly label all simulated results as "mock" | Must | `[MVP]` |
 
@@ -549,6 +555,14 @@ Fields still required by the full vision but not yet implemented as separate typ
 | `[EXP:Closed]` | — | Browser widget backed by `ArtifactStore`; payload rendered from `LoopDecision` + backstop reason if any; legacy Note readable during migration |
 | `[EXP:Needs Input]` | generated request/status marker | Browser widget backed by `ArtifactStore` with message/reason/context and `NEEDS_REVIEW` state; human response remains a Note; no approval transition workflow is implemented |
 
+### 13.6 Local-source ingestion contract `[MVP partial]`
+
+The implementation-plan Phase 6 (roadmap Phase 4c) contract is deliberately narrower than the full vision's "all multimodal" goal. `enqueue_ingestion` (trusted service) acquires an authorized Canvus PDF/image/asset with a streaming byte cap, verifies SHA-256, records exact canvas-scoped source provenance, and deduplicates work by `(asset_sha256, extractor_version)`. The separate SQLite/WAL ledger has checksummed migrations and durable assets/sources/jobs/units/leases/attempts/chunks/cancellations. Unit completion inserts chunks atomically; only the current lease generation may complete; expired work is reclaimed after restart without exceeding the poison-attempt limit. Retry/backoff, poison, cancellation, and operator retry preserve completed chunks. Verified raw cache publication uses private temporary files, fsync, digest verification, and no-replace promotion; buffered download paths are immutable hash-bound artifacts.
+
+`get_ingestion_status` and paginated `read_ingestion_chunks` are reader operations. `retry_ingestion` and `cancel_ingestion` are operator-only. Responses expose bounded status/progress, chunk text, and scalar provenance/classification only — never raw bytes, cache paths, or capability URLs. Enqueue reads retain exact requested-source provenance; job-only reads that cannot select one source return a bounded source set with `unknown` classification. Reader/trusted-service/operator tokens are `SecretStr` configuration; HTTP calls require one exact Bearer credential and exact canvas scope, while stdio defaults to reader scope. Authorization denial is fixed and metadata-only. Existing non-ingestion reads/downloads may remain anonymous for backward compatibility.
+
+Strict local extractors support UTF-8 text, CSV/TSV, JSON records, PNG/JPEG/GIF metadata, and bounded PDF pages; generic-source MIME is normalized before routing and PDF extraction runs in an isolated resource-limited child. PDF passwords are accepted only from the restrictive optional password-file contract. `malformed`, `encrypted`, `oversized`, and `unsupported` are typed outcomes. Video and spreadsheet formats other than CSV/TSV remain unsupported/external gates. `lab-agent` exposes only the two reader tools, treats status as non-citeable operational data, and admits only bounded chunks as untrusted evidence after ledger retention; its exact namespace allowlist, argument/result/call/transcript bounds, mutation exclusion, and Phase 5 locality checks apply before a later provider call.
+
 ---
 
 ## 14. Non-functional requirements
@@ -561,7 +575,7 @@ Fields still required by the full vision but not yet implemented as separate typ
 | NFR-LITL-004 | Traceability: each setup cites internal sources used | 100% of executable setup writes have valid ledger citations or no write occurs | `[MVP]` local Phase 4 tests pass; future external retrieval adapters remain Future |
 | NFR-LITL-005 | Reproducibility/versioning: knowledge version never overwrites | Each update creates new version with full metadata | `[Future]` — no Versioning Service |
 | NFR-LITL-006 | Reliability: retry/resume, idempotency durable across restart | Idempotency survives watcher restart | `[MVP]` — local SQLite WAL ledger with attempts/leases/intents/audit; multi-host/shared-store durability remains `[Future]` |
-| NFR-LITL-007 | Performance/scalability: chunking/caching/resumable for large multimodal | Large ingest case (e.g., ~4 days) resumes after interruption | `[Future]` — roadmap Phase 4c |
+| NFR-LITL-007 | Performance/scalability: chunking/caching/resumable for large multimodal | Bounded local-source work resumes after interruption without redoing completed units | `[MVP partial]` — Phase 4c completed locally on 2026-07-19. Current single-host bounds/defaults include 10 MiB sources and 1–4 worker concurrency; no automatic retention, queue/object store, multi-host deployment, numeric capacity threshold, or large-format/video proof is implemented. |
 | NFR-LITL-008 | Observability: structured log, metrics, health check, multi-user dashboard | TBD (no specific metrics yet) | `[Future]` — roadmap Phase 7; currently structured logs plus durable audit events, but no metrics/dashboard/health-check stack |
 | NFR-LITL-009 | Cost/token governance: budget/cost threshold, model routing by task | Configured run/canvas envelopes, known versioned pricing, and task-stage routing | `[MVP]` — durable reserve/commit/release; exact/estimated usage; unknown price denies even without cost caps; estimates are not invoices |
 | NFR-LITL-010 | Accessibility/operability: CLI `once`/`watch`, admin commands, clear `.env` config, troubleshooting docs | Workflow and operator commands documented | `[MVP]` — `setup-and-operations.md` |
@@ -574,8 +588,9 @@ Fields still required by the full vision but not yet implemented as separate typ
 |---|---|---|---|
 | Canvus credentials | Secret leak | Keep in `apps/canvus-mcp/.env`, git-ignored | `[MVP]` |
 | MCP write tools | Unintended canvas mutation | Only orchestrator calls write tool; model receives only read tools | `[MVP]` |
-| Downloaded PDF/image | Sensitive data | Write to `downloads/` directory ignored; bytes don't enter model context by default | `[MVP]` |
-| Retrieved evidence excerpts | Prompt injection or sensitive-data leakage | Successful read results are `untrusted_data`; durable audit stores ids/hashes/reasons only and trims rows to payload cap | `[MVP]` |
+| Downloaded PDF/image / ingested source | Sensitive data or raw-storage traversal | Streaming byte cap before persistence; ignored SHA-256 cache with `0700` dirs/`0600` files and descriptor/no-follow checks; raw bytes, paths, and capability URLs never enter model context | `[MVP]` local-source scope |
+| Ingestion MCP access | Cross-canvas data exposure or unauthorized mutation | Strict single Bearer credential per HTTP call, static reader/trusted-service/operator roles, exact canvas allowlists, reader-only stdio default, metadata-only denial audit; old non-ingestion anonymous reads/downloads stay compatible | `[MVP]` |
+| Retrieved evidence excerpts | Prompt injection or sensitive-data leakage | Successful read results are `untrusted_data`; status is operational/non-citeable, only bounded chunks can be evidence, and durable audit stores ids/hashes/reasons only and trims rows to payload cap | `[MVP]` |
 | Artifact Browser URLs | Bearer capability leak or cross-canvas access | Private bind by default; reachable public base URL through HTTPS/private ingress in production; tokens stored as hashes; no access logs/full URL output; artifact/canvas scope checks; strict CSP/same-origin assets | `[MVP infrastructure]` — live reachability/TLS verification pending |
 | Model output | Domain fact hallucination, fabricated citations, guessed acronyms | Ground with RagCluster/read tools; validate citations against per-run ledger; scan idea/setup/evidence excerpts against approved dictionary; schema is structured | `[MVP partial]` |
 | Model provider dispatch | Unapproved data flow, unknown price, duplicate/ambiguous submission | Classify/authorize endpoint before dispatch; require known price, durable intent/reservation; typed retry and capability-aware reconciliation only | `[MVP]` local/source gates; organization approval, price maintenance, live API checks remain operational |
@@ -624,7 +639,7 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 | Phase 3 | Harness contracts, persistent loop state, generated Browser artifacts | Partially complete — durable local state and generated Browser artifact infrastructure shipped; cross-implementation harness contracts and live public-base/TLS deployment gates remain Future/Pending | FR-LITL-019, FR-LITL-021, NFR-LITL-006, NFR-LITL-010 |
 | Phase 4 | Stronger grounding (ledger/citations/acronym/Needs Input) | Complete — 314/314 `lab-agent` tests, focused `canvus-mcp` marker tests 8/8, reviewer score 9.6/10 SEALED; wiki/KG/vector sources remain Future adapters | FR-LITL-001, FR-LITL-015, FR-LITL-016, NFR-LITL-004 |
 | Phase 4b | Token/resource governance, model routing | Complete for local/source gates on 2026-07-19 — routing/locality/pricing/budgets/intents/reconciliation/stops verified; `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED; organization approval matrix, maintained prices, and live provider checks remain operational | FR-LITL-013, NFR-LITL-002, NFR-LITL-009 |
-| Phase 4c | Async multimodal ingestion | Future | FR-LITL-020, NFR-LITL-007 |
+| Phase 4c | Async multimodal ingestion | Complete for local-source implementation — 2026-07-19; final evidence sealed 2026-07-20. `canvus-mcp` full/focused suites 134/77 passed; `lab-agent` full/focused suites 480/122 passed. Ruff, mypy, compileall, locks, builds, workflow parity, tracked/untracked whitespace, and Phase 7 isolation passed; final inspection is 9.7/10 SEALED with `criticalCount: 0`. Deprecation warnings remain; statement/branch coverage is unclaimed. Hosted CI, live credentials, large-format validation, retention/capacity policy, and queue/object storage remain external gates. | FR-LITL-020, NFR-LITL-007 |
 | Phase 5 | In-silico validation gate | Future | UC-LITL-03, FR-LITL-003 |
 | Phase 6 | In-silico + human approval + Flywheel + lab integration | Future | FR-LITL-004, FR-LITL-005, FR-LITL-006, FR-LITL-008, FR-LITL-010, BR-LITL-006, BR-LITL-009 |
 | Phase 7 | Production hardening, multi-user, observability | Future | NFR-LITL-006, NFR-LITL-008, ACT-LITL-13 |
