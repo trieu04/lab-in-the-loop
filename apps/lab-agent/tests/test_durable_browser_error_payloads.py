@@ -39,7 +39,7 @@ async def test_process_once_retries_after_setup_browser_error_payload_without_du
     settings = _settings()
     canvas_id = "c"
     trigger_id = "idea_setup:idea1"
-    key = _browser_key(canvas_id, "setup", "setup/predecessor:idea1/round:1")
+    key = _browser_key(canvas_id, "setup", "setup/idea:idea1")
     try:
         mcp.fail_next_as_error_payload("create_browser")
 
@@ -96,7 +96,7 @@ async def test_process_once_retries_after_setup_connector_error_payload_without_
     canvas_id = "c"
     trigger_id = "idea_setup:idea1"
     setup_id = "browser1"  # FakeMCP's first synthetic create_browser id
-    browser_key = _browser_key(canvas_id, "setup", "setup/predecessor:idea1/round:1")
+    browser_key = _browser_key(canvas_id, "setup", "setup/idea:idea1")
     conn_key = idempotency_key(canvas_id, "create_connector", f"connector/idea_setup/idea1->{setup_id}")
     try:
         mcp.fail_next_as_error_payload("create_connector")

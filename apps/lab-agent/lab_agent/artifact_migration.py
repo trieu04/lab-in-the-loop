@@ -126,7 +126,7 @@ async def mirror_one(
         state=_STATE[note.artifact_type], title=note.title,
         payload=build_import_payload(note, text), provenance=provenance,
         discriminator=f"migrate/note:{note.widget_id}", round_index=note.round,
-        predecessor_id="", edge_kind="",  # connectors mirrored explicitly below
+        predecessor_id="", edge_kind="", layout_anchor_id=note.widget_id,
     )
     drawn = await _mirror_connectors(
         mcp, store, canvas_id=canvas_id, note_id=note.widget_id, widget_id=widget_id,

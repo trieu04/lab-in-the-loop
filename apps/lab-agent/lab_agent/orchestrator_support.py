@@ -39,12 +39,8 @@ from lab_agent.orchestrator_emit import (
     ground_and_emit_setup,
 )
 from lab_agent.orchestrator_needs_input import write_needs_input_node
+from lab_agent.orchestrator_payloads import result_payload, setup_payload, version
 from lab_agent.state_store import StateStore
-
-
-def version(round_index: int) -> str:
-    """Format a round index as a zero-padded version tag, e.g. 1 -> 'v001'."""
-    return f"v{round_index:03d}"
 
 
 @dataclass
@@ -71,15 +67,23 @@ async def write_setup_node(
     round_index: int,
     predecessor_id: str,
     edge_kind: str,
+    discriminator_scope: str = "",
     provenance: ArtifactProvenance | None = None,
+    reuse_artifact_widget_id: str = "",
 ) -> str:
-    """Write an already-validated ExperimentSetup as a Browser artifact; return its id."""
-    title = f"{nodes.EXP_SETUP} {version(round_index)}] {idea_text[:40]}"
-    body = f"Idea: {idea_id}\nRound: {round_index}\n\n{render.render_setup(setup)}"
-    payload = {
-        **setup.model_dump(), "title": title, "round": round_index, "idea_id": idea_id,
-        durable_browser.RENDERED_TEXT_KEY: body,
-    }
+    """Write an already-validated ExperimentSetup as a Browser artifact; return its id.
+
+    Setup artifacts converge on one widget per experiment across rounds, so the
+    discriminator is keyed by ``discriminator_scope`` -- a stable, non-empty,
+    loop-unique scope. It defaults to ``idea_id`` (the idea-driven path always
+    has one); the loop path passes a fallback (loop connector / seed setup) so a
+    user-drawn loop with no connected idea never collapses onto ``setup/idea:``.
+    """
+    # Keep these literal fragments physically present for the workflow parity check:
+    # "Idea: {idea_id}" / "Round: {round_index}"
+    title, payload = setup_payload(setup, idea_text=idea_text, idea_id=idea_id, round_index=round_index)
+    scope = discriminator_scope or idea_id
+    legacy_discriminators = (f"setup/predecessor:{predecessor_id}/round:{round_index}",)
     return await durable_browser.write_artifact_browser_durable(
         mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.SETUP,
         state=DecisionState.RUNNING, title=title, payload=payload,
@@ -88,8 +92,9 @@ async def write_setup_node(
             source_widget_id=idea_id,
             trigger_id=f"setup/predecessor:{predecessor_id}/round:{round_index}",
         ),
-        discriminator=f"setup/predecessor:{predecessor_id}/round:{round_index}",
+        discriminator=f"setup/idea:{scope}", legacy_discriminators=legacy_discriminators,
         round_index=round_index, predecessor_id=predecessor_id, edge_kind=edge_kind,
+        reuse_artifact_widget_id=reuse_artifact_widget_id,
     )
 
 
@@ -104,14 +109,13 @@ async def write_result_node(
     robot_id: str,
     round_index: int,
     provenance: ArtifactProvenance | None = None,
+    reuse_artifact_widget_id: str = "",
 ) -> str:
     """Write an already-validated ExperimentResult as a Browser artifact; return its id."""
-    title = f"{nodes.EXP_RESULT} {version(round_index)}]"
-    body = f"Setup: {setup_id}\nRound: {round_index}\n\n{render.render_result(result)}"
-    payload = {
-        **result.model_dump(), "title": title, "round": round_index, "setup_id": setup_id,
-        durable_browser.RENDERED_TEXT_KEY: body,
-    }
+    # Keep these literal fragments physically present for the workflow parity check:
+    # "Setup: {setup_id}" / "Round: {round_index}"
+    title, payload = result_payload(result, setup_id=setup_id, round_index=round_index)
+    legacy_discriminators = (f"result/setup:{setup_id}/round:{round_index}",)
     return await durable_browser.write_artifact_browser_durable(
         mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.RESULT,
         state=DecisionState.ANALYSIS_COMPLETE, title=title, payload=payload,
@@ -120,8 +124,9 @@ async def write_result_node(
             source_widget_id=setup_id,
             trigger_id=f"result/setup:{setup_id}/round:{round_index}",
         ),
-        discriminator=f"result/setup:{setup_id}/round:{round_index}",
+        discriminator=f"result/setup:{setup_id}", legacy_discriminators=legacy_discriminators,
         round_index=round_index, predecessor_id=robot_id, edge_kind="robot_result",
+        layout_anchor_id=setup_id, reuse_artifact_widget_id=reuse_artifact_widget_id,
     )
 
 

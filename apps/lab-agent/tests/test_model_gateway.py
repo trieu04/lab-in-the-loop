@@ -31,7 +31,7 @@ def _settings(**kw) -> Settings:
         "provider_endpoints": {"openai": "https://openai.example"},
     }
     base.update(kw)
-    return Settings(**base)  # type: ignore[arg-type]
+    return Settings(_env_file=None, _env_prefix="__TEST_NO_ENV__", **base)  # type: ignore[arg-type]
 
 
 class SpyAdapter:

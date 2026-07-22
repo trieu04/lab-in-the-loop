@@ -69,6 +69,10 @@ async def run_loop(
     ragcluster_id = loop.get("ragcluster_id", "")
     idea_id = loop.get("idea_id", "")
     idea_text = await nodes.read_note_text(mcp, canvas_id, idea_id) if idea_id else ""
+    # Stable, non-empty, loop-unique scope for the accumulating setup widget: a
+    # user-drawn loop may have no connected idea (empty idea_id), so fall back to
+    # the loop's own identity instead of collapsing onto a shared "setup/idea:".
+    loop_scope = idea_id or loop.get("loop_connector_id") or setup_id
 
     summary = LoopSummary(rounds=max(0, round_index - 1), setup_ids=[setup_id], result_ids=[result_id])
     tracker = make_stop_tracker(gov) if gov is not None else None
@@ -97,8 +101,12 @@ async def run_loop(
         ):
             return summary
         backstop = gov is None and summary.rounds >= settings.loop_max_rounds
+        # Bias toward more than one experiment: an early model STOP is overridden
+        # until at least loop_min_rounds experiments exist. Backstops (max_rounds
+        # here, plus the governance evaluate_and_close paths) are never overridden.
+        force_continue = not decision.proceed and not backstop and summary.rounds < settings.loop_min_rounds
 
-        if not decision.proceed or backstop:
+        if (not decision.proceed or backstop) and not force_continue:
             reason = decision.reason if not decision.proceed else "loop_max_rounds backstop reached"
             summary.closed_id = await write_closed_node(
                 mcp, store, settings, canvas_id=canvas_id, decision=decision, reason=reason,
@@ -176,6 +184,7 @@ async def run_loop(
         next_setup_id = await write_setup_node(
             mcp, store, settings, canvas_id=canvas_id, setup=next_setup, idea_text=next_idea_text,
             idea_id=idea_id, round_index=round_index, predecessor_id=result_id, edge_kind="result_setup",
+            discriminator_scope=loop_scope, reuse_artifact_widget_id=setup_id,
             provenance=model_provenance(
                 adapter, settings, TaskStage.SETUP, source_widget_id=result_id,
                 trigger_id=f"setup/predecessor:{result_id}/round:{round_index}",
@@ -183,7 +192,7 @@ async def run_loop(
         )
         next_result_id = await write_result_node(
             mcp, store, settings, canvas_id=canvas_id, result=next_result, setup_id=next_setup_id,
-            robot_id=robot_id, round_index=round_index,
+            robot_id=robot_id, round_index=round_index, reuse_artifact_widget_id=result_id,
             provenance=model_provenance(
                 adapter, settings, TaskStage.MOCK_RESULT, source_widget_id=next_setup_id,
                 trigger_id=f"result/setup:{next_setup_id}/round:{round_index}",

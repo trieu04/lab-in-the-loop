@@ -78,13 +78,31 @@ async def test_canonical_artifact_record_uses_needs_review_state(store):
     assert doc.payload["context"] == {"setup_id": "setup1"}
 
 
+async def test_needs_input_appears_below_predecessor_geometry(store):
+    mcp = FakeMCP()
+    mcp.seed_widget("setup1", "Browser", title="[EXP:Setup v001] A+B", x=300.0, y=400.0, width=480.0, height=360.0)
+
+    widget_id = await _write(mcp, store)
+
+    assert mcp.notes[widget_id]["location"] == {"x": 300.0, "y": 800.0}
+
+
+async def test_needs_input_falls_back_to_grid_without_predecessor_geometry(store):
+    mcp = FakeMCP()
+    mcp.seed_widget("setup1", "Browser", title="[EXP:Setup v001] A+B")
+
+    widget_id = await _write(mcp, store)
+
+    assert mcp.notes[widget_id]["location"] == {"x": 780.0, "y": 420.0}
+
+
 async def test_missing_public_base_url_fails_closed_before_browser_call(store):
     mcp = FakeMCP()
     mcp.seed_widget("setup1", "Browser", title="[EXP:Setup v001] A+B")
     with pytest.raises(ArtifactUrlError):
         await write_needs_input_node(
-            mcp, store, Settings(), canvas_id="c", message="m", reason="r", round_index=1,
-            predecessor_id="setup1", edge_kind="setup_needs_input",
+            mcp, store, Settings(artifact_public_base_url=""), canvas_id="c", message="m", reason="r",
+            round_index=1, predecessor_id="setup1", edge_kind="setup_needs_input",
         )
     assert [w for w in mcp.notes.values() if "Needs Input" in w["title"]] == []
 

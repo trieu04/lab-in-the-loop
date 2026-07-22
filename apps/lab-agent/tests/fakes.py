@@ -89,16 +89,16 @@ class FakeMCP:
         self._error_payload_queue.setdefault(tool_name, []).extend([error] * times)
 
     def seed_widget(
-        self, wid: str, widget_type: str, *, title: str = "", text: str = "", url: str = ""
+        self, wid: str, widget_type: str, *, title: str = "", text: str = "", url: str = "",
+        x: float | None = None, y: float | None = None, width: float | None = None, height: float | None = None,
     ) -> None:
-        """Record a canvas widget (id, type, title, text, url); also seeds live mode.
-
-        Browser widgets carry a ``url`` (the capability-protected artifact URL);
-        Notes leave it empty. One unified widget map so the canvus-mcp detector
-        bridge (``live_scan``/``check_widget_connections``) classifies Notes and
-        generated Browser widgets from the same source, as production does.
-        """
-        self.notes[wid] = {"id": wid, "widget_type": widget_type, "title": title, "text": text, "url": url}
+        """Record a canvas widget; optional geometry mirrors Canvus widget dumps."""
+        widget: dict[str, Any] = {"id": wid, "widget_type": widget_type, "title": title, "text": text, "url": url}
+        if x is not None and y is not None:
+            widget["location"] = {"x": x, "y": y}
+        if width is not None and height is not None:
+            widget["size"] = {"width": width, "height": height}
+        self.notes[wid] = widget
 
     def seed_connector(self, src: str, dst: str) -> None:
         """Add a pre-existing connector, for live-recompute mode."""
@@ -117,13 +117,17 @@ class FakeMCP:
         if name == "create_note":
             self._counter += 1
             wid = f"note{self._counter}"
-            self.seed_widget(wid, "Note", title=arguments.get("title", "") or "", text=arguments["text"])
+            self.seed_widget(
+                wid, "Note", title=arguments.get("title", "") or "", text=arguments["text"],
+                x=arguments.get("x"), y=arguments.get("y"), width=arguments.get("width"), height=arguments.get("height"),
+            )
             return json.dumps({"id": wid})
         if name == "create_browser":
             self._counter += 1
             wid = f"browser{self._counter}"
             self.seed_widget(
-                wid, "Browser", title=arguments.get("title", "") or "", url=arguments.get("url", "") or ""
+                wid, "Browser", title=arguments.get("title", "") or "", url=arguments.get("url", "") or "",
+                x=arguments.get("x"), y=arguments.get("y"), width=arguments.get("width"), height=arguments.get("height"),
             )
             return json.dumps({"id": wid})
         if name == "update_browser":
@@ -135,6 +139,10 @@ class FakeMCP:
                 widget["url"] = arguments["url"]
             if "title" in arguments:
                 widget["title"] = arguments["title"]
+            if "x" in arguments and "y" in arguments:
+                widget["location"] = {"x": arguments["x"], "y": arguments["y"]}
+            if "width" in arguments and "height" in arguments:
+                widget["size"] = {"width": arguments["width"], "height": arguments["height"]}
             return json.dumps({"id": wid})
         if name == "create_connector":
             self._counter += 1
@@ -142,6 +150,8 @@ class FakeMCP:
             return json.dumps({"id": f"conn{self._counter}"})
         if name == "get_note":
             return json.dumps(self.notes.get(arguments["note_id"], {}))
+        if name == "get_widget":
+            return json.dumps(self.notes.get(arguments["widget_id"], {}))
         if name == "check_ragcluster_connections":
             return json.dumps({"clusters": []})
         if name == "check_widget_connections":

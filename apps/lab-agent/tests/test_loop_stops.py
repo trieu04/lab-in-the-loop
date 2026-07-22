@@ -24,6 +24,11 @@ LOOP = {
 SEED = {"idea1": "{idea: A+B}", "setup1": "Round: 1\nmix A and B", "result1": "marker reduced"}
 
 
+def _settings(**values: object) -> Settings:
+    """Build deterministic test settings without developer-local dotenv values."""
+    return Settings(_env_file=None, _env_prefix="__TEST_NO_ENV__", **values)  # type: ignore[arg-type]
+
+
 class OvershootAdapter(ScriptedAdapter):
     async def generate(self, *args, **kwargs):
         response = await super().generate(*args, **kwargs)
@@ -45,7 +50,7 @@ def _ctx(store, settings):
 
 
 def test_stop_tracker_no_progress_streak(store):
-    settings = Settings(no_progress_rounds=2)  # type: ignore[call-arg]
+    settings = _settings(no_progress_rounds=2)  # type: ignore[call-arg]
     tracker = make_stop_tracker(_ctx(store, settings))
     tracker.observe_result("same result")
     assert tracker.check(rounds=1) is None  # streak 1
@@ -54,7 +59,7 @@ def test_stop_tracker_no_progress_streak(store):
 
 
 def test_stop_tracker_resets_streak_on_change(store):
-    settings = Settings(no_progress_rounds=2)  # type: ignore[call-arg]
+    settings = _settings(no_progress_rounds=2)  # type: ignore[call-arg]
     tracker = make_stop_tracker(_ctx(store, settings))
     tracker.observe_result("first")
     tracker.observe_result("second")  # different -> streak back to 1
@@ -62,7 +67,7 @@ def test_stop_tracker_resets_streak_on_change(store):
 
 
 def test_stop_tracker_wall_time(store, clock):
-    settings = Settings(wall_time_budget_seconds=50.0)  # type: ignore[call-arg]
+    settings = _settings(wall_time_budget_seconds=50.0)  # type: ignore[call-arg]
     tracker = make_stop_tracker(_ctx(store, settings))
     tracker.observe_result("x")
     clock.advance(60.0)
@@ -70,7 +75,7 @@ def test_stop_tracker_wall_time(store, clock):
 
 
 def test_stop_tracker_budget_exhaustion(store):
-    settings = Settings(run_token_budget=10)  # type: ignore[call-arg]
+    settings = _settings(run_token_budget=10)  # type: ignore[call-arg]
     ctx = _ctx(store, settings)
     tracker = make_stop_tracker(ctx)
     reservation = ctx.budget.reserve(10, CostEstimate(0.0, "v1", UsageStatus.EXACT))
@@ -80,7 +85,7 @@ def test_stop_tracker_budget_exhaustion(store):
 
 
 async def test_run_loop_stops_on_no_progress_with_distinct_reason(store):
-    settings = Settings(artifact_public_base_url="https://lab.test", no_progress_rounds=1)  # type: ignore[call-arg]
+    settings = _settings(artifact_public_base_url="https://lab.test", no_progress_rounds=1)  # type: ignore[call-arg]
     mcp = FakeMCP(note_text=dict(SEED))
     inner = ScriptedAdapter(
         {"ExperimentSetup": SETUP, "ExperimentResult": RESULT, "LoopDecision": {"proceed": True, "reason": "go"}}
@@ -101,7 +106,7 @@ async def test_run_loop_stops_on_no_progress_with_distinct_reason(store):
 
 
 async def test_run_loop_closes_at_max_rounds_before_next_write(store):
-    settings = Settings(artifact_public_base_url="https://lab.test", loop_max_rounds=1)  # type: ignore[call-arg]
+    settings = _settings(artifact_public_base_url="https://lab.test", loop_max_rounds=1, loop_min_rounds=1)  # type: ignore[call-arg]
     mcp = FakeMCP(note_text=dict(SEED))
     inner = ScriptedAdapter({"LoopDecision": {"proceed": True, "reason": "go"}})
     gov = _governed_context(store, settings, inner)
@@ -112,7 +117,7 @@ async def test_run_loop_closes_at_max_rounds_before_next_write(store):
 
 
 async def test_post_commit_token_overshoot_closes_before_next_canvas_write(store):
-    settings = Settings(
+    settings = _settings(
         artifact_public_base_url="https://lab.test", run_token_budget=1_000, model_max_output_tokens=1
     )  # type: ignore[call-arg]
     mcp = FakeMCP(note_text=dict(SEED))
@@ -124,7 +129,7 @@ async def test_post_commit_token_overshoot_closes_before_next_canvas_write(store
 
 
 async def test_run_loop_closes_on_reservation_denial_without_provider_call(store):
-    settings = Settings(artifact_public_base_url="https://lab.test", run_token_budget=1)  # type: ignore[call-arg]
+    settings = _settings(artifact_public_base_url="https://lab.test", run_token_budget=1)  # type: ignore[call-arg]
     mcp = FakeMCP(note_text=dict(SEED))
     inner = ScriptedAdapter({"LoopDecision": {"proceed": True, "reason": "go"}})
     gov = _governed_context(store, settings, inner)
@@ -135,7 +140,7 @@ async def test_run_loop_closes_on_reservation_denial_without_provider_call(store
 
 async def test_run_loop_without_gov_is_unchanged(store):
     """The ungoverned path ignores stop policy entirely (backward compatibility)."""
-    settings = Settings(artifact_public_base_url="https://lab.test", loop_max_rounds=1)  # type: ignore[call-arg]
+    settings = _settings(artifact_public_base_url="https://lab.test", loop_max_rounds=1, loop_min_rounds=1)  # type: ignore[call-arg]
     mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter(
         {"ExperimentSetup": SETUP, "ExperimentResult": RESULT, "LoopDecision": {"proceed": True, "reason": "go"}}

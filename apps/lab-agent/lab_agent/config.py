@@ -45,6 +45,8 @@ class Settings(BaseSettings):
             raise ValueError("mcp_result_max_string_chars must not exceed mcp_result_max_bytes")
         if self.model_tool_calls_per_turn > self.model_tool_calls_per_run:
             raise ValueError("model_tool_calls_per_turn must not exceed model_tool_calls_per_run")
+        if self.loop_min_rounds > self.loop_max_rounds:
+            raise ValueError("loop_min_rounds must not exceed loop_max_rounds")
         return self
 
     # ── Model provider selection ────────────────────────────────────
@@ -64,6 +66,10 @@ class Settings(BaseSettings):
     model_max_output_tokens: int = Field(default=4096, ge=1)
     watch_poll_seconds: float = Field(default=30.0, gt=0)
     loop_max_rounds: int = Field(default=25, ge=1)
+    # Bias the loop toward more than one experiment: override an early model STOP
+    # until at least this many experiment rounds exist. Governance backstops
+    # (budget/wall-time/no-progress/max-rounds) are never overridden.
+    loop_min_rounds: int = Field(default=2, ge=1)
 
     # ── Durable harness (Phase 2: SQLite WAL ledger, single-host scope) ──
     state_db_path: str = Field(default=".state/lab_agent.db")

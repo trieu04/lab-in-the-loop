@@ -58,54 +58,50 @@ def _tab_labels(rendered: str) -> list[str]:
     return re.findall(r'role="tab"[^>]*>([^<]+)</button>', rendered)
 
 
-def test_baseline_document_is_complete_semantic_and_deterministic() -> None:
-    document = _document({"summary": "Measured result"})
+def _selected_tab_label(rendered: str) -> str | None:
+    match = re.search(r'role="tab"[^>]*aria-selected="true"[^>]*>([^<]+)</button>', rendered)
+    return match.group(1) if match else None
+
+
+def test_single_experiment_renders_inline_without_tabs() -> None:
+    """One experiment presents its content seamlessly inline -- sections are
+    ``<h2>`` headings in one flow, never per-section tabs."""
+    document = _document({"summary": "Measured result", "steps": ["run"]})
 
     first = render_artifact_html(document)
     second = render_artifact_html(document)
 
-    assert first == second
+    assert first == second  # deterministic
     assert first.startswith("<!doctype html><html lang=\"en\">")
-    assert _tab_labels(first) == ["Overview", "Details", "Evidence", "Metadata", "Audit"]
-    assert 'role="tablist"' in first
-    assert 'role="tabpanel"' in first
-    assert 'aria-selected="true"' in first
-    assert 'aria-controls="panel-overview"' in first
-    assert 'aria-labelledby="tab-overview"' in first
-    assert 'tabindex="-1"' in first
-    assert "<noscript>" in first and "All artifact views" in first
+    assert _tab_labels(first) == []  # no tabs for a single experiment
+    assert 'role="tablist"' not in first
+    assert 'class="artifact-content"' in first  # one continuous content flow
+    assert "<h2>Overview</h2>" in first  # summary grouped, rendered inline
+    assert "<h2>Metadata</h2>" in first and "<h2>Audit</h2>" in first
+    assert html.escape("Measured result", quote=True) in first
     assert '<link rel="stylesheet" href="/assets/artifact-view.css">' in first
     assert '<script defer src="/assets/artifact-tabs.js"></script>' in first
-    assert "No content available for this view." in first
 
 
-def test_conditional_tabs_require_relevant_content_and_versions() -> None:
-    payload = {
-        "quality_flags": ["reviewed"],
-        "steps": ["run"],
-        "analysis": {"conclusion": "supported"},
-    }
+def test_multiple_experiments_render_as_tabs_with_latest_selected() -> None:
+    """Two or more experiments split into one tab each (Exp001, Exp002, ...),
+    ordered oldest..latest, and the latest is the default-selected tab."""
+    payload = {"summary": "latest round"}
     versions = (_version(2, "new"), _version(1, "old"))
 
     rendered = render_artifact_html(_document(payload), versions)
 
-    assert _tab_labels(rendered) == [
-        "Overview",
-        "Details",
-        "Evidence",
-        "Metadata",
-        "Audit",
-        "Validation",
-        "Execution",
-        "Analysis",
-        "Versions",
-    ]
-    assert rendered.index("<summary>Version 1") < rendered.index("<summary>Version 2")
-    assert 'class="table-scroll"' in rendered
-    empty_rendered = render_artifact_html(
-        _document({"quality_flags": [], "steps": [], "analysis": ""})
-    )
-    assert _tab_labels(empty_rendered) == ["Overview", "Details", "Evidence", "Metadata", "Audit"]
+    assert _tab_labels(rendered) == ["Exp001", "Exp002"]  # one tab per experiment
+    assert 'role="tablist"' in rendered and 'aria-label="Experiments"' in rendered
+    assert _selected_tab_label(rendered) == "Exp002"  # default tab is the latest
+    assert rendered.index("panel-exp-1") < rendered.index("panel-exp-2")  # oldest..latest
+    assert 'id="panel-exp-1" aria-labelledby="tab-exp-1" hidden' in rendered  # earlier hidden
+    assert 'id="panel-exp-2" aria-labelledby="tab-exp-2">' in rendered  # latest visible
+    assert "<noscript>" in rendered and "All experiments" in rendered
+
+    # A single experiment collapses back to the inline (no-tabs) presentation.
+    single = render_artifact_html(_document(payload), (_version(1, "only"),))
+    assert _tab_labels(single) == []
 
 
 def test_all_model_content_is_escaped_without_inline_execution() -> None:

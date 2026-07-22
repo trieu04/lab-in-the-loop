@@ -69,7 +69,9 @@ async def test_closed_browser_crash_before_connector_recovers_and_repairs_url_ac
     mcp.seed_widget("closed-prior", "Browser", title=prior_title, url="https://lab.test/artifacts/stale?token=old")
 
     adapter = ScriptedAdapter({"LoopDecision": {"proceed": False, "reason": "converged", "next_focus": ""}})
-    settings = _settings()
+    # This exercises closed-node crash recovery, not the min-rounds bias, so let
+    # the round-1 model STOP close the loop immediately (loop_min_rounds=1).
+    settings = _settings(loop_min_rounds=1)
     trigger_id = "loop:loopconn1"
 
     # "Restart" #1: a fresh StateStore recovers the crash.
