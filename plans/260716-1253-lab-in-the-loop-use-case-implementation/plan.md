@@ -11,7 +11,7 @@ blocks: []
 work_type: feature
 spec_waived: "SDD mode disabled (takumi.sddMode: off)"
 created: 2026-07-16
-progress: "Phase 5 of 9 complete (26d delivered, 29d remaining)"
+progress: "Phase 6 of 9 complete (32d delivered, 23d remaining)"
 ---
 
 # Lab-in-the-Loop Use-Case Implementation
@@ -28,14 +28,15 @@ Contracts stay additive and MVP-compatible; generated artifacts become dynamic H
 | 3 | [HTML Browser artifact widgets](phase-03-upgrade-generated-artifacts-to-browser-widgets.md) | 7d | complete | FR-002/009/010/021, NFR-004/005/008/010 |
 | 4 | [Grounding & evidence](phase-04-strengthen-grounding-and-evidence.md) | 5d | complete | FR-001/015/016, NFR-004, BR-003 |
 | 5 | [Governance & model routing](phase-05-add-governance-and-model-routing.md) | 5d | complete | FR-013/014, NFR-002/003/009 |
-| 6 | [Resumable multimodal ingestion](phase-06-build-resumable-multimodal-ingestion.md) | 6d | pending | FR-020, NFR-007 |
+| 6 | [Resumable multimodal ingestion](phase-06-build-resumable-multimodal-ingestion.md) | 6d | complete | FR-020, NFR-007 |
 | 7 | [In-silico & approval gates](phase-07-implement-in-silico-and-approval-gates.md) | 8d | pending | UC-03, FR-003/004/005, BR-006/007/009 |
 | 8 | [Execution, analysis & knowledge](phase-08-integrate-execution-analysis-and-knowledge.md) | 8d | pending | FR-006/007/008/009/010/017/018, BR-008 |
 | 9 | [Production & multi-user hardening](phase-09-harden-production-and-multi-user-operations.md) | 7d | pending | NFR-006/008/010, ACT-13 |
 
 ## Dependencies
 
-- Spine: P1→P2→P3→P4→P5→P7→P8→P9. P6 branches after P5 and rejoins before P9.
+- Spine: P1→P2→P3→P4→P5→P7→P8→P9. P6 branched after P5 and is complete; it rejoins before P9.
+- Phase 7 is the next pending phase.
 - Execute numerically by default; no `--parallel` because phases share workflow/artifact/state files.
 
 ## Key Decisions
@@ -44,7 +45,14 @@ Contracts stay additive and MVP-compatible; generated artifacts become dynamic H
 
 ## External Gates
 
-- Real integration APIs/SLAs, identity/safety approval, locality/pricing policy, and reachable HTTPS/private artifact-service base URL. Mocks/dry-run ship first.
+- [ ] Phase 6 external gates remain open: live credentials/deployment, hosted CI and authoritative statement/branch coverage tooling, large-format validation plus capacity/backup/disk-monitoring/retention policy, video/non-CSV/TSV spreadsheets, and measured-trigger multi-host queue/object-storage migration.
+- Real integration APIs/SLAs, identity/safety approval, locality/pricing policy, and reachable HTTPS/private artifact-service base URL remain external. Mocks/dry-run ship first.
+
+## Phase 6 Closure Evidence
+
+- Final local validation: Canvus-MCP full **134 passed**, focused **77**; lab-agent full **480 passed**, focused **122**. Ruff, mypy, compileall, lock checks, package builds, workflow parity, whitespace, and Phase 7 isolation passed.
+- Final inspection seal: **9.7/10**, `criticalCount: 0`, `decision: SEALED`; C1–C2, H1–H8, and M1–M5 closed; contract intact; no reachable regressions.
+- Statement/branch coverage remains unclaimed. Evidence: `evidence/temper-results.json`, `evidence/inspection-verdict.json`, and `reports/reviewer-260720-0134-phase-06-final-reinspection.md`.
 
 ## Red Team Review
 

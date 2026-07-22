@@ -2,114 +2,108 @@
 
 ## Context Links
 
-- Canonical requirements: `docs/lab-in-the-loop-use-case-specification.md` (FR-LITL-020, NFR-LITL-007)
-- Roadmap: `docs/development-roadmap.md` Phase 4c
-- Research: `research/researcher-02-260716-1253-grounding-governance-ingestion.md`
+- Canonical requirements: [lab-in-the-loop-use-case-specification.md](../../docs/lab-in-the-loop-use-case-specification.md) (FR-LITL-020, NFR-LITL-007)
+- Roadmap: [development-roadmap.md](../../docs/development-roadmap.md) Phase 4c
+- Research: [researcher-02-260716-1253-grounding-governance-ingestion.md](research/researcher-02-260716-1253-grounding-governance-ingestion.md)
 - Existing seams: `apps/canvus-mcp/canvus_mcp/downloads.py`, `tools/content.py`, `ragcluster.py`
 
 ## Overview
 
 - Priority: P2
-- Status: pending
+- Status: complete (2026-07-19)
 - Effort: 6d
-- Description: Add content-hash deduplication, chunk/cache/job state, resumable single-host workers, and progress reporting for PDF/image/video/table ingestion. Reuse SQLite/WAL patterns; do not introduce a distributed queue.
+- Description: Delivered bounded, local-source, resumable ingestion. It uses SQLite/WAL and a standalone worker; it does not introduce a distributed queue, object store, deployment, or unsupported media extractor.
 
 ## Key Insights
 
-- `downloads.save_bytes()` already returns SHA-256; use it as the immutable cache/idempotency key.
-- Long-running extraction must be split into restart-safe units, not one opaque model call.
-- SQLite is appropriate for current single-host worker topology. Celery/Kafka/Redis is deferred until measured multi-host throughput requires it.
-- Extraction output becomes evidence for Phase 3; raw bytes remain outside model context unless an approved extractor emits bounded text/metadata.
+- SHA-256 is immutable raw-content identity; extractor version identifies derived work.
+- Restart-safe work is small leased units, not one opaque model call.
+- Raw bytes remain in a protected local cache. Only bounded extracted chunks can become evidence.
+- The single-host topology is deliberate. Queue/object-store migration needs measured operational pressure.
 
 ## Requirements
 
-- FR-LITL-020: chunked, cached, resumable multimodal ingest.
-- NFR-LITL-007: multi-day/large-asset jobs resume after interruption and expose progress.
-- NFR-LITL-001/002: downloads remain protected; sensitive content follows Phase 4 locality policy.
-- Preserve existing MCP download contracts and backward compatibility.
+- FR-LITL-020: delivered local-source chunked, cached, resumable ingestion.
+- NFR-LITL-007: delivered durable progress and restart recovery within configured local bounds.
+- NFR-LITL-001/002: protected acquisition/cache and Phase 5 locality before later provider calls.
+- Existing MCP download contracts and non-ingestion anonymous reads/downloads remain compatible.
 
 ## Architecture / Data Flow
 
 ```text
-download_* → saved file + sha256
-  → enqueue(asset hash, modality, extractor version)
-  → SQLite job + deterministic work units
-  → leased worker extracts bounded chunks
-  → chunk cache(hash, extractor version, ordinal)
-  → status/progress/read-chunks MCP tools
-  → lab-agent read-only grounding + EvidenceLedger
+authorized Canvus source → byte-counted stream + SHA-256 → protected local cache
+  → SQLite/WAL asset/source/job/unit/chunk/lease state
+  → standalone leased worker → bounded completed chunks/status MCP reads
+  → lab-agent EvidenceLedger → locality authorization → later provider call
 ```
 
-Jobs are idempotent by `(asset_sha256, extractor_version)`. Units are retryable; terminal failures keep the source path/hash and reason.
+Jobs deduplicate by `(asset_sha256, extractor_version)`. Chunks and unit completion are atomic; stale lease generations cannot commit.
 
 ## Related Code Files
 
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/ingestion_store.py` — SQLite schema for assets, jobs, units, chunks, leases, attempts, and progress.
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/ingestion_pipeline.py` — modality dispatch, deterministic unit creation, retry/resume orchestration.
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/extractors.py` — focused extractor Protocols and initial local PDF/text/image-metadata/table implementations; video contract may remain mock until an approved decoder exists.
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/ingestion_worker.py` — bounded async single-host worker with lease renewal and graceful shutdown.
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/tools/ingestion.py` — enqueue, status, retry, cancel, and bounded chunk-read tools.
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/access_control.py` — trusted service/operator roles and centralized authorization for mutating MCP tools.
-- Modify: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/tools/__init__.py`, `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/server.py` — register tools, enforce authenticated/trusted client context, bind locally by default, and optionally start/stop the worker.
-- Modify: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/downloads.py`, `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/tools/content.py` — expose stable hash/path metadata to enqueue flow.
-- Modify: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp/config.py`, `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/.env.example`, `/home/ntdm/dev/lap-in-the-loop/.gitignore` — DB/cache paths, worker limits, ignored artifacts.
-- Modify: `/home/ntdm/dev/lap-in-the-loop/apps/lab-agent/lab_agent/tool_bridge.py` — allow approved read-only ingestion status/chunk tools; never allow enqueue/cancel to the model.
-- Create: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/tests/test_ingestion_store.py`, `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/tests/test_ingestion_pipeline.py`, `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/tests/test_ingestion_tools.py`.
-- Modify: `/home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/tests/test_downloads.py`, `/home/ntdm/dev/lap-in-the-loop/apps/lab-agent/tests/test_tool_bridge.py`.
-- Modify: `/home/ntdm/dev/lap-in-the-loop/docs/system-architecture.md`, `/home/ntdm/dev/lap-in-the-loop/docs/setup-and-operations.md`, `/home/ntdm/dev/lap-in-the-loop/docs/code-standards.md`, `/home/ntdm/dev/lap-in-the-loop/docs/development-roadmap.md`, `/home/ntdm/dev/lap-in-the-loop/docs/lab-in-the-loop-use-case-specification.md`, `/home/ntdm/dev/lap-in-the-loop/docs/project-changelog.md`.
+- Delivered Canvus components: `ingestion_schema.py`, `ingestion_store*.py`, `ingestion_cache.py`, `ingestion_pipeline.py`, `extractors.py`, `ingestion_worker.py`, `access_control.py`, and `tools/ingestion.py`.
+- Delivered integration: Canvus server/config/download wiring; exact read-only ingestion allowlisting and bounded evidence handling in `apps/lab-agent/lab_agent/tool_bridge.py`.
+- Delivered coverage: ingestion store/pipeline/worker/cache/access/MCP/HTTP/crash-recovery tests plus lab-agent ingestion evidence/locality/transport regressions.
+- Delivered documentation: architecture, operations, standards, roadmap, canonical specification, workflow, and changelog.
 
 ## Implementation Steps
 
-1. Define job/unit/chunk schemas and WAL store. Use unique keys for content hash + extractor version + unit ordinal.
-2. Make enqueue idempotent: unchanged content returns the existing completed/in-progress job; changed content creates a new versioned job.
-3. Define extractor Protocols. Initial implementations must be deterministic and bounded; unsupported modalities return a typed `unsupported` state, not fabricated descriptions.
-4. Implement a leased worker with configurable concurrency, attempt limit, cancellation, backoff, and graceful restart. Completed units never rerun.
-5. Add progress calculation from durable unit states and MCP tools for enqueue/status/retry/cancel/read-chunks.
-6. Add a real MCP client authorization boundary: local binding by default; authenticated trusted-service role for orchestrator writes/enqueue; operator role for retry/cancel; anonymous/untrusted callers denied and audited. Model tool allowlisting is defense-in-depth, not authentication.
-7. Integrate approved chunk reads into `READ_TOOLS` and Phase 4 evidence capture; enforce Phase 5 locality before any model call.
-8. Test crash/restart midway, duplicate enqueue, extractor-version invalidation, cancellation, poison unit, bounded output, and ignored DB/cache files.
-9. Document capacity limits and migration trigger: introduce an external queue/object store only when single-host throughput, disk, or availability targets cannot be met.
+1. Added checksummed SQLite/WAL schema for assets, canvas-scoped sources, jobs, units, chunks, leases, attempts, cancellation, and audit state.
+2. Added SHA-256 plus extractor-version idempotency; unchanged content reuses derived work and a new version creates only new derived work.
+3. Added protected streaming acquisition/cache and bounded strict UTF-8 text, CSV/TSV, JSON, image-metadata, and PDF-page extractors with typed outcomes.
+4. Added the standalone `IngestionWorker`: lease renewal, graceful stop, expired-lease reclaim, retry/backoff, poison/cancel state, and completed-unit preservation. The MCP server does not start it.
+5. Added authenticated, canvas-scoped enqueue/status/chunk/retry/cancel MCP tools with reader, trusted-service, and operator roles.
+6. Added exact `get_ingestion_status` and `read_ingestion_chunks` model read access only; status is operational/non-citeable and chunks are bounded untrusted evidence subject to locality.
+7. Added durability, recovery, deduplication, authorization, transport, and model-boundary regressions; documented single-host limits and the conditional migration trigger.
 
 ## Todo List
 
-- [ ] Durable asset/job/unit/chunk/lease store added
-- [ ] Content-hash + extractor-version dedup implemented
-- [ ] Focused extractor Protocols and initial local extractors added
-- [ ] Resumable worker supports retry/cancel/restart
-- [ ] MCP enqueue/status/retry/cancel/read tools registered with role-based exposure
-- [ ] Trusted-client/operator authorization and local-default transport policy tested
-- [ ] Lab-agent evidence path consumes approved chunks
-- [ ] Failure/restart/dedup/security tests pass
-- [ ] Architecture, operations, standards, roadmap, canonical spec, and changelog updated
+- [x] Durable asset/job/unit/chunk/lease store added
+- [x] Content-hash + extractor-version dedup implemented
+- [x] Focused extractor Protocols and initial local extractors added
+- [x] Resumable worker supports retry/cancel/restart
+- [x] MCP enqueue/status/retry/cancel/read tools registered with role-based exposure
+- [x] Trusted-client/operator authorization and local-default transport policy tested
+- [x] Lab-agent evidence path consumes approved chunks
+- [x] Failure/restart/dedup/security tests pass
+- [x] Architecture, operations, standards, roadmap, canonical spec, and changelog updated
+- [x] Final temper evidence and sealed inspection reconciled; Phase 7 remains untouched
 
 ## Success Criteria / Validation
 
-- `cd apps/canvus-mcp && uv run pytest -q && uv run ruff check canvus_mcp tests && uv run mypy canvus_mcp`
-- `cd apps/lab-agent && uv run pytest -q && uv run ruff check lab_agent tests && uv run mypy lab_agent`
-- Killing the worker mid-job and restarting resumes unfinished units without rerunning completed units.
-- Re-enqueueing unchanged content returns the same job/cache; extractor-version changes invalidate only derived chunks.
-- Unauthenticated/untrusted MCP clients cannot enqueue, cancel, retry, or mutate canvas state; denied attempts are audited.
-- Progress and terminal failure reasons are visible; raw bytes are never inserted into model context by default.
+- Completed locally on 2026-07-19; final evidence sealed on 2026-07-20: durable WAL jobs/chunks/leases; SHA/version dedup; protected streaming/cache; bounded strict extractors; standalone worker recovery; authenticated scoped MCP tools; bounded lab-agent evidence/locality path.
+- Authoritative final validation: `canvus-mcp` full suite **134 passed**, focused Phase 6 regressions **77 passed**; `lab-agent` full suite **480 passed**, focused Phase 6 regressions **122 passed**.
+- Ruff, mypy, compileall, lock checks, package builds, workflow-contract parity, tracked/untracked whitespace checks, and Phase 7 isolation passed. Real local streamable-HTTP authorization and subprocess crash/restart proofs passed.
+- Final inspection seal: **9.7/10**, `criticalCount: 0`, `decision: SEALED`; all prior C1–C2, H1–H8, and M1–M5 findings closed; `contractStatus: INTACT`; no reachable regressions.
+- Known deprecation warnings are non-blocking. Statement/branch coverage remains unclaimed: authoritative hosted/locked-environment coverage tooling was unavailable.
+- Interrupted work preserves completed units; unchanged content reuses cache/job; new extractor versions invalidate derived chunks only; model context receives bounded chunk evidence and scalar provenance, never raw bytes, paths, or capability URLs.
+
+## External Gates — Not Completed / Not Claimed
+
+- [ ] Live credentials, live Canvus validation, deployment approval, and production reachability.
+- [ ] Hosted CI and authoritative locked-environment statement/branch coverage tooling.
+- [ ] Large-format validation plus approved operator capacity, backup, disk-monitoring, and retention policy; no automatic cleanup exists.
+- [ ] Video and spreadsheet formats other than CSV/TSV; they remain typed unsupported/external gates.
+- [ ] External queue/object-storage or multi-host migration; evaluate only on measured sustained backlog/throughput, disk pressure, availability/SLO failure, or a multi-host requirement. No numeric threshold or distributed implementation exists.
 
 ## Risk Assessment
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| SQLite contention under worker concurrency | Med | Med | Small transactions, WAL/busy timeout, bounded workers, measured migration trigger. |
-| Extractor libraries expand attack surface | Med | High | Minimal approved dependencies, sandbox/time/memory bounds, malformed-file tests. |
-| Cache leaks sensitive content | Med | High | Local ignored directory, restrictive permissions, retention policy, no raw-content audit logs. |
-| Video support becomes premature scope | High | Med | Ship Protocol + typed unsupported/mock path until an approved decoder/use case exists. |
-| Any network client invokes mutation tools | Med | Critical | Local bind default, authenticated service/operator roles, centralized checks, denial audit, negative tests. |
+| SQLite contention under worker concurrency | Med | Med | WAL, short transactions, bounded 1–4 workers; measure before migration. |
+| Extractor attack surface | Med | High | Minimal local parsers, strict bounds, typed failures, malformed-file tests. |
+| Protected local state outgrows operator controls | Med | High | External gate: approved backup, retention, capacity, and disk-monitoring procedure. |
+| Unsupported media is mistaken for supported | Med | High | Typed `unsupported`; no video/non-CSV/TSV spreadsheet claim. |
+| Network caller invokes a mutation tool | Med | Critical | Exact Bearer role/canvas checks, fixed denial, metadata-only audit, negative tests. |
 
 ## Security Considerations
 
-- Treat every downloaded file as untrusted. Validate type by bytes, cap size/work, avoid shelling out with unsanitized paths.
-- Enforce tenant/canvas and locality scope on job/chunk reads.
-- Do not expose enqueue/cancel/retry mutation tools to the model-facing allowlist. Independently authenticate/authorize every MCP caller; allowlisting inside lab-agent is not a transport control.
+- Downloaded files are untrusted: bound acquisition and parsing; cache only verified regular files using no-follow, owner/mode/inode/digest checks.
+- Cache directories are owner-only and entries private; raw content, paths, credentials, and capability URLs stay out of MCP/model/audit output.
+- Enforce role, exact canvas scope, and locality. Model allowlisting is defense in depth, not MCP authentication.
 
 ## Next Steps / Dependencies
 
-- Depends on: Phase 2 WAL/lease conventions; Phase 4 evidence contract; Phase 5 locality policy for model consumption.
-- Can progress as a canvus-mcp-heavy branch while Phase 7 design is reviewed, but integration lands before Phase 9 E2E.
-- External gate: approved extractor libraries and retention limits for real internal media.
-- Docs impact: major.
+- Depends on delivered Phase 2 WAL/lease conventions, Phase 4 evidence, and Phase 5 locality.
+- Phase 7 is the next pending phase.
+- Docs impact: major; delivered documentation reflects the local-source contract and external gates.
