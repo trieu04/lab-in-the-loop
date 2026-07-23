@@ -22,7 +22,11 @@ from canvus_mcp.experiment_widgets import (
     IdeaMarkerParse,
     _brief,
     _has_idea,
+    _is_analysis,
     _is_closed,
+    _is_conflict,
+    _is_execution,
+    _is_knowledge,
     _is_lab_lead_approval_marker,
     _is_needs_input,
     _is_result,
@@ -80,13 +84,19 @@ def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
     """One snapshot of the experiment workflow: nodes, pending triggers, loops."""
     ideas, setups, results, robots, closeds, needs_inputs = [], [], [], [], [], []
     validations, scientist_review_markers, lab_lead_approval_markers = [], [], []
+    executions, analyses, knowledge, conflicts = [], [], [], []
     idea_parses: dict[str, IdeaMarkerParse] = {}
     mode_errors: list[dict[str, str]] = []
     for wid, w in index.widgets_by_id.items():
         if _attr(w, "widget_type") == "Note":
             parsed = parse_idea_marker(_attr(w, "text"), m.idea)
             if parsed.parse_error is not None:
-                mode_errors.append(_mode_error_brief(w, parsed.parse_error))
+                rag = first_neighbor(
+                    index, in_ids(index, wid),
+                    lambda candidate: is_ragcluster_widget(candidate, m.ragcluster),
+                )
+                if rag:
+                    mode_errors.append(_mode_error_brief(w, parsed.parse_error))
             elif parsed.is_idea:
                 idea_parses[wid] = parsed
                 ideas.append(wid)
@@ -105,6 +115,14 @@ def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
             scientist_review_markers.append(wid)
         elif _is_lab_lead_approval_marker(w, m):
             lab_lead_approval_markers.append(wid)
+        elif _is_execution(w, m):
+            executions.append(wid)
+        elif _is_analysis(w, m):
+            analyses.append(wid)
+        elif _is_knowledge(w, m):
+            knowledge.append(wid)
+        elif _is_conflict(w, m):
+            conflicts.append(wid)
         elif _is_robot(w, m):
             robots.append(wid)
 
@@ -119,16 +137,21 @@ def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
         b = _brief(index.widgets_by_id[i], idea_parses[i].execution_mode)
         b["ragcluster_id"] = rag
         ideas_needing_setup.append(b)
-    # Pending: setup wired to a robot but with no result observed yet.
+    # Pending: setup wired to a robot without a current-round result.
     setups_needing_run = []
     for s in setups:
         robot_id = first_neighbor(index, out_ids(index, s), lambda w: _is_robot(w, m))
         if not robot_id:
             continue
-        has_result = first_neighbor(index, out_ids(index, robot_id), lambda w: _is_result(w, m))
-        if not has_result:
+        result_id = first_neighbor(index, out_ids(index, robot_id), lambda w: _is_result(w, m))
+        setup_round = _round_of(index.widgets_by_id[s])
+        result_round = _round_of(index.widgets_by_id[result_id]) if result_id else 0
+        stale_result = bool(result_id) and 0 < result_round < setup_round
+        if not result_id or stale_result:
             b = _brief(index.widgets_by_id[s])
             b["robot_id"] = robot_id
+            if stale_result:
+                b["stale_result_id"] = result_id
             setups_needing_run.append(b)
 
     pending_gates = scan_pending_gates(index, m, setups, validations, scientist_review_markers)
@@ -144,6 +167,10 @@ def scan_workflow(index: ConnectorIndex, m: ExpMarkers) -> dict[str, Any]:
         "validations": [_brief(index.widgets_by_id[v]) for v in validations],
         "scientist_review_markers": [_brief(index.widgets_by_id[r]) for r in scientist_review_markers],
         "lab_lead_approval_markers": [_brief(index.widgets_by_id[a]) for a in lab_lead_approval_markers],
+        "executions": [_brief(index.widgets_by_id[item]) for item in executions],
+        "analyses": [_brief(index.widgets_by_id[item]) for item in analyses],
+        "knowledge": [_brief(index.widgets_by_id[item]) for item in knowledge],
+        "conflicts": [_brief(index.widgets_by_id[item]) for item in conflicts],
         "ideas_needing_setup": ideas_needing_setup,
         "setups_needing_run": setups_needing_run,
         **pending_gates,

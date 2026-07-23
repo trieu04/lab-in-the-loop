@@ -5,13 +5,15 @@
 The Lab-in-the-Loop workflow is driven entirely by Canvus widgets and connectors. A connector is both a visual edge and an execution signal. The agent watches the canvas and reacts only when the required edge pattern exists.
 
 ```text
-docs ─► RAGCluster_ ─► {idea: ...} ─► [EXP:Setup v001] ─► [EXP:Validation]
-                                                                  │
-                                          scientist approval ─► lab-lead approval
-                                                                  │
-                                          optional Phase 8 mock branch only ─► Robot_ ─► [EXP:Result v001]
-                                                                                         │
-                                          ◄──────────────── user connects result ────────┘
+docs ─► RAGCluster_ ─► {idea: ...} | {idea+auto: ...} ─► [EXP:Setup v001] ─► [EXP:Validation]
+                                                                                  │
+                                                  scientist approval ─► lab-lead approval
+                                                                                  │
+     opt-in Phase 8 7A dry run only ─ manual first-round activation if manual ─► Execution → Analysis → Knowledge
+                                                                                  │                (MOCK / NOT MEASURED)
+                                                 legacy synthetic mock compatibility ─► Robot_ ─► [EXP:Result v001]
+                                                                                                           │
+                                                  ◄────────────── user connects result ──────────────────┘
 ```
 
 The result-to-setup back-edge means: “analyse this result against this setup and decide whether to run another round.”
@@ -21,7 +23,8 @@ The result-to-setup back-edge means: “analyse this result against this setup a
 | Marker | Widget type | Created by | Meaning |
 |---|---|---|---|
 | `RAGCluster_` | Image | User/system | Knowledge scope, usually fed by docs/PDFs/notes |
-| `{idea: ...}` | Note | User | Experiment idea/request grounded in a RagCluster |
+| `{idea: ...}` | Note | User | Experiment idea/request grounded in a RagCluster; legacy/manual execution mode |
+| `{idea+auto: ...}` | Note | User | Experiment idea/request grounded in a RagCluster; automatic execution mode |
 | `[EXP:Setup vNNN]` | Browser (generated) or legacy Note | Agent | Structured experiment design; one widget per idea, each round appended as version `vNNN` |
 | `Robot_` | Any widget/title marker | User/system | Mock execution target |
 | `[EXP:Result vNNN]` | Browser (generated) or legacy Note | Agent | Clearly mock result; one widget per setup, each round appended as version `vNNN` |
@@ -29,8 +32,11 @@ The result-to-setup back-edge means: “analyse this result against this setup a
 | `[EXP:Needs Input]` | Browser (generated prompt/status) | Agent | Infrastructure marker for grounded-input or execution-mode requests; it is not approval evidence |
 | `[EXP:Validation]` | Browser (generated) | Agent | Projection of one typed, durable in-silico validation result |
 | `[EXP:Validation] Approval Status` | Browser (generated) | Agent | Projection of durable approval evidence and its current gate state; never an approval input |
+| `[EXP:Execution]` / `[EXP:Analysis]` / `[EXP:Knowledge]` / `[EXP:Conflict]` | Browser (generated) | Agent | Phase 8 7A projection of append-only dry-run lifecycle records; display-only and visibly **DRY RUN / MOCK — NOT MEASURED** |
 
-Marker matching is an exact title-**prefix** check (`str.startswith`), confirmed in `canvus_mcp/experiment_widgets.py` (`_is_robot`, `_is_setup`, `_is_result`) — e.g. a widget titled `Robot_Arm_1` matches `Robot_`, but a typo like `Robott_` or a differently-cased marker does not. Setup/Result markers classify both generated Browser widgets and legacy Notes; `{idea: ...}` is Note-only.
+Marker matching is an exact title-**prefix** check (`str.startswith`), confirmed in `canvus_mcp/experiment_widgets.py` (`_is_robot`, `_is_setup`, `_is_result`) — e.g. a widget titled `Robot_Arm_1` matches `Robot_`, but a typo like `Robott_` or a differently-cased marker does not. Setup/Result markers classify both generated Browser widgets and legacy Notes; idea markers are Note-only.
+
+`{idea: ...}` is the backward-compatible manual mode. `{idea+auto: ...}` is the only automatic-mode spelling. Any other `{idea+<mode>: ...}` variant on a RagCluster-connected idea is surfaced as an unsupported-mode error; the watcher writes one deduplicated `[EXP:Needs Input]` request and does not create a setup or dispatch execution. Loose/disconnected Notes are ignored, including unsupported-looking mode text. Do not use a Canvas title, connector, or free-form text to override a mode.
 
 ## Connectors and triggers
 
@@ -65,17 +71,21 @@ The watcher validates each canonical Setup Browser payload with the local determ
 
 Validation and approvals are durable, canvas-scoped SQLite evidence. A proposal and result are bound by typed canonical SHA-256 hashes using `litl-canonical-json-v1`. The only authorization order is: validation `proceed` → credential-verified scientist decision → credential-verified lab-lead decision. Replays are idempotent despite volatile identity-verification timestamps; proposal edits or a different validation hash retain prior history but make that history stale and non-authorizing.
 
-Canvas Notes, titles, connectors, and author text are topology/projection data only. They cannot authenticate, create, or advance an approval. Credentials are supplied to an `IdentityProvider` for verification and are never persisted.
+Canvas Notes, titles, connectors, and author text are topology/projection data only. They cannot authenticate, create, or advance an approval. Credentials are supplied to an `IdentityProvider` for verification and are never persisted. The production identity provider is disabled/unimplemented; the static development provider is explicitly non-production.
 
-### 3. Approved setup to mock robot result (explicit Phase 8 branch)
+### 3. Approved setup to Phase 8 7A dry-run lifecycle or legacy mock result
 
 ```text
-[EXP:Setup vNNN] ─► Robot_
+[EXP:Setup vNNN] ─► Robot_ (legacy marker) ─► Phase 8 execution → analysis → knowledge projections
 ```
 
-A setup-to-robot connector alone never runs execution. `wet_lab_execution_enabled` defaults to `false`, so `watch` does not dispatch this legacy path and never directly calls legacy `run_loop`. If a future operator explicitly enables the Phase 8 branch, the current implementation still requires current durable validation/scientist/lab-lead evidence (and manual activation for a first-round manual run) before it can call the mock result path. That branch creates a model-generated `[EXP:Result vNNN]` **MOCK_RESULT** artifact only; no hardware, robot, wet-lab, or laboratory SDK exists.
+A setup-to-robot connector alone never runs execution. `wet_lab_execution_enabled` and `phase8_execution_enabled` both default to `false`. When an operator explicitly enables Phase 8, the factory accepts `dry_run` only and requires the exact current canonical proposal hash, validation-result hash, validation `proceed`, credential-verified scientist approval, and credential-verified lab-lead approval before lifecycle work starts.
 
-Direct legacy `run_loop` compatibility remains model-generated mock-result behavior. It is not watcher-dispatched.
+Mode then determines first-round activation: `{idea+auto: ...}` may dispatch once those gates are current; `{idea: ...}` requires an additional credential-verified, durable manual activation for round 1. That activation is bound to the canvas, setup, current proposal hash, and validation-result hash, is idempotent across restarts, and is not a Canvas-widget action. The repository exposes the approval/activation service boundary but no approval or activation CLI; wire a reviewed identity-bearing operator service before relying on this path. An edited proposal or changed validation result makes prior approvals and activation non-authorizing.
+
+Phase 8 milestone 7A creates deterministic memory-only execution, analysis, knowledge, and possible conflict records. It visibly labels every projection **DRY RUN / MOCK — NOT MEASURED** and uses opaque mock artifact references. It performs no provider API or network call, robot/wet-lab action, Flywheel/HPC job, real knowledge-store write, credential handling, raw provider-text retention, capability-URL projection, or measured-evidence production. `sandbox` and `real` modes fail closed. Before retry, it authoritatively reconciles submitted work by idempotency key; atomic durable intent claiming prevents duplicate concurrent submits, and terminal recovery settles the intent.
+
+The separate legacy branch can still create a model-generated `[EXP:Result vNNN]` **MOCK_RESULT** artifact when `wet_lab_execution_enabled` is explicitly enabled. That preserved synthetic compatibility path is not Phase 8 real execution and does not establish measured scientific truth. Result-to-setup loop decisions are dispatched separately by the watcher through the governed single-decision loop boundary.
 
 ### 4. Result to setup loop
 
@@ -86,23 +96,29 @@ Direct legacy `run_loop` compatibility remains model-generated mock-result behav
 Trigger surfaced as `loops` by `scan_experiment_workflow` / `detect_experiment_loops` when:
 
 - result widget connects back to a setup widget;
-- **the setup's round is not greater than the result's round** (`round(setup) <= round(result)`, per the `vNNN` suffix in each note's title) — this excludes the orchestrator's own round-advance edge;
+- **the setup's round is not greater than the result's round** (`round(setup) <= round(result)`, per the `vNNN` suffix in each note's title) — this excludes legacy forward round-advance edges;
 - detector resolves the loop connector id;
 - detector can infer setup/result round and related idea/RagCluster/robot where possible.
 
-The round check matters because a `result_N -> setup_{N+1}` connector (drawn by the orchestrator itself when it advances the loop to the next round, step 4 below) is graph-isomorphic to a real user-drawn `result_N -> setup_N` loop trigger. Both generated Browser widgets and legacy Notes use the same `[EXP:Result]` / `[EXP:Setup]` title markers. Only the same-round or backward case (`round(setup) <= round(result)`) is a genuine "iterate this experiment" signal; a strictly forward edge (`round(setup) > round(result)`) is the loop's own advance and must not be re-detected as a new actionable loop on the next scan. See `canvus_mcp/experiments.py:detect_experiment_loops`.
+The round check preserves compatibility with legacy canvases that may already contain an orchestrator-created `result_N -> setup_{N+1}` advance edge. That edge is graph-isomorphic to a genuine user-drawn `result_N -> setup_N` loop trigger, so only the same-round or backward case (`round(setup) <= round(result)`) is actionable. The current safe single-decision boundary does not create a new forward edge in the same call, but the detector still filters existing legacy forward edges. See `canvus_mcp/experiments.py:detect_experiment_loops`.
 
 Agent action:
 
 1. Read current setup and result.
 2. Ask model for `LoopDecision`.
-3. If STOP **and** at least `loop_min_rounds` experiments exist: create `[EXP:Closed]`, connect result → closed. An early STOP before the minimum is overridden so the loop biases toward more than one experiment; a governance or max-rounds backstop is never overridden and stops immediately.
-4. If CONTINUE (or an early STOP was overridden): create the next setup, connect result → next setup, run mock robot, create the next result. Successive rounds **append into the same setup widget and the same result widget as new versions** (the setup artifact is idea-scoped, the result artifact setup-scoped), not a fresh widget per round.
-5. Repeat until the model stops at/after the minimum, or a governance/safety backstop is reached.
+3. If STOP **and** at least `loop_min_rounds` experiments exist: create `[EXP:Closed]`, connect result → closed, and emit the terminal audit/outbox event. An early STOP before the minimum is overridden so the loop biases toward more than one experiment; a governance or max-rounds backstop is never overridden and stops immediately.
+4. If CONTINUE (or an early STOP was overridden), the preserved legacy synthetic mock-loop branch may ground and write a successor Setup/Result in the same call. It remains a compatibility path only and produces no measured scientific truth.
+5. The Phase 8 7A lifecycle is separate: it rechecks current proposal/validation/approval hashes and manual activation before dry-run work, then records only mock/dry-run lineage. Do not treat either branch as real execution, real Flywheel/HPC analysis, a real knowledge-store update, or a substitute for the external child-plan gates.
+
+### Terminal closures and notifications
+
+A notification is eligible only after a genuine terminal closure has a durable `[EXP:Closed]` artifact id and a matching durable `loop_stopped` event. Eligible reasons are the model decision and the distinct maximum-rounds, token-budget, cost-budget, wall-time, no-progress, locality-denial, or reservation-denial closures. Setup validation, pending approval, invalid execution mode, disabled execution, a failed model call, and a non-terminal loop iteration are not notification events.
+
+When SMTP is enabled, the closure enqueues one metadata-only durable outbox row keyed by canvas, trigger, closure, round, and reason. Delivery runs after workflow processing and after the canvas lease is released; it does not reopen or mutate a closed workflow. The logical key and deterministic SMTP `Message-ID` suppress duplicate logical sends across replay. Delivery is best-effort and logically deduplicated: only known pre-submit/transient failures retry automatically. A partial-recipient refusal or uncertain post-lease/post-submit result is held for reconciliation and never automatically resent; it becomes quarantined when its reconciliation window expires. Neither exactly-once nor at-least-once inbox delivery is guaranteed.
 
 ## Generated artifact payload markers
 
-Generated Setup/Result/Closed, Needs Input, Validation, and Approval Status artifacts are Browser widgets. Their model-readable text lives in the canonical `ArtifactStore` payload; legacy Notes still expose Setup/Result/Closed text directly during migration. Validation and Approval Status widgets are projections of durable evidence, not an approval interface. Human-authored Notes, titles, connectors, and author text remain non-authorizing topology only.
+Generated Setup/Result/Closed, Needs Input, Validation, Approval Status, and Phase 8 Execution/Analysis/Knowledge/Conflict artifacts are Browser widgets. Their model-readable text lives in the canonical `ArtifactStore` payload; legacy Notes still expose Setup/Result/Closed text directly during migration. Validation and Approval Status widgets are projections of durable evidence, not an approval interface. Phase 8 projections expose safe ids, hashes, roles, status, and the **DRY RUN / MOCK — NOT MEASURED** label; they deliberately omit artifact `logical_uri`, capability URLs, raw provider bodies, credentials, and measured-receipt details. Human-authored Notes, titles, connectors, author text, and Canvus scan buckets remain non-authorizing display/topology data only.
 
 ### Setup artifact
 
@@ -197,9 +213,10 @@ The gateway persists a request-digest model-call intent plus an idempotent SQLit
 
 - `scan_experiment_workflow` returns only pending forward triggers.
 - Existing setup/result connectors prevent reprocessing.
-- `detect_experiment_loops` filters out forward round-advance edges (`round(setup) > round(result)`, see "Result to setup loop" above) so the orchestrator's own advance connector is never mistaken for a new actionable loop.
+- `detect_experiment_loops` filters out legacy forward round-advance edges (`round(setup) > round(result)`, see "Result to setup loop" above) so an existing compatibility edge is never mistaken for a new actionable loop.
 - `lab-agent` persists every derived trigger (`idea_setup:<id>`, `setup_run:<id>`, `loop:<connector_id>`) in the SQLite `workflow_attempts` ledger; completed attempts block reprocessing across restarts.
 - Node/connector creation uses side-effect intents plus live canvas probes before mutation, so a crash after a write lands can reconcile the existing effect instead of duplicating it.
+- Phase 8 execution/analysis submission uses append-only run rows plus the existing `side_effect_intents` identity. A `BEGIN IMMEDIATE` prepare/claim prevents concurrent duplicate submit, and an active/submitted/ambiguous row is authoritatively reconciled by idempotency key before any retry. `workflow_attempts` continues to schedule watcher work and retry/backoff; it is not replaced by Canvus display buckets.
 - Generated Browser widgets carry short idempotency tags in their titles (and the live Browser label round-trip also preserves the same marker under `name` when needed); legacy Notes with the same markers remain discoverable. `scan_experiment_workflow` exposes closed artifacts in the `closeds` bucket so terminal `[EXP:Closed]` recovery does not depend on a connector already existing. Needs-input Browser artifacts use the same durable Browser infrastructure and `needs_inputs` recovery bucket.
 - Node creation happens after analysis, not speculatively.
 
@@ -241,21 +258,29 @@ Use `lab-agent once` for smoke tests or scripted operation.
 | Approval comes from a Canvas Note/title/connector/author field | ignored for authorization; only credential-bearing `IdentityProvider` verification can create durable approval evidence |
 | Approval is replayed after verification timestamp changes | idempotent when the stable approval content matches; volatile verification/decision timestamps do not authorize a changed proposal or validation result |
 | Proposal is edited or validation changes | prior validation/approval history remains append-only but is stale and cannot authorize the edited proposal |
-| Wet-lab execution is disabled (default) | watcher does not dispatch `setups_needing_run`; no model/mock result is produced from a robot connector |
+| Unsupported `{idea+<mode>: ...}` marker | write one deduplicated Needs Input request; do not generate a setup or dispatch execution |
+| Wet-lab execution is disabled (default) | watcher does not dispatch the legacy `setups_needing_run` mock-result path |
+| Phase 8 execution is disabled (default) | deterministic dry-run lifecycle does not construct or run; no execution/analysis/knowledge projection is produced |
+| Phase 8 uses `sandbox` or `real` mode | factory fails closed; only `dry_run` is installed for 7A |
+| Phase 8 submit is active, submitted, or ambiguous | reconcile authoritatively by idempotency key before any retry; unsupported reconciliation blocks safely rather than duplicating submission |
+| Manual mode, first round not activated | do not dispatch; emit the manual-activation Needs Input request only after current durable approval gates pass |
 | Model stops after a single experiment | override the early stop and run at least `loop_min_rounds` experiments (default 2) before honoring a model stop; governance/backstop reasons are never overridden |
-| Loop keeps continuing | close with the first distinct terminal reason: maximum rounds, token budget, cost budget, wall time, or no-progress; model stop remains its own reason |
+| Loop keeps continuing | close with the first distinct terminal reason: maximum rounds, token budget, cost budget, wall time, no-progress, locality denial, or reservation denial; model stop remains its own reason |
+| SMTP transient delivery failure | keep the closed workflow unchanged; retry from the durable outbox with backoff until quarantined at the notification attempt limit |
+| SMTP rejection or invalid durable notification metadata | quarantine the logical notification; do not send it |
+| SMTP outcome is ambiguous after submit | hold outside the normal send queue through its reconciliation window, then quarantine; never blindly resend |
 
 ## Example happy path
 
 1. User adds a `RAGCluster_` image widget.
 2. User connects documents/PDFs/notes into the RagCluster.
-3. User adds note: `{idea: Design next lung fibrosis micro-CT experiment}`.
+3. User adds either `{idea: Design next lung fibrosis micro-CT experiment}` (manual) or `{idea+auto: Design next lung fibrosis micro-CT experiment}` (automatic).
 4. User connects `RAGCluster_ → idea note`.
-5. `lab-agent watch` creates `[EXP:Setup v001]` as a Browser artifact.
-6. User connects setup to a `Robot_` widget.
-7. `lab-agent watch` creates `[EXP:Result v001]` as a Browser artifact.
-8. User connects result back to setup.
-9. Agent analyses and either creates `[EXP:Closed]` or next setup/result round.
+5. `lab-agent watch` creates `[EXP:Setup v001]`, performs the deterministic dry-run validation, and renders Validation/Approval Status Browser projections.
+6. A credential-bearing approval service records current scientist approval followed by current lab-lead approval; Canvas text and connectors do not approve.
+7. With execution explicitly enabled, auto mode may dispatch the mock result path. Manual mode requires a separate credential-verified first-round activation.
+8. The watcher creates `[EXP:Result v001]` as a Browser artifact, and the user connects result back to setup.
+9. The agent analyses and either creates `[EXP:Closed]` or the next setup/result round. A qualifying terminal closure is durably queued for SMTP only when SMTP is configured.
 
 ## Tool contract
 

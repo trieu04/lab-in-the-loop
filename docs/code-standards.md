@@ -31,7 +31,8 @@
 - Marker names are exact strings and should not be casually renamed:
   - `RAGCluster_`
   - `Robot_`
-  - `{idea: ...}`
+  - `{idea: ...}` — legacy/manual execution mode
+  - `{idea+auto: ...}` — automatic execution mode
   - `[EXP:Setup vNNN]`
   - `[EXP:Result vNNN]`
   - `[EXP:Closed]`
@@ -110,7 +111,17 @@ Do not let an unconstrained model decide arbitrary write tool calls. Successful 
 - Approval roles are unique per current proposal/result and ordered: scientist first, then lab lead. Retain stale evidence for audit, but never use it to authorize an edited proposal or changed validation result.
 - Canvas Notes, titles, connectors, widget author text, and Browser status artifacts are topology or projections only. They are never approval evidence. Obtain approvals only through an `IdentityProvider` that verifies a credential; never persist the credential or include it in an audit, artifact, prompt, log, or error.
 - Browser validation and approval-status artifacts project durable evidence. Their terminal `APPROVED_FOR_WET_LAB` state does not enable execution: `execution_enabled` remains `false` in Phase 7.
-- `wet_lab_execution_enabled` defaults to `false`. The watcher must not call the legacy `run_loop` path. An explicitly enabled future Phase 8 branch may produce only a model-generated `MOCK_RESULT` after the durable gates; it is not a hardware or laboratory integration.
+- `wet_lab_execution_enabled` defaults to `false` and blocks the legacy setup-to-robot synthetic mock path. Result-to-setup decisions remain governed and the legacy multi-round synthetic mock loop remains compatible; neither is a real execution or measured-evidence path.
+
+## Phase 8 dry-run execution, analysis, and knowledge standards
+
+- Phase 8 is complete only for milestone 7A. `RunMode`, `EvidenceKind`, external statuses/failure codes, execution/analysis runs, artifact refs, knowledge versions, conflicts, and `MeasuredEvidenceReceipt` are frozen typed contracts. Treat `measured` as a strict truth boundary: it requires real mode plus a capture receipt and is not emitted by the 7A implementation.
+- Keep `010_execution_analysis_knowledge.sql` immutable. Its five append-only tables are `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`. `side_effect_intents` retains submit/abort identity; `workflow_attempts` retains watcher scheduling, retry/backoff, and quarantine ownership.
+- The only installed 7A adapters are deterministic memory-only lab, Flywheel, and knowledge dry runs. Keep disabled-real sentinels fail-closed. Do not add provider APIs, network calls, robots, wet-lab calls, credentials, raw provider bodies, real capability URLs, or claims of scientific measurement without the separately approved child plan.
+- `phase8_execution_enabled` must default to `false`, and the Phase 8 factory must reject `sandbox` and `real`. Recheck exact current proposal/validation hashes, ordered approval, and hash-bound first-round manual activation before any dry-run lifecycle work.
+- Prepare durable run state and reconcile an existing submitted/ambiguous intent before retrying. Use atomic durable claims so concurrent workers cannot duplicate a submit. Terminal recovery settles the matching intent; do not replace append-only history.
+- Artifact refs use opaque `mock://` or `opaque://` logical references. Browser projections may show safe ids, hashes, roles, status, and evidence labels, but must omit `logical_uri`, raw provider text, credentials, measured receipts, and capability URLs. Canvus buckets are display/recovery-only and cannot authorize or schedule work.
+- Every Phase 8 projection must visibly state **DRY RUN / MOCK — NOT MEASURED**. A dry-run knowledge version or conflict record preserves lineage only; it is not a scientific conclusion or conflict resolution.
 
 ## Structured output
 
@@ -177,6 +188,7 @@ Update docs when changing:
 - generated artifact storage/rendering, capability URL handling, artifact service deployment, or migration behavior;
 - evidence/citation validation, acronym dictionary behavior, untrusted-data boundaries, or durable audit payload policy;
 - typed validation/approval hashes, IdentityProvider behavior, durable gate evidence, or execution-gate defaults;
+- Phase 8 typed execution/analysis/knowledge contracts, append-only persistence, dry-run/measured-evidence labeling, opaque-reference projection rules, or external lifecycle safety;
 - any future real lab/Flywheel integration.
 
 Docs to keep in sync:

@@ -15,12 +15,21 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lab_agent.config import Settings
+from lab_agent.execution_orchestrator import Phase8Orchestrator
+from lab_agent.integrations.flywheel import DeterministicFlywheelAdapter
+from lab_agent.integrations.knowledge import DeterministicKnowledgeAdapter
+from lab_agent.integrations.lab_execution import DeterministicLabExecutionAdapter
+from lab_agent.mcp_client import MCPClient
 from lab_agent.notification_outbox import NotificationOutbox
 from lab_agent.state_store import StateStore
 
 
 class RuntimeStartupError(RuntimeError):
     """Raised when the durable ledger fails an integrity/audit-chain check at startup."""
+
+
+class Phase8ConfigurationError(RuntimeError):
+    """A non-dry-run Phase 8 selection was rejected before adapter construction."""
 
 
 @dataclass(frozen=True)
@@ -31,6 +40,24 @@ class RuntimeContext:
     runtime_instance_id: str
     settings: Settings
     notifications: NotificationOutbox | None = None
+
+
+def build_phase8_orchestrator(
+    store: StateStore, settings: Settings, *, mcp: MCPClient | None = None
+) -> Phase8Orchestrator:
+    """Construct only installed deterministic adapters; real and sandbox fail closed."""
+
+    if settings.phase8_execution_mode != "dry_run":
+        raise Phase8ConfigurationError("Phase 8 supports only dry_run mode")
+    return Phase8Orchestrator(
+        store=store,
+        settings=settings,
+        execution_adapter=DeterministicLabExecutionAdapter(),
+        analysis_adapter=DeterministicFlywheelAdapter(),
+        knowledge_adapter=DeterministicKnowledgeAdapter(),
+        enabled=settings.phase8_execution_enabled,
+        mcp=mcp,
+    )
 
 
 def build_notification_outbox(
@@ -105,8 +132,10 @@ def release_lease_with_audit(store: StateStore, runtime_instance_id: str, canvas
 
 
 __all__ = [
+    "Phase8ConfigurationError",
     "RuntimeContext",
     "RuntimeStartupError",
+    "build_phase8_orchestrator",
     "build_notification_outbox",
     "build_runtime_context",
     "close_runtime_context",

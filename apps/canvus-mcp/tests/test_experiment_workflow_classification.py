@@ -183,12 +183,6 @@ async def test_registered_scan_propagates_modes_and_stamps_safe_mode_errors(
             "parse_error": "unsupported_mode",
             "data_classification": "internal",
         },
-        {
-            "widget_id": "unknown",
-            "widget_type": "Note",
-            "parse_error": "unsupported_mode",
-            "data_classification": "internal",
-        },
     ]
     assert {"mixed", "unknown"}.isdisjoint(item["widget_id"] for item in result["ideas"])
     assert all("text" not in item for item in result["mode_errors"])

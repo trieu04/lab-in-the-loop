@@ -10,6 +10,23 @@ from lab_agent.models.artifact import (
     TabDefinition,
     TabKey,
 )
+from lab_agent.models.execution import (
+    AnalysisRequest,
+    AnalysisRun,
+    ArtifactRef,
+    ArtifactRole,
+    ConflictRecord,
+    EvidenceKind,
+    ExecutionRequest,
+    ExecutionRun,
+    ExternalFailureCode,
+    ExternalRunStatus,
+    InterpretationDisposition,
+    InterpretationResult,
+    KnowledgeVersion,
+    MeasuredEvidenceReceipt,
+    RunMode,
+)
 from lab_agent.models.experiment import (
     ExperimentResult,
     ExperimentSetup,
@@ -32,6 +49,9 @@ from lab_agent.models.validation import (
 )
 
 __all__ = [
+    "AnalysisRequest", "AnalysisRun", "ArtifactRef", "ArtifactRole", "ConflictRecord", "EvidenceKind",
+    "ExecutionRequest", "ExecutionRun", "ExternalFailureCode", "ExternalRunStatus", "InterpretationDisposition",
+    "InterpretationResult", "KnowledgeVersion", "MeasuredEvidenceReceipt", "RunMode",
     "BASELINE_TABS",
     "ArtifactDocument",
     "ArtifactMetadata",

@@ -26,6 +26,10 @@ def _markers() -> exp.ExpMarkers:
         validation=cfg.mcp_exp_validation_marker,
         scientist_review=cfg.mcp_exp_scientist_review_marker,
         lab_lead_approval=cfg.mcp_exp_lab_lead_approval_marker,
+        execution=cfg.mcp_exp_execution_marker,
+        analysis=cfg.mcp_exp_analysis_marker,
+        knowledge=cfg.mcp_exp_knowledge_marker,
+        conflict=cfg.mcp_exp_conflict_marker,
     )
 
 
@@ -84,6 +88,10 @@ def register(
             "setups_needing_validation",
             "validations_needing_scientist_review",
             "scientist_reviews_needing_lab_lead_approval",
+            "executions",
+            "analyses",
+            "knowledge",
+            "conflicts",
             "loops",
         ):
             result[bucket] = [

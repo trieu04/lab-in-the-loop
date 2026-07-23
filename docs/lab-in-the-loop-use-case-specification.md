@@ -5,7 +5,7 @@
 | Field | Value |
 |---|---|
 | Status | Draft for review |
-| Version | 1.3 |
+| Version | 1.4 |
 | Date | 2026-07-23 |
 | Source vision | [docs/notes/use-case-lab-in-the-loop.md](notes/use-case-lab-in-the-loop.md) (original meeting notes, excluded from normalization) |
 | Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lap-in-the-loop` repository |
@@ -96,7 +96,7 @@ apps/canvus-mcp ingestion runtime
   └─ authenticated canvas-scoped status/chunk MCP reads
 ```
 
-Current system boundary `[MVP]` consists of the 2 runtime apps plus separate local SQLite/WAL ledgers: `lab-agent` persists attempts, leases, side-effect intents/outbox, audit, canonical generated-artifact records, and Phase 7 append-only canvas-scoped validation/approval evidence; `canvus-mcp` persists bounded local-source ingestion assets, sources, jobs, units, leases, attempts, chunks, and cancellation state. Phase 7 hashes typed proposals/results with `litl-canonical-json-v1`, runs only a visibly non-scientific deterministic dry run by default, and projects durable ordered approvals into Browser artifacts. The real in-silico adapter, Flywheel, and real lab execution remain unavailable. Canvas Notes, titles, connectors, and author text are non-authorizing topology only; credentials are verified by an `IdentityProvider` and never persisted.
+Current system boundary `[MVP]` consists of the 2 runtime apps plus separate local SQLite/WAL ledgers: `lab-agent` persists attempts, leases, side-effect intents/outbox, audit, canonical generated-artifact records, Phase 7 append-only canvas-scoped validation/approval evidence, and Phase 8 7A append-only `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`; `canvus-mcp` persists bounded local-source ingestion assets, sources, jobs, units, leases, attempts, chunks, and cancellation state. Phase 7 hashes typed proposals/results with `litl-canonical-json-v1`, runs only a visibly non-scientific deterministic dry run by default, and projects durable ordered approvals into Browser artifacts. Phase 8 7A adds deterministic memory-only execution/analysis/knowledge adapters and safe Browser projections, all visibly **DRY RUN / MOCK — NOT MEASURED**. It does not provide real Flywheel/HPC, knowledge-store, robot/lab, network, credential, raw provider-text, capability-URL, or measured-evidence behavior. Canvas Notes, titles, connectors, author text, and Canvus buckets are non-authorizing topology/display data only; credentials are verified by an `IdentityProvider` and never persisted.
 
 ---
 
@@ -115,7 +115,7 @@ Current system boundary `[MVP]` consists of the 2 runtime apps plus separate loc
 | ACT-LITL-09 | Internal knowledge sources (wiki/KG/vector DB/acronym dict) | Grounding context | `[MVP partial]`; RagCluster/read tools plus approved acronym dictionary exist; wiki/KG/vector DB are future adapters/external gates | `canvus_mcp/ragcluster.py`, `lab_agent/evidence.py`, `lab_agent/acronyms.py` |
 | ACT-LITL-10 | In-silico / digital-twin service | Validate design before wet lab | `[MVP partial]` deterministic local structural dry-run adapter only; real service disabled/unimplemented | Original UC §8; roadmap Phase 5 |
 | ACT-LITL-11 | Robotic/wet-lab system | Execute real experiments | `[Future]`; Phase 7 watcher is execution-disabled and no hardware/lab SDK exists | roadmap "Real robot integration: Future" |
-| ACT-LITL-12 | Flywheel / imaging analysis platform | Auto-run analysis gear (e.g., lung fibrosis quantification) | `[Future]`, no wrapper | Original UC §9.4; roadmap Phase 6 |
+| ACT-LITL-12 | Flywheel / imaging analysis platform | Auto-run analysis gear (e.g., lung fibrosis quantification) | `[MVP partial]` deterministic memory-only dry-run adapter only, visibly not measured; real Flywheel/HPC integration is external gate 7B | Original UC §9.4; roadmap Phase 8 |
 | ACT-LITL-13 | Administrator / auditor | Audit log, quarantine reset/backup, observability, multi-user isolation | **`MVP partial / Future inferred`** — operator CLI and hash-chained audit exist; multi-user observability remains Future; actor is inferred, not explicitly listed in original UC | `lab_agent/admin.py`, roadmap Phase 7; no direct actor reference in vision |
 
 ---
@@ -195,11 +195,11 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | FR-LITL-003 | Validate design via in-silico/digital-twin before permitting wet lab | Must (safety) | `[MVP partial]` — typed deterministic dry-run result, canonical hashes, and durable evidence exist; real scientific validation is disabled/unimplemented |
 | FR-LITL-004 | Scientist review/approval gate for experiment design | Must (safety) | `[MVP partial]` — credential-verified, durable scientist approval/reject evidence; no Canvas approval UI or topology authorization |
 | FR-LITL-005 | Lab-lead approval gate for resource/budget before wet lab | Must (safety) | `[MVP partial]` — credential-verified lab-lead gate after scientist; real resource/lab integration remains unavailable |
-| FR-LITL-006 | Execute experiment (human lab or robotic lab) | Must | `[MVP mock partial]` — default watcher execution is disabled; an explicitly enabled Phase 8-compatible branch creates only model-generated `MOCK_RESULT`, with no real robot/lab connection |
-| FR-LITL-007 | Generate raw data from execution (imaging/omics/table/assay) | Must | `[MVP mock]` — model emits mock `ExperimentResult`, labeled mock |
-| FR-LITL-008 | Automated analysis via Flywheel/HPC pipeline | Must | `[Future]` — no Flywheel wrapper |
-| FR-LITL-009 | Interpret results against original hypothesis | Must | `[MVP mock form]` — `[EXP:Result vNNN]` generated by model |
-| FR-LITL-010 | Update versioned knowledge base (no overwrite) | Must | `[Future]` — no Knowledge Update Service |
+| FR-LITL-006 | Execute experiment (human lab or robotic lab) | Must | `[MVP mock partial]` — Phase 8 7A has approval-bound deterministic memory-only dry-run execution only; `phase8_execution_enabled=false` and no real robot/lab connection exists |
+| FR-LITL-007 | Generate raw data from execution (imaging/omics/table/assay) | Must | `[MVP mock]` — deterministic raw artifact refs or legacy model `ExperimentResult`, always labelled mock/dry-run; no measured evidence |
+| FR-LITL-008 | Automated analysis via Flywheel/HPC pipeline | Must | `[MVP partial]` — deterministic memory-only dry-run analysis only; real Flywheel/HPC is external gate 7B |
+| FR-LITL-009 | Interpret results against original hypothesis | Must | `[MVP mock form]` — legacy `[EXP:Result vNNN]` or deterministic dry-run interpretation; neither is a scientific conclusion |
+| FR-LITL-010 | Update versioned knowledge base (no overwrite) | Must | `[MVP partial]` — append-only dry-run knowledge versions/conflict preservation; real knowledge store is external gate 7C |
 | FR-LITL-011 | Propose next round of experiments (redesign) | Must | `[MVP]` when `LoopDecision.proceed=true` |
 | FR-LITL-012 | Decide to continue/stop loop (`LoopDecision`) | Must | `[MVP]` |
 | FR-LITL-013 | Backstop to prevent infinite loop (max round, cost threshold) | Must (safety) | `[MVP]` — model decision plus distinct max-round, token, cost, wall-time, no-progress, locality, and reservation closures; no writes follow a terminal closure |
@@ -207,7 +207,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | FR-LITL-015 | Respond explicitly when internal evidence is insufficient ("insufficient evidence") | Should | `[MVP]` — writes deduplicated `[EXP:Needs Input]`; executable setup remains pending |
 | FR-LITL-016 | Handle ambiguous acronyms: detect → approved dictionary → ask confirmation | Should | `[MVP partial]` — local approved dictionary and Needs Input exist; external wiki/KG/vector lookup remains Future |
 | FR-LITL-017 | Handle Flywheel job failure: show failed, preserve data path, allow rerun | Should | `[Future]` |
-| FR-LITL-018 | Create conflict note when new data contradicts old knowledge | Should | `[Future]` |
+| FR-LITL-018 | Create conflict note when new data contradicts old knowledge | Should | `[MVP partial]` — Phase 8 7A preserves an append-only dry-run conflict record and projection; it does not resolve a scientific conflict or write to a real knowledge store |
 | FR-LITL-019 | Idempotency: no duplicate setup/result/closed/connector loop-processing | Must | `[MVP]` — durable local SQLite attempts + side-effect intents/outbox; local-disk, single-host scope |
 | FR-LITL-020 | Ingest large multimodal data with chunking/caching/resumable capability | Should | `[MVP partial]` — complete local-source contract: SHA-256/extractor-version dedup, leased resumable units, bounded chunks/status, authenticated canvas scope, and evidence/locality integration. Video and spreadsheets other than CSV/TSV remain unsupported/external gates. |
 | FR-LITL-021 | Represent workflow as directed node + connector on canvas | Must | `[MVP]` |
@@ -239,7 +239,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 **Minimal guarantee:** No node/connector is overwritten if idempotency rule is followed (§12 Business rules).
 
-**Success guarantee (postconditions):** Canvas has node sequence `idea → setup → robot/result → (loop back) → setup vNNN+1` or `→ closed` `[MVP]`; knowledge base has new version `[Future — no Knowledge Update Service yet, currently only canvas notes]`.
+**Success guarantee (postconditions):** Canvas has the legacy mock node sequence `idea → setup → robot/result → (loop back) → setup vNNN+1` or `→ closed` `[MVP]`. Phase 8 7A may additionally preserve a dry-run-only append-only knowledge version and conflict record behind safe Browser projections; it is **not** a real knowledge-service update or measured scientific truth.
 
 **Main success flow** (canonicalized target flow; expands vision validation step into explicit gates):
 
@@ -250,11 +250,11 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | 3 | In-silico validation — predict outcome, uncertainty, risk, recommendation | `[MVP partial]` | Typed `InSilicoResult`, canonical hash, durable evidence, and deterministic dry run; it is not scientific validation and the real adapter is disabled |
 | 4 | Scientist review — read in-silico results and approve/revise/reject | `[MVP partial]` | Credential-bearing `IdentityProvider` verification and ordered durable evidence; Canvas UI/topology is non-authorizing |
 | 5 | Lab-lead approval — review resource, budget, safety before wet lab | `[MVP partial]` | Credential-bearing durable gate after scientist; it does not claim live resource or lab integration |
-| 6 | Wet-lab/robot execution | `[Future]` | Default Phase 7 watcher dispatch is disabled; Phase 8-compatible opt-in remains model-generated `MOCK_RESULT` only, with no hardware/lab SDK |
-| 7 | Data generation | `[MVP mock]` | Model emits mock `ExperimentResult`, labeled mock |
-| 8 | Automated analysis (Flywheel/HPC) | `[Future]` | No Flywheel wrapper |
-| 9 | Result interpretation | `[MVP mock form]` | `[EXP:Result vNNN]` generated by model |
-| 10 | Knowledge update (versioned) | `[Future]` | No knowledge/versioning service |
+| 6 | Wet-lab/robot execution | `[MVP mock partial]` | Phase 8 7A opt-in uses deterministic memory-only `dry_run` only; `phase8_execution_enabled=false` by default; no hardware/lab SDK or measured execution |
+| 7 | Data generation | `[MVP mock]` | Deterministic mock raw artifact refs or legacy model `ExperimentResult`, visibly not measured |
+| 8 | Automated analysis (Flywheel/HPC) | `[MVP partial]` | Deterministic memory-only analysis dry run; real Flywheel/HPC is external gate 7B |
+| 9 | Result interpretation | `[MVP mock form]` | Legacy `[EXP:Result vNNN]` or deterministic dry-run interpretation; no scientific conclusion |
+| 10 | Knowledge update (versioned) | `[MVP partial]` | Append-only dry-run knowledge version / possible conflict record; real knowledge store is external gate 7C |
 | 11 | Next-round/close decision | `[MVP]` | `proceed=true` → new setup; `proceed=false` → `[EXP:Closed]` |
 
 **Alternate flows:**
@@ -267,8 +267,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 |---|---|---|
 | Experiment design has insufficient evidence | Return reason + suggestion for in-silico/retrieve more | `[MVP]` — explicit Needs Input Browser artifact; no executable setup write |
 | Ambiguous acronym (e.g., `BIA`) | Detect → retrieve dict → ask confirm → regenerate | `[MVP partial]` — approved local dictionary scan and Needs Input exist; external retrieval-backed dictionary remains Future |
-| Flywheel job fails | Show failed, preserve data path, allow rerun, don't update KB | `[Future]` — Flywheel doesn't exist |
-| New data conflicts old knowledge | Create conflict note, keep both hypotheses | `[Future]` — no knowledge store |
+| Flywheel job fails | Show failed, preserve data path, allow rerun, don't update KB | `[MVP partial]` — 7A deterministic analysis uses typed status/failure and durable reconciliation; real Flywheel job behavior remains external gate 7B |
+| New data conflicts old knowledge | Create conflict note, keep both hypotheses | `[MVP partial]` — 7A preserves a dry-run conflict record and both lineage references; no scientific resolution or real knowledge store |
 | Infinite loop | Max iteration, stop condition, cost threshold | `[MVP]` — max-round, token/cost, wall-time, and no-progress closures are distinct/audited; locality/reservation denial also closes before follow-on writes |
 | MCP server unavailable | — | `[MVP]` CLI fails/logs warning, watcher continues polling |
 | Model does not emit correct schema | — | `[MVP]` current run writes nothing; canvas stays pending; durable attempt is failed/backed off/quarantine-eligible |
@@ -314,7 +314,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 **Trigger:** User selects knowledge scope on canvas and asks "Design the next experiment." (vision §4); currently realized `[MVP]` as note `{idea: ...}` connected from `RAGCluster_`.
 
-**Preconditions:** Knowledge scope exists (RagCluster + feeder) `[MVP]`; optional constraints can be emitted as setup `constraints` strings `[MVP partial]`, while typed budget/assay/disease/equipment subfields remain `[Future]` (see §13.4 and §18).
+**Preconditions:** Knowledge scope exists (RagCluster + feeder) `[MVP]`; optional constraints can be emitted as setup `constraints` strings `[MVP partial]`, while typed budget/assay/disease/equipment subfields remain `[Future]` (see §13.5 and §18).
 
 **Minimal guarantee:** If context is insufficient, system does not create unsupported design (caution principle in `code-standards.md`).
 
@@ -377,7 +377,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 3. The result is append-only durable evidence and projects `NEEDS_SCIENTIST_REVIEW` for a `proceed`, `NEEDS_REVIEW` for a `revise`, or `REJECTED` for a `reject`.
 4. A scientist approval/rejection requires credential verification for the scientist role. An approve projects `NEEDS_LAB_LEAD_APPROVAL`.
 5. A lab-lead approval/rejection requires credential verification for the lab-lead role. A second approval projects `APPROVED_FOR_WET_LAB`.
-6. Phase 7 does not execute work after that projection: watcher execution is disabled by default. Any explicit later Phase 8-compatible path can produce only a model-generated `MOCK_RESULT`, not a real lab action.
+6. Phase 7 does not execute work after that projection: watcher execution is disabled by default. Phase 8 7A can only run the separately enabled deterministic **DRY RUN / MOCK — NOT MEASURED** lifecycle; the preserved legacy path can create a model-generated `MOCK_RESULT`. Neither is a real lab action or measured scientific evidence.
 
 **Alternate/exception flows:**
 - A typed validation `revise` returns to review; `reject` projects `REJECTED` `[MVP]`.
@@ -435,7 +435,7 @@ DRAFT → NEEDS_REVIEW → APPROVED_FOR_IN_SILICO → IN_SILICO_RUNNING
 | `NEEDS_LAB_LEAD_APPROVAL` | Implemented | Current scientist approval waits for credential-verified lab-lead evidence |
 | `APPROVED_FOR_WET_LAB` | Implemented eligibility projection | Requires current ordered evidence; Phase 7 keeps execution disabled |
 | `RUNNING` / `ANALYSIS_COMPLETE` / `CLOSED` | Existing mock loop behavior | Direct legacy compatibility remains mock behavior and is not watcher-dispatched by default |
-| `KNOWLEDGE_UPDATE_PENDING` | Future | No Knowledge Update Service |
+| `KNOWLEDGE_UPDATE_PENDING` | `[MVP partial]` dry-run projection | Phase 8 7A appends mock/dry-run knowledge lineage only; real knowledge service remains external gate 7C |
 | `REJECTED` | Implemented for gate reject outcomes | A validation/scientist/lab-lead reject projects it without execution |
 
 ### 11.3 Canvas node type mapping (vision §7 → current marker)
@@ -448,10 +448,11 @@ DRAFT → NEEDS_REVIEW → APPROVED_FOR_IN_SILICO → IN_SILICO_RUNNING
 | Human Review Node | Browser `[EXP:Needs Input]` prompt/status infrastructure; human response Note | `[MVP infrastructure only]` — no approve gate/button or transition workflow |
 | In Silico Simulation Node | Browser `[EXP:Validation]` backed by a typed durable result | `[MVP partial]` — deterministic dry run only; real scientific adapter disabled/unimplemented |
 | Lab Execution Node | Widget `Robot_` (mock compatibility) | `[Future]` — watcher dispatch disabled by default; no robot/lab SDK |
-| Flywheel Data Node | — | `[Future]` — no Flywheel wrapper |
+| Flywheel Data Node | Browser `[EXP:Analysis]` dry-run projection | `[MVP partial]` — deterministic memory-only analysis only; real Flywheel/HPC is external gate 7B |
 | Analysis Gear Node | — | `[Future]` |
 | Result Interpretation Node | Browser `[EXP:Result vNNN]` backed by `ArtifactStore`; legacy Note readable | `[MVP mock form]` |
-| Knowledge Update Node | — | `[Future]` — no knowledge/versioning service |
+| Knowledge Update Node | Browser `[EXP:Knowledge]` backed by append-only dry-run `KnowledgeVersion` | `[MVP partial]` — 7A mock/dry-run lineage only; no real knowledge/versioning service |
+| Conflict preservation | Browser `[EXP:Conflict]` backed by append-only dry-run `ConflictRecord` | `[MVP partial]` — preserves lineage only; no scientific conflict resolution |
 | Next Experiment Node | `[EXP:Setup vNNN+1]` on CONTINUE | `[MVP]` |
 
 `[EXP:Closed]` is an additional marker in this repository (STOP decision + reason), with no direct corresponding node name in the 10 conceptual nodes list in vision §7. Marker matching is exact title-**prefix** check (`str.startswith`, `canvus_mcp/experiments.py`) — e.g., `Robot_Arm_1` matches `Robot_`, but `Robott_` does not.
@@ -513,7 +514,17 @@ Additive Phase 4 fields are defaulted for legacy parsing. Defaults do not make a
 | `reason` | `str` | Yes | Reason to continue/stop |
 | `next_focus` | `str` | No (default `""`) | If proceed, what should next round change/explore |
 
-### 13.4 Gap versus target/vision schema `[Future]`
+### 13.4 Phase 8 7A lifecycle contracts `[MVP partial — dry-run only]`
+
+`lab_agent/models/execution.py` defines frozen contracts for `RunMode` (`dry_run`, `sandbox`, `real`), `EvidenceKind` (`mock_or_dry_run`, `measured`), external run statuses/failure codes, execution and analysis requests/runs, opaque `ArtifactRef`, `MeasuredEvidenceReceipt`, `KnowledgeVersion`, and `ConflictRecord`. `measured` is a strict truth boundary: measured artifact evidence requires real mode and a capture receipt. The implemented 7A factory accepts only `dry_run` and emits only `mock_or_dry_run` evidence.
+
+Migration `010_execution_analysis_knowledge.sql` creates five append-only durable tables: `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`. Existing `side_effect_intents` retains submit/abort identity, while `workflow_attempts` retains watcher scheduling, retry/backoff, and quarantine. Runs are prepared/transitioned under SQLite `BEGIN IMMEDIATE`; active, submitted, or ambiguous work is reconciled authoritatively by idempotency key before retry, and atomic intent claiming prevents duplicate concurrent submission.
+
+The installed lab, Flywheel, and knowledge adapters are deterministic memory-only dry runs. Disabled-real sentinels fail closed. All output is visibly **DRY RUN / MOCK — NOT MEASURED**. The implementation has no real provider API, network, Flywheel/HPC, knowledge-store, robot, wet-lab, credential, raw provider text, capability URL, or measured-evidence path. Browser projections expose safe ids, hashes, roles, status, and lineage only; they omit `logical_uri`. Canvus buckets are display/recovery only and never authorize or schedule lifecycle work.
+
+External gates remain 7B real Flywheel/HPC analysis, 7C real knowledge store, 7D real lab/robot execution, production identity/credential approval, retention/locality policy, and hosted integration.
+
+### 13.5 Gap versus target/vision schema `[Future]`
 
 Fields still required by the full vision but not yet implemented as separate typed contracts — don't confuse with the Phase 4 additive fields above:
 
@@ -525,7 +536,7 @@ Fields still required by the full vision but not yet implemented as separate typ
 | In-silico output (`predicted_outcome`, `confidence`, `assumptions`, `risk_flags`, `recommended_changes`, `decision`) | Yes | Typed `InSilicoResult`; deterministic dry run only, not scientific validation — see UC-LITL-03 |
 | Audit/version metadata (`version_id`, `source_experiment_id`, `input_data_ids`, `analysis_job_ids`, `created_at`) | No | Vision §9.5; no Knowledge Update Service/Versioning Service |
 
-### 13.5 Canvas generated artifacts (Browser current, Note legacy)
+### 13.6 Canvas generated artifacts (Browser current, Note legacy)
 
 | Artifact | Model-readable marker | Rendered/canonical content |
 |---|---|---|
@@ -534,7 +545,7 @@ Fields still required by the full vision but not yet implemented as separate typ
 | `[EXP:Closed]` | — | Browser widget backed by `ArtifactStore`; payload rendered from `LoopDecision` + backstop reason if any; legacy Note readable during migration |
 | `[EXP:Needs Input]` | generated request/status marker | Browser widget backed by `ArtifactStore` with message/reason/context and `NEEDS_REVIEW` state; human response remains a Note; no approval transition workflow is implemented |
 
-### 13.6 Local-source ingestion contract `[MVP partial]`
+### 13.7 Local-source ingestion contract `[MVP partial]`
 
 The implementation-plan Phase 6 (roadmap Phase 4c) contract is deliberately narrower than the full vision's "all multimodal" goal. `enqueue_ingestion` (trusted service) acquires an authorized Canvus PDF/image/asset with a streaming byte cap, verifies SHA-256, records exact canvas-scoped source provenance, and deduplicates work by `(asset_sha256, extractor_version)`. The separate SQLite/WAL ledger has checksummed migrations and durable assets/sources/jobs/units/leases/attempts/chunks/cancellations. Unit completion inserts chunks atomically; only the current lease generation may complete; expired work is reclaimed after restart without exceeding the poison-attempt limit. Retry/backoff, poison, cancellation, and operator retry preserve completed chunks. Verified raw cache publication uses private temporary files, fsync, digest verification, and no-replace promotion; buffered download paths are immutable hash-bound artifacts.
 
@@ -552,7 +563,7 @@ Strict local extractors support UTF-8 text, CSV/TSV, JSON records, PNG/JPEG/GIF 
 | NFR-LITL-002 | Data locality: some data must not be sent to external provider | Every call requires endpoint + classification authorization before dispatch | `[MVP]` — unknown/restricted/unapproved classifications, endpoints, and providers deny; organization approval matrix remains operational |
 | NFR-LITL-003 | Model independence: not Claude-only | 3+ providers run same workflow, no code changes | `[MVP partial]` — provider-neutral stage routing across 2 named adapters; OpenAI-compatible operation requires an explicit matching endpoint override |
 | NFR-LITL-004 | Traceability: each setup cites internal sources used | 100% of executable setup writes have valid ledger citations or no write occurs | `[MVP]` local Phase 4 tests pass; future external retrieval adapters remain Future |
-| NFR-LITL-005 | Reproducibility/versioning: knowledge version never overwrites | Each update creates new version with full metadata | `[Future]` — no Versioning Service |
+| NFR-LITL-005 | Reproducibility/versioning: knowledge version never overwrites | Each update creates new version with full metadata | `[MVP partial]` — Phase 8 7A appends local dry-run knowledge versions with provenance; a real Versioning Service remains external gate 7C |
 | NFR-LITL-006 | Reliability: retry/resume, idempotency durable across restart | Idempotency survives watcher restart | `[MVP]` — local SQLite WAL ledger with attempts/leases/intents/audit; multi-host/shared-store durability remains `[Future]` |
 | NFR-LITL-007 | Performance/scalability: chunking/caching/resumable for large multimodal | Bounded local-source work resumes after interruption without redoing completed units | `[MVP partial]` — Phase 4c completed locally on 2026-07-19. Current single-host bounds/defaults include 10 MiB sources and 1–4 worker concurrency; no automatic retention, queue/object store, multi-host deployment, numeric capacity threshold, or large-format/video proof is implemented. |
 | NFR-LITL-008 | Observability: structured log, metrics, health check, multi-user dashboard | TBD (no specific metrics yet) | `[Future]` — roadmap Phase 7; currently structured logs plus durable audit events, but no metrics/dashboard/health-check stack |
@@ -576,6 +587,7 @@ Strict local extractors support UTF-8 text, CSV/TSV, JSON records, PNG/JPEG/GIF 
 | Provider telemetry/errors | Raw prompt/response/secret/diagnostic persistence | Durable records contain fixed categories, digests, counts, and approved metadata only | `[MVP]` |
 | Loop autonomy | Runaway execution or side effects after terminal stop | Model decision plus max-round/token/cost/wall-time/no-progress/locality/reservation closures; one closure then no further provider/canvas writes | `[MVP]` |
 | Wet-lab authorization | Unapproved experiment execution | Current canonical validation hash plus scientist then lab-lead credential-verified approvals | `[MVP partial]` — durable eligibility gate exists; execution is disabled and no real lab integration exists |
+| Phase 8 external lifecycle | Duplicate external submit, raw-reference leak, or mock result presented as measured | Default-off dry-run-only factory; atomic durable intent claim and authoritative reconciliation before retry; append-only run/lineage records; safe projections omit `logical_uri`; measured evidence requires a real-mode receipt and is not produced in 7A | `[MVP partial]` — contracts/mocks only; 7B/7C/7D, production identity, retention/locality, and hosting remain external gates |
 
 **Mandatory wet-lab authorization chain (canonical, consistent across README/system-architecture/roadmap):**
 
@@ -600,7 +612,7 @@ AI design → in-silico validation → scientist review → lab lead approval �
 | §7 (Node types) | §11.3 mapping table | Full mapping table in vision §7 lines 278-292 |
 | §8 (In silico) | UC-LITL-03, FR-LITL-003 | `models/validation.py`, `orchestrator_validation.py`, deterministic dry-run adapter; real adapter is Future |
 | §9.1 (Knowledge Retrieval) | FR-LITL-001 | `canvus_mcp/ragcluster.py` plus `lab_agent/evidence.py` ledger; wiki/KG/vector DB remain Future |
-| §9.4 (Flywheel) | FR-LITL-008, FR-LITL-017 | None — distinct from `{exp:}` integration in `integrations/canvus-serving-experiment-prepare/`, unrelated to Flywheel |
+| §9.4 (Flywheel) | FR-LITL-008, FR-LITL-017 | Phase 8 7A deterministic memory-only analysis adapter only; real Flywheel/HPC is external gate 7B and remains distinct from `{exp:}` integration in `integrations/canvus-serving-experiment-prepare/` |
 | §10 (Model-agnostic) | FR-LITL-014, NFR-LITL-003 | `lab_agent/adapters/factory.py`, `openai_adapter.py`, `claude_adapter.py` |
 | §12 (Gates/decision states) | §11 Workflow state model | `lab_agent/models/states.py`, `approval_service.py`, and durable gate evidence implement the validation and ordered-approval segment; real execution remains Future |
 | §13 (Error cases) | Exception flows UC-LITL-02 | `experiment-workflow.md` § "Failure handling" |
@@ -622,6 +634,7 @@ AI design → in-silico validation → scientist review → lab lead approval �
 | Phase 5 | In-silico validation gate | Complete for Phase 7 local/source gate infrastructure — deterministic dry run, canonical hashes, durable validation evidence; real scientific adapter remains Future | UC-LITL-03, FR-LITL-003 |
 | Phase 6 | In-silico + human approval + Flywheel + lab integration | Partially complete — Phase 7 durable scientist/lab-lead gates and execution-default deny are implemented; Flywheel, real in-silico, and real lab integration remain Future | FR-LITL-004, FR-LITL-005, FR-LITL-006, FR-LITL-008, FR-LITL-010, BR-LITL-006, BR-LITL-009 |
 | Phase 7 | Production hardening, multi-user, observability | Future | NFR-LITL-006, NFR-LITL-008, ACT-LITL-13 |
+| Phase 8 7A | Typed dry-run execution/analysis/knowledge lifecycle | Complete for contracts/mocks only — deterministic memory-only adapters, five append-only tables, approval-bound restart-safe orchestration, and safe Browser projections. Focused **133 passed**; full `lab-agent` **684 passed** (4 existing dependency deprecation warnings), `canvus-mcp` **163 passed** (3 existing dependency deprecation warnings); Ruff/mypy/compileall/workflow parity/`git diff --check` clean; reviewer re-review **9.8/10**, zero findings. No real execution or measured scientific truth. | FR-LITL-006…010, FR-LITL-018, NFR-LITL-005 |
 
 **MVP acceptance (vision §14) — status mapping:**
 

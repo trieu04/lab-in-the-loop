@@ -27,6 +27,7 @@ class ArtifactType(StrEnum):
     NEEDS_INPUT = "needs_input"
     IN_SILICO = "in_silico"
     APPROVAL_STATUS = "approval_status"
+    EXECUTION = "execution"
     ANALYSIS = "analysis"
     KNOWLEDGE = "knowledge"
     CONFLICT = "conflict"

@@ -1,74 +1,88 @@
 {
   "commands": [
     {
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run pytest -q tests/contracts/test_lab_execution_contract.py tests/contracts/test_flywheel_contract.py tests/contracts/test_knowledge_contract.py tests/test_execution_models.py tests/test_execution_store.py tests/test_execution_reconciliation.py tests/test_execution_orchestrator.py tests/test_knowledge_update.py tests/test_execution_modes.py tests/test_in_silico_adapter.py tests/test_submitted_intents.py tests/test_artifact_store.py tests/test_artifact_idempotency.py tests/test_state_store_migrations.py tests/test_watch_approval_gates.py tests/test_loop_min_rounds_and_append.py tests/test_notification_outbox.py tests/test_notification_replay_and_watch.py",
+      "exitCode": 0,
+      "status": "pass",
+      "summary": "133 focused Phase 8 and adjacent durable-regression tests passed in 2.54s.",
+      "ts": "2026-07-23T14:30:00+07:00"
+    },
+    {
       "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run pytest -q",
       "exitCode": 0,
       "status": "pass",
-      "summary": "601 passed, 4 deprecation warnings in 8.55s; current shared tree includes Phase 7 and concurrent dependent-plan coverage.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "summary": "684 lab-agent tests passed in 11.14s with 4 pre-existing dependency deprecation warnings.",
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
       "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run pytest -q",
       "exitCode": 0,
       "status": "pass",
-      "summary": "163 passed, 3 deprecation warnings in 4.32s.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "summary": "163 Canvus-MCP tests passed in 5.51s with 3 pre-existing dependency deprecation warnings.",
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
       "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run ruff check lab_agent tests",
       "exitCode": 0,
       "status": "pass",
       "summary": "All lab-agent source and test lint checks passed.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
       "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run ruff check canvus_mcp tests",
       "exitCode": 0,
       "status": "pass",
       "summary": "All Canvus-MCP source and test lint checks passed.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
       "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run mypy lab_agent",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Success: no issues found in 98 lab-agent source files.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "summary": "Success: no issues found in 114 lab-agent source files.",
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
       "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run mypy canvus_mcp",
       "exitCode": 0,
       "status": "pass",
       "summary": "Success: no issues found in 32 Canvus-MCP source files.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
-      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run python -m compileall -q /home/ntdm/dev/lap-in-the-loop/apps/lab-agent/lab_agent",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run python -m compileall -q lab_agent tests",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Lab-agent Python source compiled with no errors.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "summary": "Lab-agent source and tests compiled with no errors.",
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
-      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run python -m compileall -q /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run python -m compileall -q canvus_mcp tests",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Canvus-MCP Python source compiled with no errors.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "summary": "Canvus-MCP source and tests compiled with no errors.",
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
-      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop run python scripts/check-workflow-contract-parity.py",
+      "command": "python3 /home/ntdm/dev/lap-in-the-loop/scripts/check-workflow-contract-parity.py",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Self-test and parity check passed; Canvus-MCP markers, lab-agent markers, and docs are aligned.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "summary": "Workflow parity self-test and cross-app marker/documentation parity check passed.",
+      "ts": "2026-07-23T14:30:00+07:00"
+    },
+    {
+      "command": "python3 /home/ntdm/dev/lap-in-the-loop/scripts/check-workflow-contract-parity.py --self-test",
+      "exitCode": 0,
+      "status": "pass",
+      "summary": "The checker detected its injected mismatch and the real parity check remained clean.",
+      "ts": "2026-07-23T14:30:00+07:00"
     },
     {
       "command": "git -C /home/ntdm/dev/lap-in-the-loop diff --check",
       "exitCode": 0,
       "status": "pass",
       "summary": "No diff whitespace errors.",
-      "ts": "2026-07-23T08:05:50+07:00"
+      "ts": "2026-07-23T14:30:00+07:00"
     }
   ]
 }

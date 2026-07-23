@@ -78,7 +78,15 @@ class Settings(BaseSettings):
     loop_min_rounds: int = Field(default=2, ge=1)
     wet_lab_execution_enabled: bool = Field(
         default=False,
-        description="Explicit external gate for Phase 8 execution dispatch; disabled in Phase 7.",
+        description="Legacy mock robot path gate; it never selects a real laboratory adapter.",
+    )
+    phase8_execution_enabled: bool = Field(
+        default=False,
+        description="Default-off Phase 8 dry-run lifecycle gate.",
+    )
+    phase8_execution_mode: Literal["dry_run", "sandbox", "real"] = Field(
+        default="dry_run",
+        description="Only dry_run is accepted by the Phase 8 factory; other modes fail closed.",
     )
 
     # ── Durable harness (Phase 2: SQLite WAL ledger, single-host scope) ──

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from canvus_mcp.experiments import ExpMarkers, detect_experiment_loops, scan_workflow
 from canvus_mcp.ragcluster import ConnectorIndex
 
@@ -54,9 +56,7 @@ def test_forward_only_graph_has_no_loop():
 
 
 def test_forward_round_advance_edge_is_excluded():
-    """A round-advance edge (result_N -> setup_{N+1}) is graph-isomorphic to a
-    user loop trigger (result_N -> setup_N) but must not be re-detected as a
-    loop on the next poll. Only same-round/backward edges are actionable."""
+    """Forward round-advance edges are not actionable loop triggers."""
     widgets = [
         _w("setup1", "Note", title="[EXP:Setup v001] A+B"),
         _w("robot1", "Note", title="Robot_arm"),
@@ -98,35 +98,35 @@ def test_scan_reports_idea_needing_setup():
     assert snap["loops"] == []
 
 
-def test_scan_reports_setup_needing_run():
-    widgets = [
-        _w("setup1", "Note", title="[EXP:Setup v001]"),
-        _w("robot1", "Note", title="Robot_arm"),
-        _conn("c1", "setup1", "robot1"),
-    ]
-    snap = scan_workflow(_index(widgets), M)
-    pending = snap["setups_needing_run"]
-    assert len(pending) == 1
-    assert pending[0]["widget_id"] == "setup1"
-    assert pending[0]["robot_id"] == "robot1"
-
-
-def test_scan_setup_with_result_is_not_pending():
-    widgets = [
-        _w("setup1", "Note", title="[EXP:Setup v001]"),
-        _w("robot1", "Note", title="Robot_arm"),
-        _w("result1", "Note", title="[EXP:Result v001]"),
-        _conn("c1", "setup1", "robot1"),
-        _conn("c2", "robot1", "result1"),
-    ]
-    snap = scan_workflow(_index(widgets), M)
-    assert snap["setups_needing_run"] == []
-    assert [b["widget_id"] for b in snap["results"]] == ["result1"]
+@pytest.mark.parametrize(
+    ("setup_title", "result_title", "is_pending", "stale_result_id"),
+    [
+        ("[EXP:Setup v001]", None, True, None),
+        ("[EXP:Setup v002]", "[EXP:Result v001]", True, "result1"),
+        ("[EXP:Setup v001]", "[EXP:Result v001]", False, None),
+        ("[EXP:Setup] legacy", "[EXP:Result] legacy", False, None),
+    ],
+)
+def test_scan_schedules_only_missing_or_stale_results(setup_title, result_title, is_pending, stale_result_id):
+    setup = _w("setup1", "Note", title=setup_title)
+    setup["execution_authorized"] = True
+    widgets = [setup, _w("robot1", "Note", title="Robot_arm"), _conn("c1", "setup1", "robot1")]
+    if result_title:
+        widgets += [_w("result1", "Note", title=result_title), _conn("c2", "robot1", "result1")]
+    pending = scan_workflow(_index(widgets), M)["setups_needing_run"]
+    assert bool(pending) is is_pending
+    if pending:
+        assert pending[0] == {
+            "widget_id": "setup1", "widget_type": "Note", "title": setup_title,
+            "robot_id": "robot1", **({"stale_result_id": stale_result_id} if stale_result_id else {}),
+        }
 
 
 def test_scan_preserves_legacy_idea_precedence_and_additive_mode_errors():
     snap = scan_workflow(_index([
+        _w("rag", "Image", "RAGCluster_scope"), _conn("source", "rag", "closed1"),
         _w("closed1", "Note", "[EXP:Closed] after v001", "{idea+batch: stop}"),
+        _w("loose", "Note", text="{idea+batch: ignore while disconnected}"),
         _w("legacy-setup", "Note", "[EXP:Setup v001]", "{idea: preserve precedence}"),
     ]), M)
     assert [brief["widget_id"] for brief in snap["closeds"]] == ["closed1"]

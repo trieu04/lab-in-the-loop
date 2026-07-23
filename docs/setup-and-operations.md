@@ -168,13 +168,16 @@ LAB_AGENT_MAX_TOOL_STEPS=8
 LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS=4096  # Settings default; optional in .env
 LAB_AGENT_WATCH_POLL_SECONDS=30
 LAB_AGENT_LOOP_MAX_ROUNDS=25
-# Phase 7 default: watcher will not dispatch a robot-result path.
+# Safe default: watcher will not dispatch a setup-to-robot mock-result path.
 LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false
+# Phase 8 milestone 7A is also default-off and accepts dry_run only.
+LAB_AGENT_PHASE8_EXECUTION_ENABLED=false
+LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run
 ```
 
-`LAB_AGENT_LOOP_MAX_ROUNDS` is only a runaway backstop. The model's `LoopDecision` is the intended stop condition.
+`LAB_AGENT_LOOP_MAX_ROUNDS` is one governance backstop. Terminal closure can also come from model decision, token/cost budget, wall time, no progress, locality denial, or reservation denial.
 
-### Phase 7 validation, approval, and execution safety
+### Phase 7 approval gates and Phase 8 7A dry-run lifecycle safety
 
 Every canonical Setup Browser artifact is eligible for a typed in-silico validation pass. The default local `DeterministicInSilicoAdapter` is a deterministic structural dry run, visibly rendered as **not scientific validation**. It calls no real scientific simulator or external provider. The real adapter boundary remains disabled/unimplemented and fails closed.
 
@@ -182,7 +185,11 @@ Validation and approvals are append-only records in `LAB_AGENT_STATE_DB_PATH`, s
 
 A Canvas Note, title, connector, author field, or Browser widget cannot approve a setup. Validation and Approval Status Browser artifacts are read-only projections of durable evidence. A projected terminal `APPROVED_FOR_WET_LAB` state still reports `execution_enabled=false` in Phase 7.
 
-`LAB_AGENT_WET_LAB_EXECUTION_ENABLED` defaults to `false`. With that default, the watcher does not process `setups_needing_run`, does not dispatch direct legacy `run_loop`, and cannot call `run_on_robot`. An explicitly enabled future Phase 8 path still needs current durable gate evidence and can create only a model-generated `MOCK_RESULT`; this repository has no hardware, robot, wet-lab, or laboratory SDK integration.
+`LAB_AGENT_WET_LAB_EXECUTION_ENABLED` defaults to `false`. With that default, the legacy watcher does not process `setups_needing_run` through `run_on_robot`. The legacy multi-round synthetic mock loop remains compatible, but it does not establish real execution or measured scientific truth.
+
+`LAB_AGENT_PHASE8_EXECUTION_ENABLED` also defaults to `false`. If an operator explicitly enables it, the 7A factory accepts only `LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run` and constructs deterministic memory-only lab, Flywheel, and knowledge adapters. The lifecycle rechecks the exact current proposal/result hashes, validation `proceed`, credential-verified scientist approval, and credential-verified lab-lead approval. It writes only **DRY RUN / MOCK — NOT MEASURED** execution, analysis, knowledge, and possible conflict projections. It performs no real provider API or network call, robot/wet-lab action, Flywheel/HPC job, knowledge-store write, credential handling, raw-provider-text retention, capability-URL projection, or measured-evidence production. `sandbox` and `real` modes fail closed.
+
+Execution mode belongs in the user-authored idea Note: `{idea: ...}` is the backward-compatible manual mode, and `{idea+auto: ...}` is automatic mode. Any other `{idea+<mode>: ...}` fails closed and creates a deduplicated Needs Input request. In manual mode, the first round additionally requires a credential-verified, durable activation bound to the exact canvas/setup/proposal/validation hashes; an approval/activation service must supply it. There is no approval or activation CLI and Canvas topology/text cannot substitute for verified identity.
 
 ### Authenticated bounded MCP reads
 
@@ -261,7 +268,33 @@ LAB_AGENT_RETRY_MAX_SECONDS=300                   # full-jitter backoff ceiling
 LAB_AGENT_MAX_ATTEMPTS=5                          # attempts before a trigger is quarantined
 ```
 
-All six have safe defaults (shown above) — none are required to run `lab-agent`, and they may be omitted from `.env` unless overriding behavior. `LAB_AGENT_STATE_DB_PATH` is relative to the process's working directory unless given as an absolute path; keep it out of version control (the default `.state/` prefix is already git-ignored). The same SQLite file also stores canonical generated-artifact records, token hashes, and Browser widget mappings.
+All six have safe defaults (shown above) — none are required to run `lab-agent`, and they may be omitted from `.env` unless overriding behavior. `LAB_AGENT_STATE_DB_PATH` is relative to the process's working directory unless given as an absolute path; keep it out of version control (the default `.state/` prefix is already git-ignored). The same SQLite file also stores canonical generated-artifact records, token hashes, Browser widget mappings, gate evidence, and the notification outbox.
+
+### Terminal SMTP notifications
+
+SMTP is disabled by default. Enabling it requires every policy field below; an incomplete enabled configuration fails at startup rather than quietly falling back to plaintext, an untrusted sender, or an unrestricted recipient list.
+
+```bash
+LAB_AGENT_NOTIFICATION_SMTP__ENABLED=true
+LAB_AGENT_NOTIFICATION_SMTP__HOST=smtp.example.test
+LAB_AGENT_NOTIFICATION_SMTP__PORT=587
+LAB_AGENT_NOTIFICATION_SMTP__SECURITY=starttls       # starttls (default) or implicit_tls
+LAB_AGENT_NOTIFICATION_SMTP__USERNAME=mailer         # omit both username and password for unauthenticated SMTP
+LAB_AGENT_NOTIFICATION_SMTP__PASSWORD=               # secret; do not commit or log
+LAB_AGENT_NOTIFICATION_SMTP__SENDER=lab-agent@example.test
+LAB_AGENT_NOTIFICATION_SMTP__RECIPIENTS=["operator@example.test"]
+LAB_AGENT_NOTIFICATION_SMTP__SENDER_ALLOWLIST=["lab-agent@example.test"]
+LAB_AGENT_NOTIFICATION_SMTP__RECIPIENT_ALLOWLIST=["operator@example.test"]
+LAB_AGENT_NOTIFICATION_LEASE_TTL_SECONDS=60
+LAB_AGENT_NOTIFICATION_RECONCILIATION_SECONDS=3600
+LAB_AGENT_NOTIFICATION_BATCH_SIZE=1
+```
+
+Only encrypted SMTP is supported: `starttls` requires the server to advertise STARTTLS and verifies TLS before delivery; `implicit_tls` uses TLS from connection establishment. The sender and every recipient must be exact valid addresses in their corresponding allowlists. Keep the password in `.env` or your secret manager only; never place it in commands, logs, artifacts, tickets, or documentation.
+
+The watcher enqueues only a qualifying, durable terminal closure and drains at most `LAB_AGENT_NOTIFICATION_BATCH_SIZE` rows after a workflow cycle; the default is `1` (accepted range `1`–`100`). The durable logical key and deterministic `Message-ID` deduplicate one closure across process restart/replay. Delivery is best-effort and logically deduplicated, with automatic retry only for known pre-submit/transient failures; neither exactly-once nor at-least-once inbox delivery is guaranteed. The email body contains closure metadata only: canvas id, trigger id, closure id, round, reason, and notification key—never setup/result content, URLs, credentials, model payloads, or raw SMTP diagnostics.
+
+Known transient pre-submit failures use the durable retry/backoff policy. Full deterministic recipient rejection and malformed outbox metadata quarantine the row. A partial-recipient refusal, process loss after leasing, or failure after SMTP submission is ambiguous: the row is held outside normal sending until its reconciliation deadline and then quarantined; it is not automatically resent. Before using `retry-notification` on an ambiguous row, inspect the mail system/inboxes for every configured recipient and decide whether an intentional duplicate risk is acceptable.
 
 Artifact Browser service (generated Setup/Result/Closed and generated Needs Input status/prompt artifacts):
 
@@ -325,9 +358,28 @@ uv run lab-agent reset --canvas <canvas-id> --trigger <trigger_id>
 
 # Write a consistent hot backup of the ledger (safe to run against a live, running watcher).
 uv run lab-agent backup --to <path>
+
+# Show only safe notification delivery counts; optionally scope to a canvas.
+uv run lab-agent notification-status [--canvas <canvas-id>]
+
+# List quarantined notification keys and fixed failure categories.
+uv run lab-agent list-notification-quarantined [--canvas <canvas-id>]
+
+# Return one quarantined notification to the pending queue.
+# Investigate an ambiguous SMTP outcome first; this can intentionally resend it.
+uv run lab-agent retry-notification --key <logical-key>
+
+# Deliberately quarantine one currently due pending notification without sending it.
+uv run lab-agent quarantine-notification --key <logical-key>
 ```
 
-`<trigger_id>` comes from `list-quarantined`'s output (e.g. `idea_setup:<widget_id>`, `setup_run:<widget_id>`, `loop:<connector_id>`). `reset` only succeeds on an attempt that is actually quarantined; it prints `ERROR: ...` and exits `1` otherwise — there is no bulk/blind reset.
+`<trigger_id>` comes from `list-quarantined`'s output (e.g. `idea_setup:<widget_id>`, `setup_run:<widget_id>`, `loop:<connector_id>`). `reset` only succeeds on an attempt that is actually quarantined; it prints `ERROR: ...` and exits `1` otherwise — there is no bulk/blind reset. Notification commands likewise print only counts, canvas ids, logical keys, attempt counts, and fixed categories; they never print SMTP passwords, raw transport errors, mail bodies, or capability URLs. `retry-notification` succeeds only for a quarantined key, and `quarantine-notification` only for one currently due pending key.
+
+### Ledger migrations and rollback
+
+At startup, every command opens the SQLite ledger and applies numbered migrations in order. Migrations `005_gate_evidence.sql`, `006_notification_outbox.sql`, `007_terminal_audit_lookup.sql`, `008_notification_reconciliation_index.sql`, `009_notification_due_indexes.sql`, and `010_execution_analysis_knowledge.sql` add validation/approval evidence, the durable notification outbox, terminal-event lookup, bounded notification-query indexes, and Phase 8 append-only execution/analysis/artifact-lineage/knowledge/conflict records. Migration 010 creates `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`; existing `side_effect_intents` retains submit/abort identity and `workflow_attempts` retains watcher retry/backoff. The runner records each migration's SHA-256 and rejects checksum or ordering drift; migrations are forward-only. Do not edit an already-applied migration, delete rows from `schema_migrations`, or attempt a hand-written downgrade.
+
+To stop notifications, set `LAB_AGENT_NOTIFICATION_SMTP__ENABLED=false` and restart; this disables sending but does not remove migrated tables or durable outbox history. To roll back application state after a bad migration or operator error, stop `lab-agent` and `serve-artifacts`, restore an already verified pre-change backup using the restore procedure below, and restart. A restore reverts the complete ledger state, including attempts, artifacts, gate evidence, and notification outbox records, to that backup point. Take and integrity-check a backup before upgrading or manual SQLite maintenance.
 
 ### Workflow attempt recovery
 
@@ -507,12 +559,13 @@ and check the audit log (or wait for the first instance's lease to expire/releas
 - Never commit `.env` or downloaded internal data.
 - Treat every canvas write as user-visible.
 - Use `once` first on a demo canvas before `watch` on an active canvas.
-- Keep `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` in Phase 7. The implemented deterministic validation/approval infrastructure is a gate, not a claim of scientific validation or real-lab authorization.
+- Keep `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` and `LAB_AGENT_PHASE8_EXECUTION_ENABLED=false` unless operating the reviewed local 7A dry-run milestone. The deterministic validation/approval infrastructure is a gate, and 7A outputs are **DRY RUN / MOCK — NOT MEASURED**; neither claims scientific validation, measured evidence, or real-lab authorization.
 - Do not treat Canvas topology or Browser projections as approval evidence. Verify credentials through an `IdentityProvider`; credentials must never be persisted.
-- For wet-lab/Flywheel production, add and validate a real in-silico adapter, production identity verification, operational authorization, and an actual hardware/lab integration before execution.
+- For real execution, complete the external child plans: 7B real Flywheel/HPC analysis, 7C real knowledge store, 7D real lab/robot integration, production identity/credential approval, retention/locality policy, and hosted integration. Do not infer any of those from 7A contracts or deterministic adapters.
 - Never commit the durable ledger (`LAB_AGENT_STATE_DB_PATH` and its `-wal`/`-shm` siblings, or any `*.db`/backup file) — it is git-ignored by default; if you must inspect it, treat it as operational data, not a document to paste elsewhere. Its audit log stores only ids/hashes/reasons/counts by design (never note text, model payloads, or credentials), but attempt/lease metadata can still reveal canvas ids and timing.
 - Take a `lab-agent backup` before any manual maintenance on a canvas's triggers/artifacts, and periodically in production, since there is no automatic backup schedule built in.
 - Treat token-bearing artifact URLs as secrets: do not copy them into tickets, logs, audit payloads, model prompts, or reports.
+- Keep notification logs and operator output metadata-only: use safe counts/statuses and fixed failure categories, never SMTP credentials, raw SMTP responses, email bodies beyond their already-minimal metadata, model content, or capability URLs.
 - Keep `LAB_AGENT_ARTIFACT_BIND_HOST` private unless an intentional ingress is in front of it. Production ingress must provide HTTPS/private network access; live external Canvus reachability and TLS verification are deployment gates, not guaranteed by local tests.
 - Serve artifact CSS/JS from the same origin as the artifact HTML; do not add third-party assets without a CSP/security review.
 - Treat the implementation-plan Phase 6 / roadmap Phase 4c ingestion DB, cache, raw files, and PDF password file as protected operational data. Do not copy their paths, raw bytes, or capability URLs into model input, audit data, tickets, or reports. There is no automatic ingestion retention/cleanup: the operator owns backup, retention, disk monitoring, and pruning policy.

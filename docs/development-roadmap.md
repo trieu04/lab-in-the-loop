@@ -19,7 +19,9 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 | Governance and model routing | Complete for local/source gates | Provider-neutral task-stage routing; pre-dispatch locality/known-pricing authorization; exact/estimated usage; restart-safe reservations/intents; typed retry/reconciliation; and terminal stop closures. Final local verification: `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED. Organization-approved endpoint/classification matrix, price maintenance, invoice reconciliation, and live SDK/API checks remain operational gates. |
 | Resumable local-source ingestion | Complete for local/source gates (2026-07-19) | Separate SQLite/WAL ingestion ledger and protected cache; SHA-256/extractor-version dedup; standalone leased worker component; bounded local extractors; authenticated canvas-scoped status/chunk reads; evidence/locality integration. No deployment approval, worker CLI, queue/object store, automatic retention, hosted CI, live credentials, or large-format validation is claimed. |
 | Phase 7 validation and approval gates | Complete for local/source infrastructure (2026-07-23) | Typed canonical `litl-canonical-json-v1` SHA-256 proposal/result hashes; deterministic dry-run validation visibly not scientific; canvas-scoped append-only validation/approval evidence; credential-verified scientist then lab-lead gates; Browser projections only. |
-| Real robot integration | Future | Phase 7 execution is disabled by default. An explicit Phase 8-compatible branch remains model-generated `MOCK_RESULT` behavior only; no hardware/lab SDK exists. |
+| Execution modes, terminal stops, and SMTP outbox | Partially complete (2026-07-23) | Mode parsing, fail-closed connected unknown modes, terminal events, and durable SMTP outbox are locally verified. The preserved legacy multi-round synthetic mock loop remains compatible but is not real execution or measured scientific truth. Real identity, scientific validation, hardware, and external SMTP operations remain gates. |
+| Phase 8 milestone 7A — dry-run lifecycle contracts | Complete for contracts/mocks only (2026-07-23) | Typed execution/analysis/knowledge contracts, five append-only tables, deterministic memory-only adapters, approval-bound restart-safe lifecycle, and safe Browser projections. `phase8_execution_enabled=false`; all 7A output is **DRY RUN / MOCK — NOT MEASURED**. 7B real Flywheel/HPC, 7C real knowledge store, 7D real lab/robot, production identity/credential approval, retention/locality policy, and hosted integration remain external gates. |
+| Real robot integration | Future | Neither Phase 7 nor Phase 8 7A provides real robot/lab execution; no hardware/lab SDK exists. |
 | Flywheel / real in-silico integration | Future | Phase 7 implements deterministic/durable gate infrastructure, not a real scientific adapter or Flywheel integration. |
 
 ## Phase 0 — Repository extraction
@@ -254,7 +256,7 @@ Completed Phase 7 local/source infrastructure:
 - The deterministic local adapter returns structured predicted outcome, confidence, uncertainty, assumptions, risk flags, recommended changes, and proceed/revise/reject. Its output is explicitly not scientific validation; the real adapter is disabled/unimplemented and fails closed.
 - Validation and approval evidence is append-only SQLite state scoped to the canvas. Retries/recovery/restarts and stable approval replay are covered; stale proposal/result evidence is retained but non-authorizing.
 - Browser validation and approval-status artifacts are projections only. Canvas Notes, titles, connectors, and author text cannot approve.
-- `wet_lab_execution_enabled` defaults false. The watcher does not dispatch legacy `run_loop` or call `run_on_robot` by default.
+- `wet_lab_execution_enabled` defaults false, so the watcher does not process setup-to-robot mock execution or call `run_on_robot`. Governed result-to-setup loop decisions remain separate from this execution switch.
 
 Still Future:
 
@@ -296,6 +298,26 @@ Success criteria:
 - Future: Next-round decision uses measured results, not mock data.
 - Future: A real wet-lab step runs only through a reviewed hardware/lab integration after explicit operational authorization.
 
+## Phase 6b — Execution modes, terminal stop governance, and durable notifications
+
+**Status:** Partially complete for local/source infrastructure (2026-07-23); the legacy multi-round synthetic mock loop remains compatible, while Phase 8 7A separately provides dry-run-only contracts. External identity, scientific, hardware, and SMTP operations remain gates
+
+Completed:
+
+- Added exact `{idea: ...}` legacy/manual and `{idea+auto: ...}` automatic mode markers. Unsupported mode tokens are visible and fail closed into one Needs Input request.
+- Added deterministic in-silico setup validation, proposal/result hash binding, ordered credential-verified scientist → lab-lead approval, and first-round manual activation. Auto mode bypasses only that extra activation pause; it never bypasses validation, approvals, freshness, locality, budgets, or execution enablement.
+- Hardened genuine terminal stops so they create one Closed artifact and sanitized `loop_stopped` event with no post-terminal writes. The preserved legacy CONTINUE branch remains multi-round synthetic mock compatibility; Phase 8 7A is a separate approval-bound dry-run lifecycle and neither branch claims real execution or measured evidence.
+- Added durable SQLite terminal-notification outbox, deterministic logical key/Message-ID, TLS-only SMTP, allowlists, retry/quarantine/ambiguous reconciliation, indexed bounded drains, and safe notification CLI commands. Delivery is best-effort and logically deduplicated; only known pre-submit/transient failures retry automatically, while ambiguous outcomes require reconciliation. No exactly-once or at-least-once inbox guarantee is claimed.
+
+Verification:
+
+- Final current-tree matrix: `lab-agent` 614 passed (4 warnings); `canvus-mcp` 163 passed (3 warnings). Ruff, mypy, compileall, workflow-contract parity, Markdown-link validation, and whitespace checks passed.
+- Local integration matrix covers manual activation/restart, auto approval gates, unknown-mode fail-closed behavior, bounded per-canvas delivery, quarantine/reset, ambiguity reconciliation, and metadata redaction.
+
+Not claimed:
+
+- No production identity provider, real scientific adapter, hardware/robot/lab SDK, live Canvus/TLS deployment, or live SMTP credential/recipient operation is claimed.
+
 ## Phase 7 — Production hardening, multi-user deployment, and observability
 
 **Status:** Future
@@ -317,3 +339,31 @@ Success criteria:
 - Watcher failures are observable.
 - Deployment docs cover restart and recovery.
 - Multiple users/canvases can run concurrently without state or credential leakage between them.
+
+## Phase 8 — Contracts-only external lifecycle foundation (7A)
+
+**Status:** Complete for 7A contracts/mocks only — sealed 2026-07-23; no real execution or measured scientific truth
+
+Goal: establish a typed, durable, approval-bound lifecycle seam for later external execution, analysis, and knowledge work without installing any real provider, lab, network, or data-retention integration.
+
+Completed in 7A:
+
+- Added frozen typed contracts for run mode, evidence kind, external statuses/failure codes, execution/analysis runs, opaque artifact refs, measured-evidence receipts, knowledge versions, and conflicts. The measured-evidence type boundary requires a real mode plus capture receipt; 7A produces only `mock_or_dry_run` evidence.
+- Added immutable migration `010_execution_analysis_knowledge.sql` with append-only `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`. Existing `side_effect_intents` keeps submit/abort identity; `workflow_attempts` keeps watcher scheduling, retry/backoff, and quarantine.
+- Added deterministic memory-only lab, Flywheel, and knowledge adapters plus disabled-real sentinels. All 7A outputs are visibly **DRY RUN / MOCK — NOT MEASURED**. No real provider API, network, robot, wet-lab, Flywheel/HPC, knowledge store, credential, raw provider text, capability URL, or measured evidence is implemented.
+- Added approval-bound, restart-safe orchestration: exact current proposal/validation hashes and ordered approvals are rechecked, first-round manual mode stays hash-bound, a durable atomic claim prevents duplicate concurrent submit, and submitted/ambiguous runs reconcile authoritatively before retry. Terminal recovery settles the matching intent without rewriting append-only history.
+- Added safe Browser projections for execution, analysis, knowledge, and conflict records. They expose safe ids/hashes/status/lineage and omit `logical_uri`; Canvus buckets remain display-only and never authorize or schedule work. The legacy multi-round synthetic mock loop remains compatible.
+- Kept `LAB_AGENT_PHASE8_EXECUTION_ENABLED=false` and `LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run` as the safety defaults; `sandbox` and `real` fail closed.
+
+Verification:
+
+- Focused Phase 8 suite: **133 passed**.
+- Full suites: `lab-agent` **684 passed** with **4 existing dependency deprecation warnings**; `canvus-mcp` **163 passed** with **3 existing dependency deprecation warnings**.
+- Ruff, mypy, compileall, workflow-contract parity, and `git diff --check` were clean. Final reviewer re-review: **9.8/10**, zero findings.
+
+External child-plan gates (not part of 7A):
+
+- **7B:** real Flywheel/HPC analysis.
+- **7C:** real knowledge store.
+- **7D:** real lab/robot execution.
+- Production identity/credential approval, retention/locality policy, and hosted integration.

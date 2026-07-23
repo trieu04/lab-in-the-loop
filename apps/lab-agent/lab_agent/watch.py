@@ -8,25 +8,18 @@ from typing import Literal
 
 import structlog
 
-from lab_agent import durable_browser, nodes
+from lab_agent import nodes
 from lab_agent.adapters.base import ModelAdapter
-from lab_agent.approval_service import (
-    RobotExecutionAuthorizationError,
-    has_manual_execution_activation,
-    require_current_execution_authorization,
-)
-from lab_agent.artifact_store import ArtifactStore
 from lab_agent.config import Settings
 from lab_agent.integrations.in_silico import DeterministicInSilicoAdapter, InSilicoAdapter
 from lab_agent.mcp_client import MCPClient
 from lab_agent.model_gateway import GovernanceContext, LocalityDeniedError
 from lab_agent.models.evidence import GroundingDecision
-from lab_agent.models.validation import hash_proposal, hash_validation_result
+from lab_agent.models.validation import hash_proposal
 from lab_agent.notification_outbox import NotificationOutbox
 from lab_agent.orchestrator import generate_setup
 from lab_agent.orchestrator_approval_status import reconcile_approval_statuses
 from lab_agent.orchestrator_needs_input import write_needs_input_node
-from lab_agent.orchestrator_robot import run_on_robot
 from lab_agent.orchestrator_validation import (
     TypedSetupArtifactError,
     load_typed_setup,
@@ -37,6 +30,7 @@ from lab_agent.runtime import build_notification_outbox, release_lease_with_audi
 from lab_agent.state_store import LeaseHeldByOtherError, StateStore
 from lab_agent.trigger_governance import close_trigger_governance_error
 from lab_agent.watch_attempts import failure_code, process_trigger
+from lab_agent.watch_execution import process_execution_triggers
 from lab_agent.watch_loops import process_loops
 
 log = structlog.get_logger(__name__)
@@ -54,6 +48,30 @@ def _mode(item: dict[str, object]) -> ExecutionMode | None:
     value = item.get("execution_mode", "manual")
     return value if value in ("manual", "auto") else None
 
+
+def _validation_items(
+    snapshot: dict[str, object], store: StateStore, canvas_id: str,
+) -> list[dict[str, object]]:
+    key = "setups_needing_validation" if "setups_needing_validation" in snapshot else "setups"
+    items = _items(snapshot, key)
+    seen = {str(item.get("widget_id", "")) for item in items}
+    for continuation in store.list_staged_loop_continuations(canvas_id):
+        setup_id = continuation.staged_setup_id
+        if not setup_id or setup_id in seen:
+            continue
+        try:
+            current_hash = hash_proposal(load_typed_setup(store, canvas_id, setup_id))
+        except TypedSetupArtifactError:
+            continue
+        if current_hash != continuation.staged_proposal_hash:
+            continue
+        if store.list_validation_results(canvas_id, proposal_hash=current_hash):
+            continue
+        items.append({"widget_id": setup_id, "title": f"[EXP:Setup v{continuation.round_index:03d}]"})
+        seen.add(setup_id)
+    return items
+
+
 async def _write_mode_error(mcp: MCPClient, settings: Settings, store: StateStore, canvas_id: str, item: dict[str, object]) -> tuple[bool, str]:
     widget_id = str(item.get("widget_id", ""))
     error = str(item.get("parse_error", "unsupported_mode"))
@@ -62,9 +80,12 @@ async def _write_mode_error(mcp: MCPClient, settings: Settings, store: StateStor
     await write_needs_input_node(mcp, store, settings, canvas_id=canvas_id, message="Select manual or auto execution mode.", reason=f"execution_mode:{error}", context={"widget_id": widget_id, "error": error}, round_index=1, predecessor_id=widget_id, edge_kind="execution_mode_error")
     return True, ""
 
-async def _close_governance_error(mcp: MCPClient, settings: Settings, store: StateStore, canvas_id: str, predecessor_id: str, round_index: int, error: BudgetExceededError | LocalityDeniedError) -> tuple[bool, str]:
-    reason = await close_trigger_governance_error(mcp, settings, store, canvas_id=canvas_id, predecessor_id=predecessor_id, round_index=round_index, error=error)
-    return True, reason.value
+async def _close_governance_error(mcp: MCPClient, settings: Settings, store: StateStore, canvas_id: str, predecessor_id: str, round_index: int, trigger_id: str, error: BudgetExceededError | LocalityDeniedError) -> tuple[bool, str]:
+    reason, notification_ready = await close_trigger_governance_error(
+        mcp, settings, store, canvas_id=canvas_id, predecessor_id=predecessor_id,
+        round_index=round_index, error=error, trigger_id=trigger_id,
+    )
+    return notification_ready, reason.value if notification_ready else "notification_enqueue_failed"
 
 async def _generate_setup(mcp: MCPClient, adapter: ModelAdapter, settings: Settings, store: StateStore, canvas_id: str, idea: dict[str, object], idea_id: str, gov: GovernanceContext | None) -> tuple[bool, str]:
     trigger_id = f"idea_setup:{idea_id}"
@@ -73,7 +94,9 @@ async def _generate_setup(mcp: MCPClient, adapter: ModelAdapter, settings: Setti
     try:
         outcome = await generate_setup(mcp, adapter, settings, store, canvas_id=canvas_id, idea_text=await nodes.read_note_text(mcp, canvas_id, idea_id), idea_id=idea_id, ragcluster_id=str(idea.get("ragcluster_id", "")), round_index=1)
     except (BudgetExceededError, LocalityDeniedError) as exc:
-        return await _close_governance_error(mcp, settings, store, canvas_id, idea_id, 1, exc)
+        return await _close_governance_error(
+            mcp, settings, store, canvas_id, idea_id, 1, trigger_id, exc
+        )
     if outcome.decision is GroundingDecision.EXECUTABLE:
         return True, ""
     if outcome.decision is GroundingDecision.NEEDS_INPUT:
@@ -84,19 +107,6 @@ async def _generate_setup(mcp: MCPClient, adapter: ModelAdapter, settings: Setti
 async def _validate_setup(mcp: MCPClient, settings: Settings, store: StateStore, validator: InSilicoAdapter, canvas_id: str, setup_id: str, round_index: int) -> tuple[bool, str]:
     await run_in_silico_validation(mcp, settings, store, validator, canvas_id, setup_id, round_index)
     return True, ""
-
-async def _run_setup(mcp: MCPClient, adapter: ModelAdapter, settings: Settings, store: StateStore, canvas_id: str, setup: dict[str, object], setup_id: str, robot_id: str, round_index: int, proposal_hash: str, phase: str, authorized: bool, manual_activation_required: bool, gov: GovernanceContext | None) -> tuple[bool, str]:
-    if phase == "waiting":
-        if authorized and manual_activation_required:
-            await write_needs_input_node(mcp, store, settings, canvas_id=canvas_id, message="Activate this approved setup to begin the manual run.", reason="manual_execution_activation_required", context={"setup_id": setup_id, "proposal_hash": proposal_hash}, round_index=round_index, predecessor_id=setup_id, edge_kind="manual_execution_activation")
-        return True, ""
-    if gov is not None:
-        gov.start_run(f"setup_run:{setup_id}:{proposal_hash}", [setup])
-    try:
-        result_id, result = await run_on_robot(mcp, adapter, settings, store, canvas_id=canvas_id, setup_id=setup_id, setup_text=await durable_browser.read_stage_text(mcp, store, canvas_id, setup_id), robot_id=robot_id, round_index=round_index, execution_mode="manual" if manual_activation_required else "auto")
-    except (BudgetExceededError, LocalityDeniedError) as exc:
-        return await _close_governance_error(mcp, settings, store, canvas_id, setup_id, round_index, exc)
-    return (bool(result_id and result), "" if result else "schema_validation_failed")
 
 async def process_once(mcp: MCPClient, adapter: ModelAdapter, settings: Settings, store: StateStore, runtime_instance_id: str, canvas_id: str, gov: GovernanceContext | None = None, in_silico_adapter: InSilicoAdapter | None = None, notifications: NotificationOutbox | None = None) -> dict[str, int]:
     counts = {"setups": 0, "runs": 0, "loops": 0, "validations": 0}
@@ -129,9 +139,7 @@ async def process_once(mcp: MCPClient, adapter: ModelAdapter, settings: Settings
             counts["setups"] += 1
 
     validator = in_silico_adapter or DeterministicInSilicoAdapter()
-    validation_key = "setups_needing_validation" if "setups_needing_validation" in snapshot else "setups"
-    validation_items = _items(snapshot, validation_key)
-    for setup in validation_items:
+    for setup in _validation_items(snapshot, store, canvas_id):
         setup_id = str(setup.get("widget_id", ""))
         try:
             proposal_hash = hash_proposal(load_typed_setup(store, canvas_id, setup_id))
@@ -141,42 +149,9 @@ async def process_once(mcp: MCPClient, adapter: ModelAdapter, settings: Settings
         if completed:
             counts["validations"] += 1
 
-    modes = {str(item["widget_id"]): mode for item in _items(snapshot, "ideas") if item.get("widget_id") and (mode := _mode(item)) is not None}
-    invalid_mode_ids = {str(item["widget_id"]) for item in _items(snapshot, "mode_errors") if item.get("widget_id")}
-    invalid_mode_ids.update(str(item["widget_id"]) for item in _items(snapshot, "ideas") if item.get("widget_id") and "execution_mode" in item and _mode(item) is None)
-    execution_items = _items(snapshot, "setups_needing_run") if settings.wet_lab_execution_enabled else []
-    for setup in execution_items:
-        setup_id = str(setup.get("widget_id", ""))
-        if not setup_id:
-            continue
-        round_index = _round_of(setup.get("title"))
-        try:
-            proposal_hash = hash_proposal(load_typed_setup(store, canvas_id, setup_id))
-        except TypedSetupArtifactError:
-            continue
-        results = store.list_validation_results(canvas_id, proposal_hash=proposal_hash)
-        if len(results) != 1:
-            continue
-        result_hash = hash_validation_result(results[0])
-        direct_mode = _mode(setup)
-        if "execution_mode" in setup and direct_mode is None:
-            continue
-        document = ArtifactStore(store.conn).get_artifact_by_widget(canvas_id=canvas_id, widget_id=setup_id)
-        source_id = document.provenance.source_widget_id if document else ""
-        if source_id in invalid_mode_ids:
-            continue
-        mode = direct_mode if "execution_mode" in setup else modes.get(source_id, "manual")
-        try:
-            require_current_execution_authorization(store, canvas_id, proposal_hash, result_hash)
-            authorized = True
-        except RobotExecutionAuthorizationError:
-            authorized = False
-        manual_activation_required = mode == "manual" and round_index == 1
-        activated = has_manual_execution_activation(store, canvas_id, setup_id, proposal_hash, result_hash)
-        phase = "approved" if authorized and (not manual_activation_required or activated) else "waiting"
-        completed = await process_trigger(store, canvas_id=canvas_id, trigger_id=f"setup_run:{setup_id}:{proposal_hash}:{result_hash}:{mode}:{phase}", runtime_instance_id=runtime_instance_id, settings=settings, work=partial(_run_setup, mcp, adapter, settings, store, canvas_id, setup, setup_id, str(setup.get("robot_id", "")), round_index, proposal_hash, phase, authorized, manual_activation_required, gov))
-        if completed and phase == "approved":
-            counts["runs"] += 1
+    counts["runs"] += await process_execution_triggers(
+        mcp, adapter, settings, store, runtime_instance_id, canvas_id, snapshot, _round_of, gov
+    )
 
     if gov is not None:
         counts["loops"] += await process_loops(mcp, adapter, settings, store, runtime_instance_id, canvas_id, _items(snapshot, "loops"), gov)

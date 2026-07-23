@@ -1,5 +1,55 @@
 # Project Changelog
 
+## 2026-07-23 — Phase 8 milestone 7A: typed dry-run execution, analysis, and knowledge contracts
+
+### Added
+
+- Frozen typed contracts for `RunMode`, `EvidenceKind`, external run status/failure codes, execution/analysis runs, opaque artifact references, measured-evidence receipts, knowledge versions, and conflict records. `MeasuredEvidenceReceipt` is a strict truth boundary: measured artifact evidence requires real mode plus a capture receipt.
+- Forward-only migration `010_execution_analysis_knowledge.sql`, creating five append-only durable tables: `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`. Existing `side_effect_intents` continues to own submit/abort identity; `workflow_attempts` continues to own watcher scheduling, retry/backoff, and quarantine.
+- Deterministic memory-only dry-run adapters for laboratory execution, Flywheel-style analysis, and knowledge append/conflict preservation, plus disabled-real sentinels that fail closed. All projections explicitly label evidence **DRY RUN / MOCK — NOT MEASURED**.
+- Approval-bound, restart-safe lifecycle orchestration: exact current proposal/validation hashes and ordered approvals are rechecked, first-round manual activation remains hash-bound, an atomic durable claim prevents duplicate concurrent submit, submitted/ambiguous work reconciles authoritatively before retry, and terminal recovery settles matching submit intents.
+- Safe generated Browser projections for execution, analysis, knowledge, and conflict records. They expose safe ids/hashes/status/roles and omit `logical_uri`; Canvus buckets remain display-only and never authorize or schedule work. The legacy multi-round synthetic mock loop remains compatible.
+
+### Changed
+
+- Added default-off Phase 8 configuration: `phase8_execution_enabled=false` and `phase8_execution_mode=dry_run`. `sandbox` and `real` selections fail closed.
+- Documentation now distinguishes 7A mock/dry-run lineage from measured evidence and real scientific truth.
+
+### Verified
+
+- Focused Phase 8 validation: **133 passed**.
+- Full suite: `lab-agent` **684 passed** with **4 existing dependency deprecation warnings**; `canvus-mcp` **163 passed** with **3 existing dependency deprecation warnings**.
+- Ruff, mypy, compileall, workflow-contract parity, and `git diff --check` were clean. Final reviewer re-review: **9.8/10**, zero findings.
+
+### Not claimed
+
+- Phase 8 is complete only for 7A contracts/mocks. It adds no real provider API, network, robot, wet-lab, Flywheel/HPC, knowledge-store, credential, raw provider text, capability URL, or measured scientific evidence.
+- External child-plan gates remain: 7B real Flywheel/HPC analysis, 7C real knowledge store, 7D real lab/robot integration, production identity/credential approval, retention/locality policy, and hosted integration.
+
+## 2026-07-23 — Execution modes, terminal-stop governance, and durable SMTP notifications
+
+### Added
+
+- Exact `{idea: ...}` legacy/manual and `{idea+auto: ...}` automatic execution markers. Unsupported mode variants remain visible but non-actionable and converge on one Needs Input request.
+- Deterministic setup validation with typed proceed/revise/reject outcomes, canonical proposal/result hashes, ordered credential-verified scientist then lab-lead approval, and hash-bound first-round manual activation.
+- Typed terminal stop events for model, budget, wall-time, no-progress, locality, reservation, and maximum-round reasons. Terminal replay reconciles before another provider or Canvas write; the predecessor Phase 8 branch still has multi-round continuation that must be moved behind the validation/approval gate before this plan is fully complete.
+- SQLite notification outbox with deterministic logical key and SMTP Message-ID, fenced leases, retry/quarantine/ambiguous states, TLS-only transport, exact address allowlists, bounded indexed drains, and safe operator status/retry/quarantine commands.
+- Local integration coverage for manual restart/activation, auto approval gates, unknown-mode rejection, bounded per-canvas notification delivery, quarantine/reset, ambiguity reconciliation, and metadata redaction.
+
+### Changed
+
+- Notification delivery runs after workflow processing and after releasing the canvas lease. SMTP failures cannot reopen or mutate a closed workflow.
+- Notifications remain disabled by default. Delivery is best-effort and logically deduplicated; automatic retry is limited to known pre-submit/transient failures. Partial-recipient refusals and other ambiguous outcomes are never blindly resent, and no exactly-once or at-least-once inbox guarantee is claimed.
+- Migrations 007–009 add indexed terminal-event lookup, reconciliation indexes, and index-bounded pending notification selectors. All migrations are forward-only and checksum tracked.
+
+### Verified
+
+- Final current-tree matrix: `lab-agent` **614 passed** (4 warnings); `canvus-mcp` **163 passed** (3 warnings). Ruff, mypy, compileall, workflow-contract parity, Markdown-link validation, and whitespace checks passed.
+
+### Not claimed
+
+- No production identity provider, real scientific adapter, hardware/robot/lab SDK, live Canvus/TLS deployment, or live SMTP credential/recipient operation is claimed.
+
 ## 2026-07-23 — Phase 7: deterministic validation and durable approval gates
 
 ### Added
@@ -12,7 +62,7 @@
 
 ### Changed
 
-- `wet_lab_execution_enabled` now defaults to false. The watcher does not dispatch the direct legacy `run_loop` path and cannot call `run_on_robot` by default. The explicitly enabled Phase 8-compatible branch remains model-generated `MOCK_RESULT` behavior only after durable gates; no real hardware, robotic-lab, wet-lab, or laboratory SDK is present.
+- `wet_lab_execution_enabled` now defaults to false. The watcher does not dispatch setup-to-robot mock execution and cannot call `run_on_robot` by default. Governed result-to-setup loop decisions remain separate; the explicitly enabled Phase 8-compatible execution branch remains model-generated `MOCK_RESULT` behavior only after durable gates, with no real hardware, robotic-lab, wet-lab, or laboratory SDK.
 
 ### Verified
 

@@ -6,9 +6,9 @@ from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
 from lab_agent import artifact_compat, artifact_layout, canvas_probe, nodes
+from lab_agent.artifact_browser_registry import browser_bucket, fallback_layout
 from lab_agent.artifact_store import ArtifactStore
 from lab_agent.config import Settings
-from lab_agent.durable_writes import _CLOSED_X, _RESULT_X, _ROW, _SETUP_X
 from lab_agent.intent_audit import connect_durable
 from lab_agent.mcp_client import MCPClient
 from lab_agent.models.artifact import ArtifactProvenance, ArtifactType
@@ -16,16 +16,6 @@ from lab_agent.models.states import DecisionState
 from lab_agent.state_store import StateStore
 
 RENDERED_TEXT_KEY = "rendered"
-
-_BUCKET = {
-    ArtifactType.SETUP: "setups",
-    ArtifactType.RESULT: "results",
-    ArtifactType.CLOSED: "closeds",
-    ArtifactType.NEEDS_INPUT: "needs_inputs",
-    ArtifactType.IN_SILICO: "validations",
-    ArtifactType.APPROVAL_STATUS: "validations",
-}
-
 
 class ArtifactUrlError(RuntimeError):
     """Browser writes need a valid public artifact URL."""
@@ -53,25 +43,6 @@ def provenance_for(
         trigger_id=trigger_id,
         source_widget_id=source_widget_id,
     )
-
-
-_NEEDS_INPUT_X = 780.0
-_IN_SILICO_X = 1040.0
-_APPROVAL_STATUS_X = 1560.0
-
-
-def _layout(artifact_type: ArtifactType, round_index: int) -> tuple[float, float]:
-    if artifact_type is ArtifactType.SETUP:
-        return _SETUP_X, round_index * _ROW
-    if artifact_type is ArtifactType.RESULT:
-        return _RESULT_X, round_index * _ROW
-    if artifact_type is ArtifactType.NEEDS_INPUT:
-        return _NEEDS_INPUT_X, round_index * _ROW
-    if artifact_type is ArtifactType.IN_SILICO:
-        return _IN_SILICO_X, round_index * _ROW
-    if artifact_type is ArtifactType.APPROVAL_STATUS:
-        return _APPROVAL_STATUS_X, round_index * _ROW
-    return _CLOSED_X, (round_index + 1) * _ROW
 
 
 async def _reconcile_browser(
@@ -166,13 +137,13 @@ async def write_artifact_browser_durable(
     title = str(doc.payload.get("title") or title)
     token = astore.issue_token(doc.opaque_id, canvas_id=canvas_id)  # fresh per attempt
     url = _capability_url(base, doc.opaque_id, token)
-    fallback = _layout(artifact_type, round_index)
+    fallback = fallback_layout(artifact_type, round_index)
     x, y = await artifact_layout.resolve_artifact_position(mcp, canvas_id=canvas_id, anchor_widget_id=layout_anchor_id or predecessor_id, artifact_type=artifact_type, fallback=fallback)
     browser_key = artifact_compat.browser_key(canvas_id, artifact_type, discriminator)
     legacy_browser_keys = tuple(artifact_compat.browser_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)
     tagged = canvas_probe.tagged_title(title, browser_key)
     legacy_grid_hash = artifact_compat.legacy_browser_intent_hash(opaque_id=doc.opaque_id, tagged_title=tagged, x=fallback[0], y=fallback[1])
-    widget_id = await _reconcile_browser(mcp, store, astore, canvas_id=canvas_id, browser_key=browser_key, bucket=_BUCKET[artifact_type], opaque_id=doc.opaque_id, mapped_widget_id=doc.widget_id, tagged_title=tagged, url=url, x=x, y=y, round_index=round_index, legacy_browser_keys=legacy_browser_keys, legacy_intent_hashes=(legacy_grid_hash,))
+    widget_id = await _reconcile_browser(mcp, store, astore, canvas_id=canvas_id, browser_key=browser_key, bucket=browser_bucket(artifact_type), opaque_id=doc.opaque_id, mapped_widget_id=doc.widget_id, tagged_title=tagged, url=url, x=x, y=y, round_index=round_index, legacy_browser_keys=legacy_browser_keys, legacy_intent_hashes=(legacy_grid_hash,))
     if widget_id and predecessor_id:
         await connect_durable(mcp, store, canvas_id=canvas_id, src_id=predecessor_id, dst_id=widget_id, edge_kind=edge_kind, round_index=round_index)
     return widget_id

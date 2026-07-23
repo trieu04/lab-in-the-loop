@@ -131,6 +131,10 @@ class Settings(BaseSettings):
         default="[EXP:Lab Lead Approval]",
         description="Title prefix of a non-authorizing human lab-lead approval Note.",
     )
+    mcp_exp_execution_marker: str = Field(default="[EXP:Execution]")
+    mcp_exp_analysis_marker: str = Field(default="[EXP:Analysis]")
+    mcp_exp_knowledge_marker: str = Field(default="[EXP:Knowledge]")
+    mcp_exp_conflict_marker: str = Field(default="[EXP:Conflict]")
 
 
 __all__ = ["Settings"]

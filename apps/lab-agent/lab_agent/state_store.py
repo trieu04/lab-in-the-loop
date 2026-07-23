@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import random
 import sqlite3
 import time
@@ -26,10 +24,12 @@ from lab_agent.state.audit import (
     payload_size_bytes,
 )
 from lab_agent.state.connection import MigrationChecksumError, MigrationOrderError
+from lab_agent.state.execution_store import ExecutionStoreMixin
 from lab_agent.state.gate_evidence import GateEvidenceConflictError
 from lab_agent.state.gate_evidence_store import GateEvidenceStoreMixin
 from lab_agent.state.intents import IntentHashMismatchError
 from lab_agent.state.leases import LeaseHeldByOtherError
+from lab_agent.state.loop_continuations import LoopContinuationStoreMixin
 from lab_agent.state.models import (
     AttemptStatus,
     AuditEvent,
@@ -48,9 +48,8 @@ __all__ = [
     "AuditPayloadTooLargeError", "CanvasLease", "GateEvidenceConflictError",
     "IntentHashMismatchError", "IntentStatus",
     "LeaseHeldByOtherError", "MigrationChecksumError", "MigrationOrderError", "OrchestratorEdge",
-    "SideEffectIntent", "StaleLeaseError", "StateStore", "WorkflowAttempt", "payload_size_bytes",
-]
-class StateStore(GateEvidenceStoreMixin):
+    "SideEffectIntent", "StaleLeaseError", "StateStore", "ExecutionStoreMixin", "WorkflowAttempt", "payload_size_bytes"]
+class StateStore(GateEvidenceStoreMixin, ExecutionStoreMixin, LoopContinuationStoreMixin):
     def __init__(self, db_path: str | Path, *, clock: Clock = time.time, rng: RandomSource = random.random, migrations_dir: Path | None = None) -> None:
         self.clock, self.rng = clock, rng
         self.conn: sqlite3.Connection = connection.connect(db_path)

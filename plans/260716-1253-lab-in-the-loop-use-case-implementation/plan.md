@@ -3,15 +3,15 @@ title: "Lab-in-the-Loop Use-Case Implementation"
 description: "Milestone-gated blueprint to build the full Lab-in-the-Loop closed-loop drug-discovery workflow atop the existing canvus-mcp + lab-agent apps."
 status: in-progress
 priority: P1
-effort: "55d core + real adapters TBD after API discovery"
+effort: "55d core delivered; real adapters remain child-plan gates"
 branch: feat/phase-04-grounding-evidence
 tags: [lab-in-the-loop, harness, workflow, safety-gates, drug-discovery]
 blockedBy: []
-blocks: [260723-0029-experiment-mode-validation-stop-email]
+blocks: []
 work_type: feature
 spec_waived: "SDD mode disabled (takumi.sddMode: off)"
 created: 2026-07-16
-progress: "Phase 7 of 9 complete (40d delivered, 15d remaining)"
+progress: "Phase 7 complete; Phase 8 complete (55d delivered); Phase 9 pending"
 ---
 
 # Lab-in-the-Loop Use-Case Implementation
@@ -30,13 +30,13 @@ Contracts stay additive and MVP-compatible; generated artifacts become dynamic H
 | 5 | [Governance & model routing](phase-05-add-governance-and-model-routing.md) | 5d | complete | FR-013/014, NFR-002/003/009 |
 | 6 | [Resumable multimodal ingestion](phase-06-build-resumable-multimodal-ingestion.md) | 6d | complete | FR-020, NFR-007 |
 | 7 | [In-silico & approval gates](phase-07-implement-in-silico-and-approval-gates.md) | 8d | complete | UC-03, FR-003/004/005, BR-006/007/009 |
-| 8 | [Execution, analysis & knowledge](phase-08-integrate-execution-analysis-and-knowledge.md) | 8d | pending | FR-006/007/008/009/010/017/018, BR-008 |
+| 8 | [Execution, analysis & knowledge](phase-08-integrate-execution-analysis-and-knowledge.md) | 8d | **complete** | FR-006/007/008/009/010/017/018, BR-008 |
 | 9 | [Production & multi-user hardening](phase-09-harden-production-and-multi-user-operations.md) | 7d | pending | NFR-006/008/010, ACT-13 |
 
 ## Dependencies
 
 - Spine: P1→P2→P3→P4→P5→P6→P7→P8→P9.
-- Phase 7 is complete. Phase 8 is the next pending phase.
+- Phase 7 complete. Phase 8 complete (7A mocks/contracts delivered); real adapters remain external child-plan gates.
 - Execute numerically by default; no `--parallel` because phases share workflow/artifact/state files.
 
 ## Key Decisions

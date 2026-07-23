@@ -58,6 +58,10 @@ class ExpMarkers:
     validation: str = "[EXP:Validation]"
     scientist_review: str = "[EXP:Scientist Review]"
     lab_lead_approval: str = "[EXP:Lab Lead Approval]"
+    execution: str = "[EXP:Execution]"
+    analysis: str = "[EXP:Analysis]"
+    knowledge: str = "[EXP:Knowledge]"
+    conflict: str = "[EXP:Conflict]"
 
 
 ExecutionMode = Literal["manual", "auto"]
@@ -132,6 +136,22 @@ def _is_scientist_review_marker(w: Any, m: ExpMarkers) -> bool:
 
 def _is_lab_lead_approval_marker(w: Any, m: ExpMarkers) -> bool:
     return _attr(w, "widget_type") == "Note" and _widget_title(w).startswith(m.lab_lead_approval)
+
+
+def _is_execution(w: Any, m: ExpMarkers) -> bool:
+    return _is_generated_marker(w, m.execution)
+
+
+def _is_analysis(w: Any, m: ExpMarkers) -> bool:
+    return _is_generated_marker(w, m.analysis)
+
+
+def _is_knowledge(w: Any, m: ExpMarkers) -> bool:
+    return _is_generated_marker(w, m.knowledge)
+
+
+def _is_conflict(w: Any, m: ExpMarkers) -> bool:
+    return _is_generated_marker(w, m.conflict)
 
 
 def _brief(w: Any, execution_mode: ExecutionMode | None = None) -> dict[str, str]:

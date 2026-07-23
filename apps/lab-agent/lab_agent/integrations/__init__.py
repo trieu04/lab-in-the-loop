@@ -1,5 +1,14 @@
 """External validation and identity integration boundaries."""
 
+from lab_agent.integrations.flywheel import (
+    DeterministicFlywheelAdapter,
+    DisabledRealFlywheelAdapter,
+    FlywheelAdapter,
+    FlywheelAdapterError,
+    FlywheelImplementationNotInstalledError,
+    FlywheelNotReadyError,
+    RealFlywheelReadiness,
+)
 from lab_agent.integrations.identity import (
     DevelopmentIdentity,
     DisabledProductionIdentityProvider,
@@ -24,12 +33,36 @@ from lab_agent.integrations.in_silico import (
     MockFailureMode,
     RealAdapterReadiness,
 )
+from lab_agent.integrations.knowledge import (
+    DeterministicKnowledgeAdapter,
+    DisabledRealKnowledgeAdapter,
+    KnowledgeAdapter,
+    KnowledgeAdapterError,
+    KnowledgeImplementationNotInstalledError,
+    KnowledgeNotReadyError,
+    RealKnowledgeReadiness,
+)
+from lab_agent.integrations.lab_execution import (
+    DeterministicLabExecutionAdapter,
+    DisabledRealLabExecutionAdapter,
+    LabExecutionAdapter,
+    LabExecutionAdapterError,
+    LabExecutionImplementationNotInstalledError,
+    LabExecutionNotReadyError,
+    RealLabExecutionReadiness,
+)
 
 __all__ = [
     "DevelopmentIdentity",
+    "DeterministicFlywheelAdapter",
     "DeterministicInSilicoAdapter",
+    "DeterministicKnowledgeAdapter",
+    "DeterministicLabExecutionAdapter",
     "DisabledProductionIdentityProvider",
+    "DisabledRealFlywheelAdapter",
     "DisabledRealInSilicoAdapter",
+    "DisabledRealKnowledgeAdapter",
+    "DisabledRealLabExecutionAdapter",
     "IdentityAuthenticationError",
     "IdentityAuthorizationError",
     "IdentityNotReadyError",
@@ -41,9 +74,24 @@ __all__ = [
     "InSilicoProviderError",
     "InSilicoSchemaError",
     "InSilicoTimeoutError",
+    "FlywheelAdapter",
+    "FlywheelAdapterError",
+    "FlywheelImplementationNotInstalledError",
+    "FlywheelNotReadyError",
+    "KnowledgeAdapter",
+    "KnowledgeAdapterError",
+    "KnowledgeImplementationNotInstalledError",
+    "KnowledgeNotReadyError",
+    "LabExecutionAdapter",
+    "LabExecutionAdapterError",
+    "LabExecutionImplementationNotInstalledError",
+    "LabExecutionNotReadyError",
     "MockFailureMode",
     "ProductionIdentityReadiness",
     "RealAdapterReadiness",
+    "RealFlywheelReadiness",
+    "RealKnowledgeReadiness",
+    "RealLabExecutionReadiness",
     "StaticDevelopmentIdentityProvider",
     "hash_development_credential",
 ]

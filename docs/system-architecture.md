@@ -14,7 +14,7 @@ The design deliberately separates reads from writes:
 
 ## Current MVP vs. target harness (status note)
 
-Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), a provider-neutral governed model gateway over the OpenAI/Claude adapter factory, task-stage routing and fail-closed locality/pricing checks, durable run/canvas budget reservations and model-call intents, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history, implementation-plan Phase 6 (roadmap Phase 4c) single-host resumable ingestion, and Phase 7 typed/durable in-silico validation plus ordered human approval gates. Phase 7 is gate infrastructure: the local adapter is visibly a deterministic structural dry run, not scientific validation; real validation and real laboratory execution remain unavailable. Ingestion uses a separate SQLite/WAL ledger and protected local raw-byte cache to expose only bounded extracted chunks to the model boundary (see the Phase 2–5 and Phase 4c sections below).
+Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), a provider-neutral governed model gateway over the OpenAI/Claude adapter factory, task-stage routing and fail-closed locality/pricing checks, durable run/canvas budget reservations and model-call intents, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history, implementation-plan Phase 6 (roadmap Phase 4c) single-host resumable ingestion, and Phase 7 typed/durable in-silico validation plus ordered human approval gates. Phase 8 milestone **7A** adds typed, durable **dry-run-only** execution, analysis, artifact-lineage, knowledge-version, and conflict contracts. Its deterministic memory-only adapters visibly label all output **DRY RUN / MOCK — NOT MEASURED**; they are not provider, network, Flywheel/HPC, robot, wet-lab, or measured-scientific paths. Both `wet_lab_execution_enabled` and `phase8_execution_enabled` default to `false`. Ingestion uses a separate SQLite/WAL ledger and protected local raw-byte cache to expose only bounded extracted chunks to the model boundary (see the Phase 2–5, Phase 4c, Phase 7, and Phase 8 sections below).
 
 A 2026-07-16 architecture-recovery review (recovered from a separate `rag-canvus` session; see [project changelog](project-changelog.md)) recommends evolving this into an **independent, provider-neutral harness/orchestrator**, with the Claude Code skill/MCP registration as an optional developer/operator/demo interface rather than the runtime or source of truth for workflow logic, policy, grounding, and schemas. That recommendation is the session's final conclusion but was **not explicitly ratified by the project owner** — the architecture-choice prompt that would have confirmed it was interrupted. Treat it as **proposed direction**, not an implemented architecture. See "Target harness boundary (proposed)" below and the [roadmap](development-roadmap.md) for the phases this implies.
 
@@ -50,7 +50,8 @@ apps/lab-agent
   ├─ OpenAI adapter
   ├─ Claude adapter
   └─ local SQLite WAL ledger (.state/lab_agent.db) — attempts, leases,
-     side-effect intents, artifact documents/tokens/widgets, hash-chained audit log
+     side-effect intents, artifact documents/tokens/widgets, gate evidence,
+     notification outbox, hash-chained audit log
 ```
 
 ## Runtime apps
@@ -90,14 +91,15 @@ Key modules:
 
 | Module | Responsibility |
 |---|---|
-| `lab_agent/cli.py` | CLI commands: `once`, `watch`, durable operator commands, `serve-artifacts` |
-| `lab_agent/config.py` | MCP URL, adapters, runtime bounds, task routing, locality allowlists/endpoints, versioned pricing, resource budgets, and stop/retry settings |
+| `lab_agent/cli.py` | CLI commands: `once`, `watch`, durable workflow/notification operator commands, `serve-artifacts` |
+| `lab_agent/config.py` | MCP URL, adapters, runtime bounds, execution switch, terminal SMTP policy, task routing, locality allowlists/endpoints, versioned pricing, resource budgets, and stop/retry settings |
 | `lab_agent/model_gateway.py` / `governance_context.py` | Provider-neutral governed dispatch: stage routing, locality authorization, durable intent/reservation lifecycle, normalized usage/cost accounting, and reconciliation guard |
 | `lab_agent/policy/*` | Pure routing, locality, pricing, budget-reservation, and stop policies used before provider/canvas writes |
 | `lab_agent/model_request.py` / `provider_endpoints.py` | Provider-visible request digest/conservative usage estimate and credential-gated canonical endpoint defaults/HTTPS validation |
 | `lab_agent/mcp_client.py` | MCP transport client |
-| `lab_agent/watch.py` | Poll loop and pending-trigger dispatcher |
-| `lab_agent/orchestrator.py` | Direct legacy `run_loop` compatibility, model-generated mock result behavior, loop continuation/closure, and next-round setup grounding; watcher Phase 7 does not dispatch this path |
+| `lab_agent/watch.py` / `watch_loops.py` | Poll loop, pending-trigger dispatcher, governed loop-attempt handling, and post-canvas-lease notification draining |
+| `lab_agent/orchestrator.py` | Legacy loop-decision and terminal-replay boundary; its preserved multi-round synthetic mock compatibility path is distinct from the Phase 8 7A approval-bound dry-run lifecycle |
+| `lab_agent/orchestrator_robot.py` / `approval_service.py` | Enforce current validation/scientist/lab-lead evidence before mock execution; persist hash-bound, credential-verified first-round manual activation |
 | `lab_agent/orchestrator_setup.py` | Idea/next-focus → setup entry point; creates a fresh `EvidenceLedger`, evaluates grounding with original idea text, writes setup only when executable, writes Needs Input for insufficient evidence/ambiguity, and leaves invalid citations retryable with no write |
 | `lab_agent/grounding.py` | Phase 4 grounding gate: evidence sufficiency, citation membership, dictionary-backed acronym boundary scan, durable grounding audit, and Needs Input dispatch |
 | `lab_agent/evidence.py` | Per-run bounded evidence ledger with deterministic source ids, bounded excerpts, citation validation, and minimal audit rows |
@@ -127,8 +129,14 @@ Key modules:
 | `lab_agent/artifact_migration.py` / `artifact_migration_probe.py` | Dry-run/mirror-first legacy generated Note migration helpers; apply mode preserves original Notes/connectors |
 | `lab_agent/durable_writes.py` | Legacy note/connector durable write helpers retained for compatibility and connector primitives |
 | `lab_agent/intent_audit.py` | `reconcile_with_audit` (adds `intent_reconciled`/`intent_failed` audit events around `recovery.reconcile_or_execute`) and `connect_durable` (durable connector creation, records `orchestrator_edges`) |
-| `lab_agent/admin.py` | Operator commands behind the CLI: `check_integrity`, `list_quarantined`, `reset_attempt`, `backup` |
-| `lab_agent/migrations/*.sql` | Versioned schema migrations for the durable ledger and artifact tables (tracked in git; the ledger/artifact DB file itself is not — see `.gitignore`) |
+| `lab_agent/loop_governance.py` | Writes idempotent terminal closures/events and queues only eligible terminal notifications |
+| `lab_agent/notification_outbox.py` / `notifications.py` / `notification_smtp.py` | Metadata-only, SQLite-backed notification lifecycle; deterministic logical key/Message-ID; encrypted SMTP and address-policy boundary |
+| `lab_agent/admin.py` | Operator commands behind the CLI: integrity, workflow quarantine/reset/backup, and safe notification status/quarantine/retry controls |
+| `lab_agent/models/execution.py` | Frozen typed Phase 8 contracts: `RunMode`, evidence kind, external statuses/failure codes, execution/analysis runs, opaque artifact refs, measured-evidence receipt boundary, knowledge versions, and conflicts |
+| `lab_agent/execution_lifecycle.py` / `analysis_lifecycle.py` / `execution_orchestrator.py` | Approval-bound dry-run lifecycle: durable prepare/claim, authoritative reconciliation before retry, atomic submit claim, terminal intent settlement, safe projections, and restart recovery |
+| `lab_agent/integrations/lab_execution.py` / `flywheel.py` / `knowledge.py` | Deterministic memory-only dry-run adapters and disabled-real sentinels; no real provider, Flywheel/HPC, knowledge-store, or lab integration is installed |
+| `lab_agent/state/execution_store.py` / `state/external_runs.py` / `state/knowledge.py` | Canvas-scoped append-only execution, analysis, artifact-lineage, knowledge-version, and conflict persistence behind `StateStore` |
+| `lab_agent/migrations/*.sql` | Forward-only, checksum-tracked schema migrations for the durable ledger, artifacts, gate evidence, notification outbox, and Phase 8 records; `010_execution_analysis_knowledge.sql` creates the five Phase 8 tables (tracked in git; the ledger DB file itself is not — see `.gitignore`) |
 
 ### Durable harness core (Phase 2)
 
@@ -171,7 +179,31 @@ The ledger has append-only, canvas-scoped `in_silico_results` and `gate_approval
 
 The only approving path is `scientist → lab lead`. A `proceed` validation result projects `NEEDS_SCIENTIST_REVIEW`; approved scientist evidence projects `NEEDS_LAB_LEAD_APPROVAL`; approved lab-lead evidence projects `APPROVED_FOR_WET_LAB`. A reject, stale hash, duplicate role, incompatible metadata, missing credential verification, or out-of-order role fails closed. Browser approval-status artifacts deliberately report `execution_enabled=false` even at `APPROVED_FOR_WET_LAB`.
 
-`Settings.wet_lab_execution_enabled` defaults to `false`. The Phase 7 watcher therefore never dispatches the legacy/direct `run_loop` path and does not call `run_on_robot`. The explicitly enabled future Phase 8 branch separately verifies the current durable gates and can create only a model-generated `MOCK_RESULT` artifact. This repo has no real hardware, robotic-lab, wet-lab, or laboratory SDK.
+`Settings.wet_lab_execution_enabled` defaults to `false`. The legacy watcher therefore does not dispatch `setups_needing_run` or call `run_on_robot`. Phase 8 7A has its own default-off `phase8_execution_enabled` lifecycle, separately verifies current durable gates, and can create only deterministic **DRY RUN / MOCK — NOT MEASURED** execution/analysis/knowledge projections. This repo has no real hardware, robotic-lab, wet-lab, or laboratory SDK.
+
+The execution marker is parsed at the user-authored Note boundary: `{idea: ...}` is legacy/manual and `{idea+auto: ...}` is auto. Any other mode fails closed into a deduplicated Needs Input artifact. Auto mode can reach an enabled mock/dry-run path only after the current hash-bound validation and ordered approvals. Manual mode has the same gates plus a credential-verified first-round activation, durable as a reconciled intent keyed by canvas/setup/proposal/result hashes. The approval service, not Canvas text/topology, supplies that activation; a changed proposal or validation makes the old evidence stale.
+
+### Phase 8 milestone 7A — typed dry-run execution, analysis, and knowledge contracts
+
+Phase 8 is complete **only for 7A**, a contracts-and-mocks milestone. `models/execution.py` defines frozen typed contracts for `RunMode`, `EvidenceKind`, external run statuses/failure codes, execution and analysis requests/runs, opaque artifact references, knowledge versions, conflicts, and the `MeasuredEvidenceReceipt` truth boundary. A measured artifact can exist in the type system only with real mode and a capture receipt; the 7A lifecycle accepts and creates only `dry_run` plus `mock_or_dry_run` evidence.
+
+Migration `010_execution_analysis_knowledge.sql` adds five append-only, canvas-scoped durable tables: `execution_runs`, `analysis_runs`, `artifact_refs`, `knowledge_versions`, and `conflict_records`. Submission/abort intent identity remains in the pre-existing `side_effect_intents` ledger; `workflow_attempts` remains responsible for trigger scheduling, retry/backoff, and quarantine. Run transitions use `BEGIN IMMEDIATE` and immutable identities, so concurrent callers cannot both claim the same submission.
+
+The installed lab, Flywheel, and knowledge adapters are deterministic memory-only dry runs. Each emits an explicit **DRY RUN / MOCK — NOT MEASURED** label and opaque `mock://` references. Disabled-real sentinel adapters fail closed; 7A contains no real provider APIs, network calls, robot or wet-lab action, credentials, raw provider text, capability URL, or measured evidence. `phase8_execution_enabled=false` is the operational default, and the factory rejects `sandbox` and `real` modes.
+
+Before a retry, the lifecycle authoritatively reconciles a submitted/ambiguous run by its idempotency key. A claimed submit intent is never duplicated; terminal recovery settles the matching intent and preserves append-only references. Execution still rechecks the exact current proposal hash, validation hash, ordered scientist/lab-lead approval, and manual first-round activation where required. Browser artifacts are projections only: they expose safe ids, hashes, roles, status, and dry-run label, deliberately omit `logical_uri`, and neither authorize nor schedule work. Canvus scan buckets are display/recovery buckets only, never authorization or scheduling evidence.
+
+The existing legacy multi-round synthetic mock loop remains compatible. It is distinct from the 7A dry-run lifecycle and does not establish real execution or measured scientific truth.
+
+**External child-plan gates:** 7B real Flywheel/HPC analysis; 7C real knowledge store; 7D real lab/robot integration; production identity/credential approval; retention/locality policy; and hosted integration. None are implemented or implied by 7A.
+
+### Terminal notification outbox
+
+`loop_governance.close_with_reason` first creates/reconciles a terminal `[EXP:Closed]` artifact, then persists one `loop_stopped` event and only then queues an eligible terminal notification. The outbox is not used for pending validation/approval, a rejected mode, disabled execution, failed work, or non-terminal loop progress. This preserves workflow closure independently of notification transport: a delivery failure cannot reopen a loop or perform a canvas/model mutation.
+
+The SQLite `notification_outbox` row contains metadata only and is uniquely keyed by a canonical SHA-256 of canvas id, trigger id, closure id, round, and reason. Its deterministic SMTP `Message-ID` has the same logical identity. Pending rows are leased with a fenced generation, drained in a bounded batch after the workflow canvas lease is released, and settled as sent, retryable, quarantined, or ambiguous. Delivery is best-effort and logically deduplicated: only known pre-submit/transient failures retry automatically. A partial-recipient refusal or uncertain post-lease/post-submit outcome is ambiguous, leaves the normal send queue, and is not blindly resent; it is quarantined after its reconciliation window unless an operator makes an explicit targeted choice. Neither exactly-once nor at-least-once inbox delivery is guaranteed.
+
+`SMTPNotificationSink` accepts only STARTTLS (the server must advertise it) or implicit TLS, validates exact sender/recipient addresses against configured allowlists, and stores/returns only fixed sanitized failure categories. SMTP secrets, raw server diagnostics, closure content beyond the small metadata envelope, and capability URLs do not enter the outbox, audit payload, or normal logs. See [setup and operations](setup-and-operations.md) for configuration, recovery, and the notification CLI.
 
 ### Resumable local-source ingestion (implementation-plan Phase 6; roadmap Phase 4c)
 
@@ -248,22 +280,34 @@ lab-agent validates per-run ledger citations + dictionary ambiguity scan
         └─ invalid citation/schema → write nothing; durable attempt can retry
 ```
 
-### Setup to mock robot result
+### Setup to dry-run execution, analysis, and knowledge projection (Phase 8 7A)
 
 ```text
-[EXP:Setup vNNN] ─connector─► Robot_
+[EXP:Setup vNNN] ─connector─► Robot_ (legacy marker)
         │
         ▼
 scan_experiment_workflow reports `setups_needing_run`
         │
         ▼
-model emits clearly mock ExperimentResult
+exact current validation + scientist → lab-lead approval
++ manual first-round activation when required
         │
         ▼
-lab-agent creates `[EXP:Result vNNN]` Browser artifact and connector robot → result
+opt-in Phase 8 dry-run lifecycle only (`phase8_execution_enabled=false` by default)
+        │
+        ▼
+deterministic mock execution → deterministic mock analysis
+        │
+        ▼
+append-only mock knowledge version / preserved conflict record
+        │
+        ▼
+safe Browser projections: Execution / Analysis / Knowledge / Conflict
 ```
 
-### Result to next setup or close
+This 7A path is deterministic and memory-only. It produces **DRY RUN / MOCK — NOT MEASURED** records, not a real robot result, real analysis output, or measured scientific evidence. The separately preserved legacy branch can still create model-generated mock result artifacts when its legacy execution switch is enabled.
+
+### Result to continuation decision or close
 
 ```text
 User connects [EXP:Result vNNN] ─► [EXP:Setup vNNN]
@@ -272,11 +316,13 @@ User connects [EXP:Result vNNN] ─► [EXP:Setup vNNN]
 detect_experiment_loops resolves setup/result/robot/idea/RagCluster ids
         │
         ▼
-model compares setup vs result
+watcher invokes the governed single-decision loop boundary
         │
-        ├─ STOP     → create `[EXP:Closed]` Browser artifact, connect result → closed
-        └─ CONTINUE → create `[EXP:Setup vNNN+1]` Browser artifact, connect result → setup, run mock robot
+        ├─ STOP     → create `[EXP:Closed]`, terminal audit, and eligible outbox event
+        └─ CONTINUE → current legacy branch can ground/write successor Setup/Result in this call
 ```
+
+The legacy CONTINUE branch remains a synthetic mock-loop compatibility path. The Phase 8 7A lifecycle independently rechecks changed proposal/validation hashes, ordered approval, and mode-specific activation before its dry-run execution path. Neither path is a production-safe real-execution progression or measured-evidence source. Existing legacy forward edges remain readable but are filtered from actionable loop detection.
 
 ## State and idempotency
 
@@ -302,7 +348,10 @@ The canvas remains the source of *workflow* state — the agent treats connector
 | Model output | Hallucinated domain facts, fabricated citations, guessed acronyms | Ground via RagCluster/read tools; validate citations against per-run ledger; scan idea/setup/evidence excerpts with approved dictionary; structured schemas |
 | Provider dispatch | Sending unapproved data, unpriced calls, duplicate/ambiguous submission | Classify before dispatch; require HTTPS endpoint + locality allowlist + known versioned model price; durable intent, reservation, typed retry, and capability-aware reconciliation; no blind redispatch |
 | Provider telemetry/errors | Prompt, response, secret, or provider-diagnostic persistence | Normalize only approved usage/count metadata; durable intents/audits use fixed categories, digests, and metadata rather than raw provider errors, prompts, or responses |
+| Execution mode and approval | Mode spoofing, stale gate evidence, or unauthenticated manual start | Parse only manual/auto idea markers; unsupported values fail closed; bind validation/approvals/manual first activation to current hashes and credential-verified identity; Canvas is projection only |
+| Phase 8 execution/analysis/knowledge lifecycle | Duplicate submission, false scientific truth, or sensitive external reference leakage | `phase8_execution_enabled=false`; only deterministic memory-only `dry_run` adapters are installed; durable run/intent identities use atomic claims and authoritative reconciliation before retry; projections label mock/dry-run evidence and omit `logical_uri`; measured evidence requires a real-mode capture receipt but is not produced in 7A |
 | Loop autonomy | Runaway rounds or writes after terminal governance stop | Model decision plus max-round/token/cost/wall-time/no-progress/locality/reservation closures; one rendered/audited closure and no later provider/canvas write |
+| Terminal SMTP notification | Plaintext transport, recipient abuse, secret leakage, duplicate/ambiguous email | TLS-only SMTP, exact sender/recipient allowlists, metadata-only durable outbox, deterministic logical key/Message-ID, leased bounded drain, fixed safe categories, no blind resend of ambiguous submissions |
 
 ## Integration boundary with `rag-canvus`
 
@@ -337,7 +386,7 @@ Under this proposal, the Claude Code skill/MCP registration becomes an **optiona
 
 ## Current limitations
 
-- `wet_lab_execution_enabled` defaults to false, so Phase 7 watcher operation performs no robot execution. The opt-in Phase 8-compatible branch remains model-generated mock-result behavior only; no hardware/lab SDK exists.
+- `wet_lab_execution_enabled` and `phase8_execution_enabled` both default to false. Phase 8 7A can run only deterministic, memory-only dry-run adapters when explicitly enabled; no real provider API, network, Flywheel/HPC, knowledge store, robot, wet-lab, or laboratory SDK exists.
 - Retrieval is canvas/RagCluster/read-tool-oriented with a local approved acronym dictionary; future wiki/KG/vector sources are adapters or external gates, not a full vector DB or knowledge graph runtime today.
 - The deterministic validation/approval gate infrastructure is implemented, but it is not a live scientific in-silico integration. Flywheel, a real in-silico provider, production identity verification, and real laboratory execution remain unavailable.
 - The durable harness is local-disk, single-host, single-active-writer-per-canvas scoped (SQLite WAL) — not a shared/replicated store; see "Local-disk, single-host scope" above for the Postgres/multi-host migration trigger.
