@@ -13,7 +13,6 @@ class UsageStatus(StrEnum):
     ESTIMATED = "estimated"
     UNAVAILABLE = "unavailable"
 
-
 class DataClassification(StrEnum):
     """Content sensitivity used by fail-closed locality authorization."""
 
@@ -21,7 +20,6 @@ class DataClassification(StrEnum):
     INTERNAL = "internal"
     RESTRICTED = "restricted"
     UNKNOWN = "unknown"
-
 
 @dataclass(frozen=True)
 class TaskContext:
@@ -40,7 +38,6 @@ class TaskContext:
                 classifications.append(DataClassification.UNKNOWN)
         return cls(tuple(classifications) or (DataClassification.UNKNOWN,))
 
-
 class TaskStage(StrEnum):
     """Workflow stage served by a model call and used as the routing key."""
 
@@ -54,14 +51,29 @@ class TaskStage(StrEnum):
 class StopReason(StrEnum):
     """Distinct, auditable reasons an experiment run halts."""
 
-    MODEL_DECISION = "model_decision"
-    MAX_ROUNDS = "max_rounds"
     TOKEN_BUDGET = "token_budget"
     COST_BUDGET = "cost_budget"
+    MAX_ROUNDS = "max_rounds"
     WALL_TIME = "wall_time"
     NO_PROGRESS = "no_progress"
     LOCALITY_DENIAL = "locality_denial"
     RESERVATION_DENIAL = "reservation_denial"
+    MODEL_DECISION = "model_decision"
+
+
+@dataclass(frozen=True)
+class TerminalStopEvent:
+    canvas_id: str
+    trigger_id: str
+    predecessor_id: str
+    reason: StopReason
+    round_index: int
+    closure_id: str | None
+    notification_eligible: bool = True
+
+    @property
+    def audit_payload(self) -> dict[str, object]:
+        return {"canvas_id": self.canvas_id, "trigger_id": self.trigger_id, "predecessor_id": self.predecessor_id, "reason": self.reason.value, "round": self.round_index, "closure_id": self.closure_id, "notification_eligible": self.notification_eligible}
 
 
 @dataclass(frozen=True)
@@ -179,6 +191,7 @@ __all__ = [
     "RoutingDecision",
     "StopReason",
     "TaskContext",
+    "TerminalStopEvent",
     "TaskStage",
     "Usage",
     "UsageStatus",

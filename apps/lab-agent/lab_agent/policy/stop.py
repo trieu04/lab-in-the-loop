@@ -14,6 +14,12 @@ import hashlib
 
 from lab_agent.models.governance import Budget, StopReason
 
+TERMINAL_STOP_PRIORITY = (
+    StopReason.TOKEN_BUDGET, StopReason.COST_BUDGET, StopReason.MAX_ROUNDS,
+    StopReason.WALL_TIME, StopReason.NO_PROGRESS, StopReason.LOCALITY_DENIAL,
+    StopReason.RESERVATION_DENIAL, StopReason.MODEL_DECISION,
+)
+
 
 def result_signature(result_text: str) -> str:
     """A stable signature of a round's result, for no-progress detection.
@@ -65,4 +71,4 @@ class StopPolicy:
         return None
 
 
-__all__ = ["StopPolicy", "result_signature"]
+__all__ = ["StopPolicy", "TERMINAL_STOP_PRIORITY", "result_signature"]

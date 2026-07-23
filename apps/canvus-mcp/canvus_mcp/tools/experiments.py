@@ -23,6 +23,9 @@ def _markers() -> exp.ExpMarkers:
         idea=cfg.mcp_idea_marker,
         closed=cfg.mcp_exp_closed_marker,
         needs_input=cfg.mcp_exp_needs_input_marker,
+        validation=cfg.mcp_exp_validation_marker,
+        scientist_review=cfg.mcp_exp_scientist_review_marker,
+        lab_lead_approval=cfg.mcp_exp_lab_lead_approval_marker,
     )
 
 
@@ -61,8 +64,10 @@ def register(
         ``results``, ``robots``, ``closeds``, ``needs_inputs``), the pending
         forward triggers (``ideas_needing_setup`` — an idea connected from a
         RagCluster with no setup yet; ``setups_needing_run`` — a setup wired
-        to a robot with no result yet, each carrying its ``robot_id``), and
-        detected ``loops``. ``closeds``/``needs_inputs`` make terminal
+        to a robot with no result yet), pending validation/review requests,
+        and detected ``loops``. Gate markers are non-authorizing metadata:
+        their presence never establishes an actor, role, decision, or approval.
+        ``closeds``/``needs_inputs`` make terminal
         ``[EXP:Closed]`` and generated ``[EXP:Needs Input]`` widgets enumerable
         the same way ``setups``/``results`` are, so a caller can recover a
         prior run's widget by its idempotency tag without depending on any
@@ -72,7 +77,15 @@ def register(
         index = await _build_index(canvas_id)
         result = exp.scan_workflow(index, _markers())
         data_classification = classification_for_canvas(canvas_id)
-        for bucket in ("ideas_needing_setup", "setups_needing_run", "loops"):
+        for bucket in (
+            "ideas_needing_setup",
+            "mode_errors",
+            "setups_needing_run",
+            "setups_needing_validation",
+            "validations_needing_scientist_review",
+            "scientist_reviews_needing_lab_lead_approval",
+            "loops",
+        ):
             result[bucket] = [
                 {**item, "data_classification": data_classification} for item in result[bucket]
             ]

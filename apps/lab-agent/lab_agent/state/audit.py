@@ -141,11 +141,26 @@ def list_events(conn: sqlite3.Connection, *, canvas_id: str | None = None) -> li
     return [_row_to_event(row) for row in rows]
 
 
+def find_terminal_event(
+    conn: sqlite3.Connection, *, canvas_id: str, trigger_id: str
+) -> AuditEvent | None:
+    """Return the newest terminal audit for one trigger via the indexed hot path."""
+    row = conn.execute(
+        "SELECT * FROM audit_events "
+        "WHERE canvas_id=? AND event='loop_stopped' "
+        "AND json_extract(payload_json, '$.trigger_id')=? "
+        "ORDER BY sequence DESC LIMIT 1",
+        (canvas_id, trigger_id),
+    ).fetchone()
+    return _row_to_event(row) if row is not None else None
+
+
 __all__ = [
     "MAX_PAYLOAD_BYTES",
     "AuditChainTamperError",
     "AuditPayloadTooLargeError",
     "append_event",
+    "find_terminal_event",
     "list_events",
     "payload_size_bytes",
     "verify_chain",
