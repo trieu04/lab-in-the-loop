@@ -15,9 +15,12 @@ Workflow markers (title prefixes, except the idea marker which is in-text):
 - experiment closed: any widget whose title starts ``[EXP:Closed]`` (no
   ``widget_type`` restriction, like ``robot``, for Browser support)
 - needs input      : Note **or** Browser title starts ``[EXP:Needs Input]``
-  (a generated *prompt* artifact; the human's response to it stays a plain
-  Note this module never classifies specially -- it is just an idea/other
-  Note as far as detection is concerned)
+- validation       : Note **or** Browser title starts ``[EXP:Validation]``
+- scientist review : Note title starts ``[EXP:Scientist Review]``
+- lab-lead marker  : Note title starts ``[EXP:Lab Lead Approval]``
+
+The human markers are non-authorizing canvas metadata. Their presence never
+proves an actor, role, decision, or approval.
 
 Generated artifacts (setup/result/closed/needs-input) may be rendered as
 either a legacy Note or a Phase 3 Browser widget backed by the dynamic
@@ -30,7 +33,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from canvus_mcp.ragcluster import _attr, _widget_title
 
@@ -52,15 +55,49 @@ class ExpMarkers:
     idea: str = "{idea:"
     closed: str = "[EXP:Closed]"
     needs_input: str = "[EXP:Needs Input]"
+    validation: str = "[EXP:Validation]"
+    scientist_review: str = "[EXP:Scientist Review]"
+    lab_lead_approval: str = "[EXP:Lab Lead Approval]"
+
+
+ExecutionMode = Literal["manual", "auto"]
+ParseError = Literal["unsupported_mode"]
+
+
+@dataclass(frozen=True)
+class IdeaMarkerParse:
+    """Safe classification of an idea marker without retaining idea text."""
+
+    is_idea: bool
+    execution_mode: ExecutionMode | None = None
+    parse_error: ParseError | None = None
+
+
+def parse_idea_marker(text: object, marker: str = "{idea:") -> IdeaMarkerParse:
+    """Classify legacy and auto markers; unsupported modes fail closed."""
+    if not isinstance(text, str):
+        return IdeaMarkerParse(False)
+    if marker.endswith(":"):
+        marker_stem = marker[:-1]
+        modes = re.findall(rf"{re.escape(marker_stem)}\+([^:\s{{}}]+)(:)?", text)
+        if any(mode != "auto" for mode, _delimiter in modes):
+            return IdeaMarkerParse(False, parse_error="unsupported_mode")
+        if any(mode == "auto" and delimiter == ":" for mode, delimiter in modes):
+            return IdeaMarkerParse(True, execution_mode="auto")
+    if marker in text:
+        return IdeaMarkerParse(True, execution_mode="manual")
+    return IdeaMarkerParse(False)
 
 
 def _has_idea(w: Any, m: ExpMarkers) -> bool:
-    return _attr(w, "widget_type") == "Note" and m.idea in _attr(w, "text")
+    return _attr(w, "widget_type") == "Note" and parse_idea_marker(_attr(w, "text"), m.idea).is_idea
 
 
 def _is_generated_marker(w: Any, prefix: str) -> bool:
     """True if ``w`` is a generated artifact (Note or Browser) titled ``prefix``."""
-    return _attr(w, "widget_type") in _GENERATED_WIDGET_TYPES and _widget_title(w).startswith(prefix)
+    return _attr(w, "widget_type") in _GENERATED_WIDGET_TYPES and _widget_title(w).startswith(
+        prefix
+    )
 
 
 def _is_setup(w: Any, m: ExpMarkers) -> bool:
@@ -85,11 +122,35 @@ def _is_needs_input(w: Any, m: ExpMarkers) -> bool:
     return _is_generated_marker(w, m.needs_input)
 
 
-def _brief(w: Any) -> dict[str, str]:
-    return {
+def _is_validation(w: Any, m: ExpMarkers) -> bool:
+    return _is_generated_marker(w, m.validation)
+
+
+def _is_scientist_review_marker(w: Any, m: ExpMarkers) -> bool:
+    return _attr(w, "widget_type") == "Note" and _widget_title(w).startswith(m.scientist_review)
+
+
+def _is_lab_lead_approval_marker(w: Any, m: ExpMarkers) -> bool:
+    return _attr(w, "widget_type") == "Note" and _widget_title(w).startswith(m.lab_lead_approval)
+
+
+def _brief(w: Any, execution_mode: ExecutionMode | None = None) -> dict[str, str]:
+    brief = {
         "widget_id": _attr(w, "id"),
         "widget_type": _attr(w, "widget_type"),
         "title": _widget_title(w),
+    }
+    if execution_mode is not None:
+        brief["execution_mode"] = execution_mode
+    return brief
+
+
+def _mode_error_brief(w: Any, parse_error: ParseError) -> dict[str, str]:
+    """Describe an invalid marker without exposing untrusted Note text."""
+    return {
+        "widget_id": _attr(w, "id"),
+        "widget_type": _attr(w, "widget_type"),
+        "parse_error": parse_error,
     }
 
 
@@ -98,4 +159,4 @@ def _round_of(w: Any) -> int:
     return int(match.group(1)) if match else 0
 
 
-__all__ = ["ExpMarkers"]
+__all__ = ["ExpMarkers", "IdeaMarkerParse", "parse_idea_marker"]

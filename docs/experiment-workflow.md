@@ -5,9 +5,13 @@
 The Lab-in-the-Loop workflow is driven entirely by Canvus widgets and connectors. A connector is both a visual edge and an execution signal. The agent watches the canvas and reacts only when the required edge pattern exists.
 
 ```text
-docs ─► RAGCluster_ ─► {idea: ...} ─► [EXP:Setup v001] ─► Robot_ ─► [EXP:Result v001]
-                                          ▲                              │
-                                          └──── user connects result ────┘
+docs ─► RAGCluster_ ─► {idea: ...} ─► [EXP:Setup v001] ─► [EXP:Validation]
+                                                                  │
+                                          scientist approval ─► lab-lead approval
+                                                                  │
+                                          optional Phase 8 mock branch only ─► Robot_ ─► [EXP:Result v001]
+                                                                                         │
+                                          ◄──────────────── user connects result ────────┘
 ```
 
 The result-to-setup back-edge means: “analyse this result against this setup and decide whether to run another round.”
@@ -22,7 +26,9 @@ The result-to-setup back-edge means: “analyse this result against this setup a
 | `Robot_` | Any widget/title marker | User/system | Mock execution target |
 | `[EXP:Result vNNN]` | Browser (generated) or legacy Note | Agent | Clearly mock result; one widget per setup, each round appended as version `vNNN` |
 | `[EXP:Closed]` | Browser (generated) or legacy Note | Agent | Stop decision, reason, confidence, next action |
-| `[EXP:Needs Input]` | Browser (generated prompt/status) | Agent | Infrastructure marker for requesting human input; the human response is a Note |
+| `[EXP:Needs Input]` | Browser (generated prompt/status) | Agent | Infrastructure marker for grounded-input or execution-mode requests; it is not approval evidence |
+| `[EXP:Validation]` | Browser (generated) | Agent | Projection of one typed, durable in-silico validation result |
+| `[EXP:Validation] Approval Status` | Browser (generated) | Agent | Projection of durable approval evidence and its current gate state; never an approval input |
 
 Marker matching is an exact title-**prefix** check (`str.startswith`), confirmed in `canvus_mcp/experiment_widgets.py` (`_is_robot`, `_is_setup`, `_is_result`) — e.g. a widget titled `Robot_Arm_1` matches `Robot_`, but a typo like `Robott_` or a differently-cased marker does not. Setup/Result markers classify both generated Browser widgets and legacy Notes; `{idea: ...}` is Note-only.
 
@@ -49,25 +55,29 @@ Agent action:
 5. If executable, create `[EXP:Setup v001]` as a generated Browser artifact backed by `ArtifactStore` and connect idea → setup.
 6. If evidence is insufficient or ambiguity remains, create one deduplicated `[EXP:Needs Input]` Browser artifact instead; invalid citations write nothing and stay retryable.
 
-### 2. Setup to robot
+### 2. Setup to validation and ordered approvals
+
+```text
+[EXP:Setup vNNN] ─► [EXP:Validation] ─► [EXP:Validation] Approval Status
+```
+
+The watcher validates each canonical Setup Browser payload with the local deterministic adapter. Its result is visibly labelled **“DETERMINISTIC DRY RUN — NOT SCIENTIFIC VALIDATION”**: it checks proposal structure only and does not call a scientific simulator or external provider. The typed real-adapter boundary remains disabled/unimplemented and fails closed.
+
+Validation and approvals are durable, canvas-scoped SQLite evidence. A proposal and result are bound by typed canonical SHA-256 hashes using `litl-canonical-json-v1`. The only authorization order is: validation `proceed` → credential-verified scientist decision → credential-verified lab-lead decision. Replays are idempotent despite volatile identity-verification timestamps; proposal edits or a different validation hash retain prior history but make that history stale and non-authorizing.
+
+Canvas Notes, titles, connectors, and author text are topology/projection data only. They cannot authenticate, create, or advance an approval. Credentials are supplied to an `IdentityProvider` for verification and are never persisted.
+
+### 3. Approved setup to mock robot result (explicit Phase 8 branch)
 
 ```text
 [EXP:Setup vNNN] ─► Robot_
 ```
 
-Trigger surfaced as `setups_needing_run` when:
+A setup-to-robot connector alone never runs execution. `wet_lab_execution_enabled` defaults to `false`, so `watch` does not dispatch this legacy path and never directly calls legacy `run_loop`. If a future operator explicitly enables the Phase 8 branch, the current implementation still requires current durable validation/scientist/lab-lead evidence (and manual activation for a first-round manual run) before it can call the mock result path. That branch creates a model-generated `[EXP:Result vNNN]` **MOCK_RESULT** artifact only; no hardware, robot, wet-lab, or laboratory SDK exists.
 
-- setup is connected to a robot marker;
-- setup has no corresponding result yet.
+Direct legacy `run_loop` compatibility remains model-generated mock-result behavior. It is not watcher-dispatched.
 
-Agent action:
-
-1. Read setup text from the canonical artifact payload, falling back to legacy Note text during migration.
-2. Ask model for a mock result consistent with the setup.
-3. Create `[EXP:Result vNNN]` as a generated Browser artifact whose canonical payload includes `Setup: <setup_id>` and `Round: <round_number>` text for later model reads.
-4. Connect robot → result Browser widget.
-
-### 3. Result to setup loop
+### 4. Result to setup loop
 
 ```text
 [EXP:Result vNNN] ─► [EXP:Setup vNNN]
@@ -92,7 +102,7 @@ Agent action:
 
 ## Generated artifact payload markers
 
-Generated Setup/Result/Closed and generated Needs Input prompt/status artifacts are Browser widgets. Their model-readable text lives in the canonical `ArtifactStore` payload; legacy Notes still expose Setup/Result/Closed text directly during migration. Human-authored responses to approval/review/input requests remain Notes.
+Generated Setup/Result/Closed, Needs Input, Validation, and Approval Status artifacts are Browser widgets. Their model-readable text lives in the canonical `ArtifactStore` payload; legacy Notes still expose Setup/Result/Closed text directly during migration. Validation and Approval Status widgets are projections of durable evidence, not an approval interface. Human-authored Notes, titles, connectors, and author text remain non-authorizing topology only.
 
 ### Setup artifact
 
@@ -147,7 +157,7 @@ Closed artifacts are classified in `scan_experiment_workflow`'s `closeds` bucket
 
 ### Needs Input artifact
 
-`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, reason hash, optional context, round, and `NEEDS_REVIEW` artifact state. Grounding uses it for explicit insufficient-evidence or unresolved-ambiguity outcomes, keyed by `(canvas, predecessor_id, reason_hash)` so repeated polls for the same reason converge on one Browser artifact and connector. New generated Browser artifacts are positioned near their source/predecessor widget when Canvus geometry is available: setups near ideas, results near setups, closed nodes to the right of their predecessor (normally a result), and Needs Input prompts below their predecessor; missing, malformed, or unusable geometry falls back to the deterministic legacy grid. This is infrastructure for a request/status marker only. The implementation does not yet provide future approval workflow transitions, approve/reject buttons, or wet-lab gate enforcement; the human-authored response remains a separate Note.
+`write_needs_input_node` can create a generated `[EXP:Needs Input]` Browser artifact with a message, reason, reason hash, optional context, round, and `NEEDS_REVIEW` artifact state. Grounding uses it for explicit insufficient-evidence or unresolved-ambiguity outcomes, keyed by `(canvas, predecessor_id, reason_hash)` so repeated polls for the same reason converge on one Browser artifact and connector. New generated Browser artifacts are positioned near their source/predecessor widget when Canvus geometry is available: setups near ideas, results near setups, closed nodes to the right of their predecessor (normally a result), and Needs Input prompts below their predecessor; missing, malformed, or unusable geometry falls back to the deterministic legacy grid. This is infrastructure for a request/status marker only. The Needs Input artifact itself cannot authorize approval transitions, provide approve/reject controls, or enable wet-lab execution; those gates require credential-bearing service APIs and current durable evidence, while the human-authored response remains a separate Note.
 
 ## Implementation-plan Phase 6 ingestion as grounding (roadmap Phase 4c)
 
@@ -227,6 +237,11 @@ Use `lab-agent once` for smoke tests or scripted operation.
 | Ingestion source malformed/encrypted/oversized/unsupported | worker persists a typed terminal unit failure; chunks are not fabricated; operator retry/cancel remains canvas-scoped |
 | Ingestion worker interrupted | expired lease is reclaimed by a later worker; current-generation atomic completion prevents duplicate/stale chunks |
 | Ingestion read/auth/result bound denied | fixed sanitized denial/error; no mutation, raw-path disclosure, evidence insertion, or provider call follows |
+| Validation adapter fails, times out, or returns an invalid typed result | fail closed; append only safe failure metadata and do not advance the gate |
+| Approval comes from a Canvas Note/title/connector/author field | ignored for authorization; only credential-bearing `IdentityProvider` verification can create durable approval evidence |
+| Approval is replayed after verification timestamp changes | idempotent when the stable approval content matches; volatile verification/decision timestamps do not authorize a changed proposal or validation result |
+| Proposal is edited or validation changes | prior validation/approval history remains append-only but is stale and cannot authorize the edited proposal |
+| Wet-lab execution is disabled (default) | watcher does not dispatch `setups_needing_run`; no model/mock result is produced from a robot connector |
 | Model stops after a single experiment | override the early stop and run at least `loop_min_rounds` experiments (default 2) before honoring a model stop; governance/backstop reasons are never overridden |
 | Loop keeps continuing | close with the first distinct terminal reason: maximum rounds, token budget, cost budget, wall time, or no-progress; model stop remains its own reason |
 

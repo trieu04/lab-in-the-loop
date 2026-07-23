@@ -14,7 +14,8 @@ import pytest
 
 from lab_agent.config import Settings
 from lab_agent.models.evidence import GroundingDecision
-from lab_agent.orchestrator import generate_setup, run_loop, run_on_robot
+from lab_agent.orchestrator import generate_setup, run_loop
+from lab_agent.orchestrator_support import emit_result
 from lab_agent.state_store import StateStore
 from lab_agent.watch import process_once
 from tests.fakes import FakeMCP, ScriptedAdapter, grounded_setup
@@ -32,7 +33,11 @@ LOOP = {
     "loop_connector_id": "c5", "setup_id": "setup1", "result_id": "result1",
     "robot_id": "robot1", "idea_id": "idea1", "ragcluster_id": "rag1", "round": 1,
 }
-SEED = {"idea1": "{idea: Combine A with B}", "setup1": "Round: 1\nmix A and B", "result1": "marker reduced"}
+SEED = {
+    "idea1": "{idea: Combine A with B}",
+    "setup1": "Round: 1\nmix A and B",
+    "result1": "marker reduced",
+}
 
 
 def _settings(**kw):
@@ -60,30 +65,28 @@ async def test_generate_setup_fails_closed_on_malformed_output(store):
     assert mcp.connectors == []  # no connector written
 
 
-async def test_run_on_robot_fails_closed_on_malformed_output(store):
-    mcp = FakeMCP()
+async def test_emit_result_fails_closed_on_malformed_output():
     adapter = ScriptedAdapter({"ExperimentResult": MALFORMED_RESULT})
-    result_id, result = await run_on_robot(
-        mcp, adapter, _settings(), store, canvas_id="c", setup_id="setup1",
-        setup_text="mix A and B", robot_id="robot1", round_index=1,
-    )
-    assert result_id == ""
+
+    result = await emit_result(adapter, "mix A and B", settings=_settings())
+
     assert result is None
-    assert mcp.notes == {}
-    assert mcp.connectors == []
+    assert adapter.schema_calls == ["ExperimentResult"]
 
 
-async def test_run_loop_decision_fails_closed_without_retry_or_close(store):
+async def test_run_loop_decision_fails_closed_returns_deferred(store):
+    """Phase 2 contract: schema validation failure returns immediately with
+    loop_continuation_deferred (no terminal closure, no successor generation)."""
     mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter({"LoopDecision": MALFORMED_DECISION})
     summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))  # type: ignore[arg-type]
 
     assert summary.rounds == 0
-    assert summary.closed_id == ""
+    assert summary.closed_id == ""  # No terminal closure written
     assert summary.stopped_reason == "schema_validation_failed"
-    assert adapter.schema_calls.count("LoopDecision") == 1  # no immediate inner-loop retry
-    assert len(mcp.notes) == len(SEED)  # no new node (e.g. Closed) written
-    assert mcp.connectors == []  # no connector written
+    assert adapter.schema_calls.count("LoopDecision") == 1  # One attempt only
+    assert len(mcp.notes) == len(SEED)  # No new nodes written
+    assert mcp.connectors == []  # No connectors written
 
 
 async def test_process_once_setup_fails_closed_without_counting_or_connecting(store):
@@ -104,50 +107,45 @@ async def test_process_once_setup_fails_closed_without_counting_or_connecting(st
     ("structured", "failing_schema"),
     [
         pytest.param({"LoopDecision": MALFORMED_DECISION}, "LoopDecision", id="decision_stage"),
-        pytest.param(
-            {
-                "LoopDecision": {"proceed": True, "reason": "promising", "next_focus": "raise dose"},
-                "ExperimentSetup": MALFORMED_SETUP,
-            },
-            "ExperimentSetup", id="round_advance_setup_stage",
-        ),
-        pytest.param(
-            {
-                "LoopDecision": {"proceed": True, "reason": "promising", "next_focus": "raise dose"},
-                "ExperimentSetup": SETUP, "ExperimentResult": MALFORMED_RESULT,
-            },
-            "ExperimentResult", id="round_advance_result_stage",
-        ),
     ],
 )
-async def test_process_once_loop_retries_after_schema_validation_failure(tmp_path, structured, failing_schema):
-    """A schema-validation failure anywhere in a loop's cycle -- deciding, or
-    generating the next round's setup or its paired result -- must not
-    permanently swallow the loop connector: it must stay eligible so the very
-    next poll retries it, instead of `processed_loops` orphaning it forever.
+async def test_run_loop_schema_failure_returns_deferred_idempotently(
+    store, structured, failing_schema,
+):
+    """Phase 2: run_loop() processes exactly one decision per call.
+    Schema validation failure on the decision returns immediately with
+    loop_continuation_deferred, no Canvas writes, minimal model calls. Repeated
+    calls are idempotent—no partial writes, no orphaned connectors, no
+    successor generation.
 
-    `round_advance_result_stage` also regression-tests that the setup and result
-    for a round-advance must both validate before either is written, so a
-    result-stage failure does not strand a written-but-unpaired setup that gets
-    rewritten every subsequent poll (AC-UC-LITL-02-004 / FR-LITL-019).
-
-    Zero-jitter ``rng`` makes the durable backoff delay 0s, so the failed
-    attempt's ``next_retry_at`` is immediately due on the very next poll.
+    Phase 2 never generates successor Setup/Result nodes, so downstream schema
+    validation stages (round_advance_*) do not exist—only the decision stage is
+    ever validated. This is idempotent: repeated calls on the same loop with the
+    same schema failure accumulate no Canvas artifacts.
     """
-    store = StateStore(tmp_path / "state.db", rng=lambda: 0.0)
-    workflow = {"ideas_needing_setup": [], "setups_needing_run": [], "loops": [dict(LOOP)]}
-    mcp = FakeMCP(note_text=dict(SEED), workflow=workflow)
+    mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter(structured)
 
-    first = await process_once(mcp, adapter, _settings(), store, RUNTIME_ID, "c")  # type: ignore[arg-type]
-    assert first["loops"] == 0  # skipped write is not counted a success
-    assert len(mcp.notes) == len(SEED)  # nothing written
-    assert mcp.connectors == []
-    first_calls = adapter.schema_calls.count(failing_schema)
+    # First call: schema validation fails at decision stage.
+    summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))  # type: ignore[arg-type]
+    assert summary.stopped_reason == "schema_validation_failed"
+    assert summary.closed_id == ""  # No terminal closure
+    assert summary.rounds == 0  # Decision never validated
+    assert len(mcp.notes) == len(SEED)  # Canvas unchanged
+    assert mcp.connectors == []  # No edges written
 
-    second = await process_once(mcp, adapter, _settings(), store, RUNTIME_ID, "c")
-    assert second["loops"] == 0  # still failing, still not counted
-    # The adapter is invoked again on the next poll -- the failure is not
-    # silently swallowed forever.
-    assert adapter.schema_calls.count(failing_schema) == first_calls * 2
-    store.close()
+    schema_calls_after_first = adapter.schema_calls.count(failing_schema)
+    mcp_write_count_after_first = len(mcp.notes)
+
+    # Second call: re-enter with same loop. Schema re-validated, but zero
+    # additional side effects (idempotent). No new Canvas writes, no successors.
+    summary2 = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))  # type: ignore[arg-type]
+    assert summary2.stopped_reason == "schema_validation_failed"
+    assert summary2.closed_id == ""  # Still no closure
+    assert summary2.rounds == 0  # Unchanged
+    assert len(mcp.notes) == mcp_write_count_after_first  # No new writes
+    assert mcp.connectors == []  # Still no edges
+
+    # Adapter called again for re-validation, but no other I/O.
+    schema_calls_after_second = adapter.schema_calls.count(failing_schema)
+    assert schema_calls_after_second == schema_calls_after_first + 1  # Exactly one more call

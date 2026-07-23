@@ -10,6 +10,9 @@ mirroring ``test_experiments.py``'s fixture idiom.
 
 from __future__ import annotations
 
+import pytest
+
+from canvus_mcp.experiment_widgets import parse_idea_marker
 from canvus_mcp.experiments import ExpMarkers, detect_experiment_loops, scan_workflow
 from canvus_mcp.ragcluster import ConnectorIndex
 
@@ -152,3 +155,43 @@ def test_human_response_note_to_needs_input_is_not_itself_classified():
     snap = scan_workflow(_index(widgets), M)
     assert [b["widget_id"] for b in snap["needs_inputs"]] == ["ni1"]
     assert snap["ideas"] == []  # the response note is not an idea either
+
+
+@pytest.mark.parametrize(
+    ("text", "is_idea", "execution_mode", "parse_error"),
+    [
+        ("draft {idea: malformed-but-legacy", True, "manual", None),
+        ("draft {idea+auto: execute automatically}", True, "auto", None),
+        ("{idea+auto: valid} {idea+batch: must fail closed}", False, None, "unsupported_mode"),
+        ("{idea+auto: allowed} {idea+batch}", False, None, "unsupported_mode"),
+        ("draft {idea+batch: do not run}", False, None, "unsupported_mode"),
+        ("draft {idea malformed", False, None, None),
+    ],
+)
+def test_parse_idea_marker_preserves_legacy_and_rejects_unknown_modes(
+    text, is_idea, execution_mode, parse_error
+):
+    parsed = parse_idea_marker(text)
+    assert parsed.is_idea is is_idea
+    assert parsed.execution_mode == execution_mode
+    assert parsed.parse_error == parse_error
+
+
+def test_parse_idea_marker_preserves_custom_legacy_marker_without_colon():
+    parsed = parse_idea_marker("draft {custom-marker+auto: legacy text", "{custom-marker")
+    assert (parsed.is_idea, parsed.execution_mode, parsed.parse_error) == (True, "manual", None)
+
+
+def test_browser_idea_markers_remain_non_actionable_even_with_auto_mode():
+    widgets = [_w("auto-browser", "Browser", text="{idea+auto: do not count}")]
+    snap = scan_workflow(_index(widgets), M)
+    assert snap["ideas"] == []
+    assert snap["ideas_needing_setup"] == []
+    assert snap["mode_errors"] == []
+
+
+def test_human_response_note_is_not_an_idea_or_mode_error():
+    widgets = [_w("response", "Note", text="Proceed with the proposed experiment")]
+    snap = scan_workflow(_index(widgets), M)
+    assert snap["ideas"] == []
+    assert snap["mode_errors"] == []

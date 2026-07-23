@@ -20,8 +20,6 @@ def _index(widgets):
     return ConnectorIndex.build(widgets, M.ragcluster)
 
 
-# A canvas with the full chain rag -> idea -> setup -> robot -> result, plus the
-# loop back-edge result -> setup.
 def _full_loop_widgets():
     return [
         _w("rag1", "Image", title="RAGCluster_lung"),
@@ -126,22 +124,76 @@ def test_scan_setup_with_result_is_not_pending():
     assert [b["widget_id"] for b in snap["results"]] == ["result1"]
 
 
-def test_scan_reports_closed_note_without_needing_a_connector():
-    """A closed note must be enumerable via the ``closeds`` bucket on its own
-    -- unlike setup/result, it has no defining connector, so classification
-    must not require one (this is what makes tag-based crash recovery for
-    closed notes possible independent of the result -> closed connector)."""
-    widgets = [_w("closed1", "Note", title="[EXP:Closed] after v001 #a1b2c3d4e5f6")]
-    snap = scan_workflow(_index(widgets), M)
-    assert [b["widget_id"] for b in snap["closeds"]] == ["closed1"]
-    assert snap["ideas"] == snap["setups"] == snap["results"] == snap["robots"] == []
+def test_scan_preserves_legacy_idea_precedence_and_additive_mode_errors():
+    snap = scan_workflow(_index([
+        _w("closed1", "Note", "[EXP:Closed] after v001", "{idea+batch: stop}"),
+        _w("legacy-setup", "Note", "[EXP:Setup v001]", "{idea: preserve precedence}"),
+    ]), M)
+    assert [brief["widget_id"] for brief in snap["closeds"]] == ["closed1"]
+    assert snap["mode_errors"] == [{"widget_id": "closed1", "widget_type": "Note", "parse_error": "unsupported_mode"}]
+    assert [brief["widget_id"] for brief in snap["ideas"]] == ["legacy-setup"]
+    assert snap["setups"] == snap["results"] == snap["robots"] == []
 
 
 def test_closed_note_is_not_misclassified_as_robot():
-    """``_is_closed`` must be checked before ``_is_robot`` in the
-    classification order so a closed note (no widget_type restriction, same
-    as robot) lands in ``closeds``, not ``robots``."""
     widgets = [_w("closed1", "Note", title="[EXP:Closed] after v001")]
     snap = scan_workflow(_index(widgets), M)
     assert snap["robots"] == []
     assert [b["widget_id"] for b in snap["closeds"]] == ["closed1"]
+
+
+def test_scan_reports_ordered_gate_requests():
+    setup = [_w("setup", "Note", title="[EXP:Setup v001]")]
+    validation = _w("validation", "Browser", title="[EXP:Validation] proceed")
+    review = _w("review", "Note", title="[EXP:Scientist Review]")
+    first = scan_workflow(_index(setup), M)
+    second = scan_workflow(_index(setup + [validation, _conn("sv", "setup", "validation")]), M)
+    third = scan_workflow(
+        _index(setup + [validation, review, _conn("sv", "setup", "validation"), _conn("vr", "validation", "review")]), M
+    )
+    assert [item["widget_id"] for item in first["setups_needing_validation"]] == ["setup"]
+    assert second["validations_needing_scientist_review"] == [{"widget_id": "validation", "widget_type": "Browser", "title": "[EXP:Validation] proceed", "setup_id": "setup"}]
+    assert third["scientist_reviews_needing_lab_lead_approval"] == [{"widget_id": "review", "widget_type": "Note", "title": "[EXP:Scientist Review]", "setup_id": "setup", "validation_id": "validation"}]
+    complete = setup + [validation, review, _w("lab", "Note", title="[EXP:Lab Lead Approval]")]
+    complete += [_conn("sv", "setup", "validation"), _conn("vr", "validation", "review"), _conn("rl", "review", "lab")]
+    assert scan_workflow(_index(complete), M)["scientist_reviews_needing_lab_lead_approval"] == []
+
+
+def test_gate_requests_require_the_expected_connector():
+    widgets = [
+        _w("setup", "Note", title="[EXP:Setup v001]"),
+        _w("validation", "Browser", title="[EXP:Validation] proceed"),
+        _w("review", "Note", title="[EXP:Scientist Review]"),
+        _conn("sv", "setup", "validation"),
+    ]
+    snap = scan_workflow(_index(widgets), M)
+    assert [item["widget_id"] for item in snap["validations_needing_scientist_review"]] == ["validation"]
+    assert snap["scientist_reviews_needing_lab_lead_approval"] == []
+
+
+def test_gate_requests_reject_wrong_widget_types():
+    widgets = [
+        _w("setup", "Note", title="[EXP:Setup v001]"),
+        _w("validation", "Browser", title="[EXP:Validation] proceed"),
+        _w("review", "Browser", title="[EXP:Scientist Review]"),
+        _conn("sv", "setup", "validation"),
+        _conn("vr", "validation", "review"),
+    ]
+    snap = scan_workflow(_index(widgets), M)
+    assert snap["scientist_review_markers"] == []
+    assert [item["widget_id"] for item in snap["validations_needing_scientist_review"]] == ["validation"]
+
+
+def test_free_text_and_authorship_never_authorize_gate_requests():
+    note = _w("note", "Note", title="Scientist approved this", text="Proceed to wet lab")
+    note.update({"author": "scientist", "role": "lab-lead", "decision": "approve"})
+    widgets = [
+        _w("setup", "Note", title="[EXP:Setup v001]"),
+        _w("validation", "Browser", title="[EXP:Validation] proceed"),
+        note,
+        _conn("sv", "setup", "validation"),
+        _conn("vn", "validation", "note"),
+    ]
+    snap = scan_workflow(_index(widgets), M)
+    assert snap["scientist_review_markers"] == []
+    assert [item["widget_id"] for item in snap["validations_needing_scientist_review"]] == ["validation"]

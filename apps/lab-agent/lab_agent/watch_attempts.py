@@ -15,7 +15,9 @@ from lab_agent.config import Settings
 from lab_agent.state_store import AttemptStatus, StateStore
 
 Work = Callable[[], Awaitable[tuple[bool, str]]]
-_SAFE_FAILURE_DETAILS = frozenset({"invalid_citation", "schema_validation_failed"})
+_SAFE_FAILURE_DETAILS = frozenset(
+    {"invalid_citation", "schema_validation_failed", "notification_enqueue_failed"}
+)
 _SKIP_REASONS = {
     AttemptStatus.COMPLETED: (AttemptStatus.COMPLETED.value, AttemptStatus.COMPLETED.value),
     AttemptStatus.QUARANTINED: (AttemptStatus.QUARANTINED.value, AttemptStatus.QUARANTINED.value),

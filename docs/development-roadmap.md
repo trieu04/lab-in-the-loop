@@ -18,8 +18,9 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 | Grounding/evidence gate | Complete | Per-run bounded evidence ledger, deterministic source ids, citation validation before writes, untrusted-data envelope, approved acronym dictionary scan across idea/setup/evidence excerpts, explicit Needs Input for insufficient evidence/ambiguity, and metadata-only durable audit. Future wiki/KG/vector sources remain adapters/external gates. |
 | Governance and model routing | Complete for local/source gates | Provider-neutral task-stage routing; pre-dispatch locality/known-pricing authorization; exact/estimated usage; restart-safe reservations/intents; typed retry/reconciliation; and terminal stop closures. Final local verification: `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED. Organization-approved endpoint/classification matrix, price maintenance, invoice reconciliation, and live SDK/API checks remain operational gates. |
 | Resumable local-source ingestion | Complete for local/source gates (2026-07-19) | Separate SQLite/WAL ingestion ledger and protected cache; SHA-256/extractor-version dedup; standalone leased worker component; bounded local extractors; authenticated canvas-scoped status/chunk reads; evidence/locality integration. No deployment approval, worker CLI, queue/object store, automatic retention, hosted CI, live credentials, or large-format validation is claimed. |
-| Real robot integration | Future | Mock-only for now |
-| Flywheel/in-silico gates | Future | Documented, not implemented |
+| Phase 7 validation and approval gates | Complete for local/source infrastructure (2026-07-23) | Typed canonical `litl-canonical-json-v1` SHA-256 proposal/result hashes; deterministic dry-run validation visibly not scientific; canvas-scoped append-only validation/approval evidence; credential-verified scientist then lab-lead gates; Browser projections only. |
+| Real robot integration | Future | Phase 7 execution is disabled by default. An explicit Phase 8-compatible branch remains model-generated `MOCK_RESULT` behavior only; no hardware/lab SDK exists. |
+| Flywheel / real in-silico integration | Future | Phase 7 implements deterministic/durable gate infrastructure, not a real scientific adapter or Flywheel integration. |
 
 ## Phase 0 — Repository extraction
 
@@ -232,9 +233,9 @@ Success criteria met locally:
 
 ## Phase 5 — In-silico validation gate
 
-**Status:** Future
+**Status:** Complete for Phase 7 local/source gate infrastructure (2026-07-23); real scientific adapter remains Future
 
-Goal: add a digital-twin/in-silico step before wet lab execution.
+Goal: add a fail-closed validation step before any eligible execution state.
 
 Workflow target:
 
@@ -247,15 +248,22 @@ AI Experiment Design
 → Lab Execution
 ```
 
-Success criteria:
+Completed Phase 7 local/source infrastructure:
 
-- Setup can be routed to an in-silico validation node.
-- Result includes predicted outcome, assumptions, risk flags, and recommendation.
-- Wet-lab execution remains blocked until approval gate is explicit.
+- Typed `InSilicoRequest`/`InSilicoResult` contracts use canonical SHA-256 hashes under `litl-canonical-json-v1`.
+- The deterministic local adapter returns structured predicted outcome, confidence, uncertainty, assumptions, risk flags, recommended changes, and proceed/revise/reject. Its output is explicitly not scientific validation; the real adapter is disabled/unimplemented and fails closed.
+- Validation and approval evidence is append-only SQLite state scoped to the canvas. Retries/recovery/restarts and stable approval replay are covered; stale proposal/result evidence is retained but non-authorizing.
+- Browser validation and approval-status artifacts are projections only. Canvas Notes, titles, connectors, and author text cannot approve.
+- `wet_lab_execution_enabled` defaults false. The watcher does not dispatch legacy `run_loop` or call `run_on_robot` by default.
+
+Still Future:
+
+- A real scientific/digital-twin adapter and its operational/provider approvals.
+- Any hardware, robotic-lab, wet-lab, Flywheel, or laboratory SDK integration.
 
 ## Phase 6 — In-silico, human approval, Flywheel, and lab integration
 
-**Status:** Future
+**Status:** Partially complete — Phase 7 durable scientist/lab-lead approval gates delivered; Flywheel and real lab integration remain Future
 
 Goal: replace mock robot results with real execution/result ingestion where authorized, gated by explicit review and approval.
 
@@ -275,18 +283,18 @@ Candidate integrations:
 
 Safety requirements:
 
-- explicit scientist review and lab-lead approval before wet-lab execution;
-- audit log;
-- dry-run mode;
-- rollback/abort path;
-- no autonomous wet-lab execution without durable authorization.
+- implemented: credential-verified scientist review then lab-lead approval, both bound to current durable validation/proposal evidence;
+- implemented: append-only evidence/audit and deterministic dry-run mode visibly distinguished from scientific validation;
+- implemented: no autonomous execution by default (`wet_lab_execution_enabled=false`);
+- Future: real-adapter operational controls, hardware abort/rollback, and a real laboratory execution boundary.
 
 Success criteria:
 
-- Real result artifacts link back to setup id and round.
-- Analysis output is ingested into canvas/knowledge store.
-- Next-round decision uses measured results, not mock data.
-- No wet-lab step runs without a recorded scientist-review and lab-lead-approval decision.
+- Complete locally: no eligible execution state can be projected without current scientist-review then lab-lead approval evidence.
+- Future: Real result artifacts link back to setup id and round.
+- Future: Analysis output is ingested into canvas/knowledge store.
+- Future: Next-round decision uses measured results, not mock data.
+- Future: A real wet-lab step runs only through a reviewed hardware/lab integration after explicit operational authorization.
 
 ## Phase 7 — Production hardening, multi-user deployment, and observability
 

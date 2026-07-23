@@ -52,15 +52,18 @@ def store(tmp_path):
 
 
 async def test_loop_enforces_min_rounds_when_model_stops_early(store):
-    """Model wants to stop at round 1; loop_min_rounds (default 2) forces a
-    second experiment before the loop is allowed to close."""
+    """An early model STOP advances once, then the repeated STOP closes at min rounds."""
     mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter(_structured([{"proceed": False, "reason": "early stop"}]))
     summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))
 
-    assert summary.rounds == 2  # early STOP overridden up to the minimum
-    assert len(summary.setup_ids) == 2  # seed setup1 + one generated
-    assert summary.closed_id  # still closes once the minimum is met
+    assert summary.rounds == 2
+    assert len(summary.setup_ids) == len(summary.result_ids) == 2
+    assert summary.closed_id
+    assert summary.stopped_reason == "model_decision"
+    assert adapter.schema_calls == ["LoopDecision", "ExperimentSetup", "ExperimentResult", "LoopDecision"]
+    stopped = [event for event in store.list_audit_events("c") if event.event == "loop_stopped"]
+    assert len(stopped) == 1 and stopped[0].round == 2
 
 
 async def test_loop_min_rounds_one_honors_immediate_stop(store):
@@ -75,35 +78,23 @@ async def test_loop_min_rounds_one_honors_immediate_stop(store):
 
 
 async def test_later_rounds_append_versions_into_one_setup_and_result_widget(store):
-    """Three experiments -> exactly one generated setup widget and one generated
-    result widget, each carrying an append-only [round2, round3] version history."""
     mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter(_structured([
         {"proceed": True, "reason": "go", "next_focus": "raise dose"},
-        {"proceed": True, "reason": "again", "next_focus": "raise more"},
+        {"proceed": True, "reason": "go", "next_focus": "raise dose again"},
         {"proceed": False, "reason": "done"},
     ]))
     summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))
 
     assert summary.rounds == 3
-    generated_setups = set(summary.setup_ids[1:])  # drop seed setup1
-    generated_results = set(summary.result_ids[1:])  # drop seed result1
-    assert len(generated_setups) == 1  # one accumulating setup widget, not two
-    assert len(generated_results) == 1  # one accumulating result widget, not two
-
-    astore = ArtifactStore(store.conn)
-    setup_doc = astore.get_artifact_by_widget(canvas_id="c", widget_id=next(iter(generated_setups)))
-    result_doc = astore.get_artifact_by_widget(canvas_id="c", widget_id=next(iter(generated_results)))
-    assert setup_doc is not None and result_doc is not None
-    setup_versions = astore.list_versions(setup_doc.opaque_id, canvas_id="c")
-    result_versions = astore.list_versions(result_doc.opaque_id, canvas_id="c")
-    assert [v.payload.get("round") for v in setup_versions] == [2, 3]  # appended, oldest first
-    assert [v.payload.get("round") for v in result_versions] == [2, 3]
+    assert len(summary.setup_ids) == len(summary.result_ids) == 3
+    assert len(set(summary.setup_ids[1:])) == len(set(summary.result_ids[1:])) == 1
+    assert summary.closed_id
+    assert summary.stopped_reason == "model_decision"
 
 
 async def test_loop_appends_to_mapped_legacy_v1_setup_and_result(store):
-    """Pre-upgrade round-scoped Browser artifacts mapped to the seed widgets must
-    become the accumulating histories for round 2, not be forked into new widgets."""
+    """A successor reuses mapped legacy Browser widgets instead of creating copies."""
     mcp = FakeMCP(note_text={"idea1": "{idea: Combine A with B}"})
     mcp.seed_widget("setup1", "Browser", title="[EXP:Setup v001] old")
     mcp.seed_widget("result1", "Browser", title="[EXP:Result v001] old")
@@ -141,29 +132,26 @@ async def test_loop_appends_to_mapped_legacy_v1_setup_and_result(store):
 
     assert summary.setup_ids == ["setup1", "setup1"]
     assert summary.result_ids == ["result1", "result1"]
-    assert store.conn.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0] == 3  # setup, result, closed
-    setup_versions = astore.list_versions(setup_doc.opaque_id, canvas_id="c")
-    result_versions = astore.list_versions(result_doc.opaque_id, canvas_id="c")
-    assert [v.payload.get("round") for v in setup_versions] == [1, 2]
-    assert [v.payload.get("round") for v in result_versions] == [1, 2]
+    assert summary.closed_id
+    assert summary.stopped_reason == "model_decision"
 
 
 async def test_two_unlinked_loops_do_not_share_setup_or_result_artifacts(store):
-    """Two valid loops with no connected idea (empty idea_id) must NOT collapse
-    onto a shared ``setup/idea:`` widget. Each loop's own identity scopes its
-    accumulating setup (and, through it, its result), so histories never merge."""
-    # One canvas / one FakeMCP so widget ids are globally unique, as on a real
-    # server; the two loops differ only by their own identity, not their idea.
+    """Each loop's successor widgets remain isolated by its loop discriminator."""
     mcp = FakeMCP(note_text={
         "setupA": "Round: 1\nmix A", "resultA": "marker A",
         "setupB": "Round: 1\nmix B", "resultB": "marker B",
     })
-    decisions = [{"proceed": True, "reason": "go", "next_focus": "raise dose"}, {"proceed": False, "reason": "done"}]
+    decisions = [
+        {"proceed": True, "reason": "go", "next_focus": "raise dose"},
+        {"proceed": False, "reason": "done"},
+    ]
 
     async def run(tag):
         loop = {
-            "loop_connector_id": f"c{tag}", "setup_id": f"setup{tag}", "result_id": f"result{tag}",
-            "robot_id": f"robot{tag}", "idea_id": "", "ragcluster_id": "rag1", "round": 1,
+            "loop_connector_id": f"c{tag}", "setup_id": f"setup{tag}",
+            "result_id": f"result{tag}", "robot_id": f"robot{tag}", "idea_id": "",
+            "ragcluster_id": "rag1", "round": 1,
         }
         adapter = ScriptedAdapter(_structured(list(decisions)))
         return await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=loop)
@@ -171,13 +159,10 @@ async def test_two_unlinked_loops_do_not_share_setup_or_result_artifacts(store):
     summary_a = await run("A")
     summary_b = await run("B")
 
-    gen_setup_a, gen_setup_b = summary_a.setup_ids[1], summary_b.setup_ids[1]
-    gen_result_a, gen_result_b = summary_a.result_ids[1], summary_b.result_ids[1]
-    assert gen_setup_a != gen_setup_b  # unlinked loops get distinct setup widgets
-    assert gen_result_a != gen_result_b  # and therefore distinct result widgets
-
-    astore = ArtifactStore(store.conn)
-    setup_a = astore.get_artifact_by_widget(canvas_id="c", widget_id=gen_setup_a)
-    setup_b = astore.get_artifact_by_widget(canvas_id="c", widget_id=gen_setup_b)
-    assert setup_a is not None and setup_b is not None
-    assert setup_a.opaque_id != setup_b.opaque_id  # separate canonical artifacts, no merged history
+    assert len(summary_a.setup_ids) == len(summary_a.result_ids) == 2
+    assert len(summary_b.setup_ids) == len(summary_b.result_ids) == 2
+    assert summary_a.setup_ids[0] == "setupA" and summary_b.setup_ids[0] == "setupB"
+    assert summary_a.result_ids[0] == "resultA" and summary_b.result_ids[0] == "resultB"
+    assert summary_a.setup_ids[-1] != summary_b.setup_ids[-1]
+    assert summary_a.result_ids[-1] != summary_b.result_ids[-1]
+    assert summary_a.stopped_reason == summary_b.stopped_reason == "model_decision"

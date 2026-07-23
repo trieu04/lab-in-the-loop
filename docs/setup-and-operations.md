@@ -168,9 +168,21 @@ LAB_AGENT_MAX_TOOL_STEPS=8
 LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS=4096  # Settings default; optional in .env
 LAB_AGENT_WATCH_POLL_SECONDS=30
 LAB_AGENT_LOOP_MAX_ROUNDS=25
+# Phase 7 default: watcher will not dispatch a robot-result path.
+LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false
 ```
 
 `LAB_AGENT_LOOP_MAX_ROUNDS` is only a runaway backstop. The model's `LoopDecision` is the intended stop condition.
+
+### Phase 7 validation, approval, and execution safety
+
+Every canonical Setup Browser artifact is eligible for a typed in-silico validation pass. The default local `DeterministicInSilicoAdapter` is a deterministic structural dry run, visibly rendered as **not scientific validation**. It calls no real scientific simulator or external provider. The real adapter boundary remains disabled/unimplemented and fails closed.
+
+Validation and approvals are append-only records in `LAB_AGENT_STATE_DB_PATH`, scoped to the canvas. Proposal and result identity use canonical SHA-256 (`litl-canonical-json-v1`). A current validation `proceed` decision must be followed by credential-verified **scientist** approval and then credential-verified **lab-lead** approval. Approval submissions require an `IdentityProvider`; development providers are explicitly non-production and the production provider is deliberately disabled until readiness requirements are implemented. Credentials are verification inputs only and are never stored in SQLite, Browser artifacts, logs, prompts, or audit records.
+
+A Canvas Note, title, connector, author field, or Browser widget cannot approve a setup. Validation and Approval Status Browser artifacts are read-only projections of durable evidence. A projected terminal `APPROVED_FOR_WET_LAB` state still reports `execution_enabled=false` in Phase 7.
+
+`LAB_AGENT_WET_LAB_EXECUTION_ENABLED` defaults to `false`. With that default, the watcher does not process `setups_needing_run`, does not dispatch direct legacy `run_loop`, and cannot call `run_on_robot`. An explicitly enabled future Phase 8 path still needs current durable gate evidence and can create only a model-generated `MOCK_RESULT`; this repository has no hardware, robot, wet-lab, or laboratory SDK integration.
 
 ### Authenticated bounded MCP reads
 
@@ -354,10 +366,10 @@ Minimum setup:
    ```
 
 4. Connect `RAGCluster_ → idea note`.
-5. Place a widget titled with `Robot_` for mock execution.
-6. Start `lab-agent watch`.
-7. After the setup Browser artifact is created, connect `[EXP:Setup v001] → Robot_`.
-8. After the result Browser artifact is created, connect `[EXP:Result v001] → [EXP:Setup v001]` to request loop analysis.
+5. Start `lab-agent watch`; it creates a deterministic-dry-run validation Browser projection for a canonical setup.
+6. Treat validation and approval-status Browser artifacts as status only. Do not use a Canvas Note, title, connector, or author text to approve a setup.
+7. The default watcher does not execute `Robot_` paths. A `Robot_` marker is relevant only to the separately enabled future Phase 8 mock-result branch, which is still not real lab execution.
+8. If a mock result has been deliberately produced through compatible legacy/manual testing, connect `[EXP:Result v001] → [EXP:Setup v001]` to request loop analysis.
 
 ## Legacy generated Note migration
 
@@ -495,8 +507,9 @@ and check the audit log (or wait for the first instance's lease to expire/releas
 - Never commit `.env` or downloaded internal data.
 - Treat every canvas write as user-visible.
 - Use `once` first on a demo canvas before `watch` on an active canvas.
-- Keep robot execution mock until real lab integration has explicit approval and safety gates.
-- For wet-lab/Flywheel production, add human approval and in-silico validation gates before execution.
+- Keep `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` in Phase 7. The implemented deterministic validation/approval infrastructure is a gate, not a claim of scientific validation or real-lab authorization.
+- Do not treat Canvas topology or Browser projections as approval evidence. Verify credentials through an `IdentityProvider`; credentials must never be persisted.
+- For wet-lab/Flywheel production, add and validate a real in-silico adapter, production identity verification, operational authorization, and an actual hardware/lab integration before execution.
 - Never commit the durable ledger (`LAB_AGENT_STATE_DB_PATH` and its `-wal`/`-shm` siblings, or any `*.db`/backup file) — it is git-ignored by default; if you must inspect it, treat it as operational data, not a document to paste elsewhere. Its audit log stores only ids/hashes/reasons/counts by design (never note text, model payloads, or credentials), but attempt/lease metadata can still reveal canvas ids and timing.
 - Take a `lab-agent backup` before any manual maintenance on a canvas's triggers/artifacts, and periodically in production, since there is no automatic backup schedule built in.
 - Treat token-bearing artifact URLs as secrets: do not copy them into tickets, logs, audit payloads, model prompts, or reports.

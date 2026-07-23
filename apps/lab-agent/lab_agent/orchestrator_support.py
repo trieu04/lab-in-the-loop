@@ -52,6 +52,7 @@ class LoopSummary:
     setup_ids: list[str] = field(default_factory=list)
     result_ids: list[str] = field(default_factory=list)
     closed_id: str = ""
+    terminal_notification_ready: bool = True
 
 
 # ── Write stages (durable: canonical artifact + Browser widget, then reconcile) ──
@@ -86,7 +87,7 @@ async def write_setup_node(
     legacy_discriminators = (f"setup/predecessor:{predecessor_id}/round:{round_index}",)
     return await durable_browser.write_artifact_browser_durable(
         mcp, store, settings, canvas_id=canvas_id, artifact_type=ArtifactType.SETUP,
-        state=DecisionState.RUNNING, title=title, payload=payload,
+        state=DecisionState.APPROVED_FOR_IN_SILICO, title=title, payload=payload,
         provenance=provenance or durable_browser.provenance_for(
             settings,
             source_widget_id=idea_id,

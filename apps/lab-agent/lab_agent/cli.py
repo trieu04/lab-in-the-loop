@@ -83,6 +83,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("backup", help="Write a consistent hot backup of the durable ledger.")
     p.add_argument("--to", required=True, dest="destination", help="Backup destination file path.")
 
+    p = sub.add_parser("notification-status", help="Show safe notification delivery counts.")
+    p.add_argument("--canvas", default=None, help="Restrict to one canvas id.")
+    p = sub.add_parser("list-notification-quarantined", help="List quarantined notification identifiers.")
+    p.add_argument("--canvas", default=None, help="Restrict to one canvas id.")
+    p = sub.add_parser("retry-notification", help="Retry one quarantined notification.")
+    p.add_argument("--key", required=True, dest="logical_key", help="Notification logical key.")
+    p = sub.add_parser("quarantine-notification", help="Quarantine one due notification.")
+    p.add_argument("--key", required=True, dest="logical_key", help="Notification logical key.")
+
     p = sub.add_parser("serve-artifacts", help="Run the capability-protected artifact HTTP service.")
     p.add_argument("--host", default=None, help="Override the configured artifact bind host.")
     p.add_argument("--port", type=_port, default=None, help="Override the configured artifact bind port.")
@@ -110,11 +119,14 @@ async def _serve_artifacts(ctx: RuntimeContext, settings: Settings, args: argpar
 
 
 async def _run(args: argparse.Namespace) -> int:
-    settings = get_settings()
     try:
+        settings = get_settings()
         ctx = build_runtime_context(settings)
     except RuntimeStartupError as exc:
         print(f"STARTUP FAILED: {exc}", file=sys.stderr)
+        return 1
+    except Exception:
+        print("STARTUP FAILED: invalid configuration.", file=sys.stderr)
         return 1
 
     try:
@@ -126,6 +138,14 @@ async def _run(args: argparse.Namespace) -> int:
             return admin.reset_attempt(ctx, args.canvas, args.trigger)
         if args.command == "backup":
             return admin.backup(ctx, args.destination)
+        if args.command == "notification-status":
+            return admin.notification_status(ctx, args.canvas)
+        if args.command == "list-notification-quarantined":
+            return admin.list_notification_quarantined(ctx, args.canvas)
+        if args.command == "retry-notification":
+            return admin.retry_notification(ctx, args.logical_key)
+        if args.command == "quarantine-notification":
+            return admin.quarantine_notification(ctx, args.logical_key)
         if args.command == "serve-artifacts":
             return await _serve_artifacts(ctx, settings, args)
 
@@ -146,12 +166,14 @@ async def _run(args: argparse.Namespace) -> int:
                 # `run_watch` releases the lease itself in its own `finally`
                 # (covers both a clean loop exit and Ctrl-C/KeyboardInterrupt).
                 await run_watch(
-                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas, gov
+                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas,
+                    gov=gov, notifications=ctx.notifications,
                 )
                 return 0
             try:
                 counts = await process_once(
-                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas, gov
+                    mcp, adapter, settings, ctx.store, ctx.runtime_instance_id, args.canvas,
+                    gov=gov, notifications=ctx.notifications,
                 )
             finally:
                 # `once` is a single cycle followed by a clean shutdown: release

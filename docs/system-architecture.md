@@ -14,7 +14,7 @@ The design deliberately separates reads from writes:
 
 ## Current MVP vs. target harness (status note)
 
-Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), a provider-neutral governed model gateway over the OpenAI/Claude adapter factory, task-stage routing and fail-closed locality/pricing checks, durable run/canvas budget reservations and model-call intents, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history, and implementation-plan Phase 6 (roadmap Phase 4c) single-host resumable ingestion. Ingestion uses a separate SQLite/WAL ledger and protected local raw-byte cache to expose only bounded extracted chunks to the model boundary (see the Phase 2–5 and Phase 4c sections below).
+Everything below this line up to "Current limitations" describes the **current implementation** as it exists in code today: two runtime apps (`canvus-mcp`, `lab-agent`), a provider-neutral governed model gateway over the OpenAI/Claude adapter factory, task-stage routing and fail-closed locality/pricing checks, durable run/canvas budget reservations and model-call intents, mock robot execution, generated Setup/Result/Closed plus generated Needs Input Browser artifacts backed by canonical versioned `ArtifactStore` records, a bounded per-run evidence ledger with citation/ambiguity gates before setup writes, a durable, restart-safe local SQLite ledger for loop idempotency, retry/quarantine, single-writer canvas leasing, artifact records, and audit history, implementation-plan Phase 6 (roadmap Phase 4c) single-host resumable ingestion, and Phase 7 typed/durable in-silico validation plus ordered human approval gates. Phase 7 is gate infrastructure: the local adapter is visibly a deterministic structural dry run, not scientific validation; real validation and real laboratory execution remain unavailable. Ingestion uses a separate SQLite/WAL ledger and protected local raw-byte cache to expose only bounded extracted chunks to the model boundary (see the Phase 2–5 and Phase 4c sections below).
 
 A 2026-07-16 architecture-recovery review (recovered from a separate `rag-canvus` session; see [project changelog](project-changelog.md)) recommends evolving this into an **independent, provider-neutral harness/orchestrator**, with the Claude Code skill/MCP registration as an optional developer/operator/demo interface rather than the runtime or source of truth for workflow logic, policy, grounding, and schemas. That recommendation is the session's final conclusion but was **not explicitly ratified by the project owner** — the architecture-choice prompt that would have confirmed it was interrupted. Treat it as **proposed direction**, not an implemented architecture. See "Target harness boundary (proposed)" below and the [roadmap](development-roadmap.md) for the phases this implies.
 
@@ -42,7 +42,8 @@ apps/lab-agent
   ├─ classifies evidence, authorizes locality, routes task stages, and reserves budgets before model dispatch
   ├─ normalizes exact/estimated/unavailable usage and reconciles durable model-call intents
   ├─ validates citations, sufficiency, and ambiguity before setup writes
-  ├─ writes setup/result/closed and generated needs-input nodes as crash-safe Browser artifacts
+  ├─ hashes canonical setup/validation records, persists validation evidence, and projects ordered approval state
+  ├─ writes setup/result/closed, validation, approval-status, and generated needs-input nodes as crash-safe Browser artifacts
   ├─ serves capability-protected artifact HTML
   └─ decides continue/stop through the configured model adapter
   │
@@ -96,7 +97,7 @@ Key modules:
 | `lab_agent/model_request.py` / `provider_endpoints.py` | Provider-visible request digest/conservative usage estimate and credential-gated canonical endpoint defaults/HTTPS validation |
 | `lab_agent/mcp_client.py` | MCP transport client |
 | `lab_agent/watch.py` | Poll loop and pending-trigger dispatcher |
-| `lab_agent/orchestrator.py` | Mock robot result, loop continuation/closure, and next-round setup grounding via `orchestrator_setup.generate_setup` |
+| `lab_agent/orchestrator.py` | Direct legacy `run_loop` compatibility, model-generated mock result behavior, loop continuation/closure, and next-round setup grounding; watcher Phase 7 does not dispatch this path |
 | `lab_agent/orchestrator_setup.py` | Idea/next-focus → setup entry point; creates a fresh `EvidenceLedger`, evaluates grounding with original idea text, writes setup only when executable, writes Needs Input for insufficient evidence/ambiguity, and leaves invalid citations retryable with no write |
 | `lab_agent/grounding.py` | Phase 4 grounding gate: evidence sufficiency, citation membership, dictionary-backed acronym boundary scan, durable grounding audit, and Needs Input dispatch |
 | `lab_agent/evidence.py` | Per-run bounded evidence ledger with deterministic source ids, bounded excerpts, citation validation, and minimal audit rows |
@@ -110,7 +111,7 @@ Key modules:
 | `lab_agent/prompts.py` | System prompts for setup/result/decision phases, including untrusted-data and citation requirements for setup |
 | `lab_agent/render.py` | Renders structured models into canvas-note text |
 | `lab_agent/models/experiment.py` | `ExperimentSetup`, `ExperimentResult`, `LoopDecision`; setup includes additive Phase 4 evidence/citation/ambiguity fields with legacy-safe defaults |
-| `lab_agent/models/states.py` | `DecisionState` enum (UC §12 lifecycle: `DRAFT` … `CLOSED`/`REJECTED`) written into note bodies as a `Status:` line |
+| `lab_agent/models/states.py` | `DecisionState` lifecycle, including `IN_SILICO_*`, scientist/lab-lead review, and `APPROVED_FOR_WET_LAB`; canonical Browser artifacts carry state |
 | `lab_agent/adapters/*` | OpenAI and Claude model adapters; `factory.py` selects by `settings.model_provider` |
 | `lab_agent/runtime.py` | Process-wide `RuntimeContext` (durable `StateStore` + a fresh-per-process `runtime_instance_id`), built once at CLI startup; fails closed on any integrity/audit-chain problem before canvas work starts |
 | `lab_agent/state_store.py` | Public facade over the durable SQLite ledger — the only module CLI/orchestrator code is meant to call into for durable-harness reads/writes |
@@ -156,6 +157,21 @@ The gateway normalizes SDK usage as `exact`, `estimated`, or `unavailable`. Exac
 Before an SDK call, the gateway persists a request-digest model-call intent and an idempotent SQLite reservation under `BEGIN IMMEDIATE`; both the per-trigger run envelope and the all-runs-per-canvas envelope include committed and active holds. A trigger starts a fresh run envelope, while committed canvas usage and held reservations reconstruct after restart. A known-not-dispatched typed transient releases its hold and may retry only at `next_retry_at`, up to `LAB_AGENT_MODEL_CALL_MAX_ATTEMPTS`. Deterministic failures do not retry. Submitted, executed, ambiguous, or untyped outcomes are never blindly redispatched: a provider may reconcile only when it implements the capability; otherwise processing remains safely blocked. Durable intent/audit data stores fixed failure categories, request-id digests/approved metadata, and counts — never prompts, responses, secrets, or raw provider error text.
 
 A committed response is checked before any subsequent model or canvas write. Terminal closure reasons are distinct and rendered/audited: model decision, maximum rounds, token budget, cost budget, wall time, no progress, locality denial, and reservation denial. Once a terminal reason is selected, the loop emits one closure and performs no further provider or canvas writes for that run.
+
+
+### Typed validation and approval gates (Phase 7)
+
+Phase 7 adds fail-closed infrastructure between a canonical Setup artifact and any future execution branch. `models/validation.py` defines immutable typed proposal, in-silico-result, identity, and approval records. Proposal and result identity use SHA-256 over `litl-canonical-json-v1`: a hash is of typed canonical content, not rendered Browser HTML, Canvas text, or connector topology.
+
+`orchestrator_validation.py` loads only a canonical Setup payload, sends it through the typed adapter boundary, appends the result in the local SQLite ledger, and writes a validation Browser projection. The default `DeterministicInSilicoAdapter` is a deterministic local structural dry run; its artifact explicitly says **DETERMINISTIC DRY RUN — NOT SCIENTIFIC VALIDATION**. `DisabledRealInSilicoAdapter` always fails closed: no real simulator/provider integration exists.
+
+The ledger has append-only, canvas-scoped `in_silico_results` and `gate_approvals` evidence. Validation records and role decisions replay idempotently; replay matching excludes volatile identity-verification and decision timestamps while the persisted evidence retains them. Every approval is tied to the exact proposal hash, validation-result hash, adapter/version/algorithm metadata, credential-verified identity, role, decision, and rationale. Evidence from an edited proposal or a different validation result remains history but is stale and cannot authorize the new state. Tests cover retries, recovery, stale-evidence rejection, restart behavior, and replay idempotency.
+
+`approval_service.py` accepts an approval only after `IdentityProvider.verify` authenticates and authorizes a credential for the required role. The production provider is intentionally disabled/unimplemented; the static development provider is explicitly non-production. Credentials are verification inputs and are not persisted. Canvas Notes, titles, connector topology, author fields, and browser text are not identity or approval inputs. `orchestrator_approval_status.py` renders Browser status artifacts as projections of durable evidence and never reads Canvas data to create an approval.
+
+The only approving path is `scientist → lab lead`. A `proceed` validation result projects `NEEDS_SCIENTIST_REVIEW`; approved scientist evidence projects `NEEDS_LAB_LEAD_APPROVAL`; approved lab-lead evidence projects `APPROVED_FOR_WET_LAB`. A reject, stale hash, duplicate role, incompatible metadata, missing credential verification, or out-of-order role fails closed. Browser approval-status artifacts deliberately report `execution_enabled=false` even at `APPROVED_FOR_WET_LAB`.
+
+`Settings.wet_lab_execution_enabled` defaults to `false`. The Phase 7 watcher therefore never dispatches the legacy/direct `run_loop` path and does not call `run_on_robot`. The explicitly enabled future Phase 8 branch separately verifies the current durable gates and can create only a model-generated `MOCK_RESULT` artifact. This repo has no real hardware, robotic-lab, wet-lab, or laboratory SDK.
 
 ### Resumable local-source ingestion (implementation-plan Phase 6; roadmap Phase 4c)
 
@@ -310,20 +326,20 @@ It is optional and separate from the primary `canvus-mcp` + `lab-agent` loop. Th
 
 - Canvus event watching/scanning (today: `lab_agent/watch.py`).
 - A durable workflow state machine, with idempotency, retry, resume, failure recovery, and audit/version history (today: **implemented for local-disk, single-host scope** — see "Durable harness core (Phase 2)" above; a shared/replicated store for multi-host deployment remains future, see "Local-disk, single-host scope" above).
-- Policy and human-approval gates (today: provider/locality/pricing/budget/stop governance is implemented; mock robot only and no human-approval gate in code).
+- Policy and human-approval gates (today: provider/locality/pricing/budget/stop governance plus typed/durable Phase 7 validation and ordered scientist/lab-lead approval infrastructure; production identity and real lab execution remain unavailable).
 - Token/resource budgets, model routing, cost thresholds, loop limits, and stop conditions (today: implemented for task-stage routing, configured budgets, price availability, max rounds, wall time, no progress, locality, and reservation denial; organization approval matrices and price maintenance remain operator gates).
 - Retrieval/grounding against internal wiki, knowledge graph, documents, and experiment history (today: RagCluster/read-tool context plus an approved acronym dictionary; no KG/wiki/vector DB integration).
 - Context packaging and evidence tracking, model adapter/router selection, and structured-output validation (today: per-run evidence ledger + citation/ambiguity gate, provider-neutral governed adapter/router, and fail-closed `orchestrator_support.coerce_or_fail`/`_emit_validated`).
-- Tool/action routing to Canvus, Flywheel, in-silico simulation, and robotic/human lab execution (today: mock only; no Flywheel/in-silico wiring).
+- Tool/action routing to Canvus, Flywheel, in-silico simulation, and robotic/human lab execution (today: deterministic in-silico dry run plus durable gate projections; no real simulator, Flywheel, or hardware/lab wiring).
 - Async, chunked, cached, resumable local-source ingestion rather than one model call per document (today: implemented for the bounded local extraction contract in implementation-plan Phase 6 / roadmap Phase 4c; video and non-CSV/TSV spreadsheet extraction remain external/unsupported gates).
 
 Under this proposal, the Claude Code skill/MCP registration becomes an **optional developer/operator/demo client** over the same harness — not the production runtime and not the owner of business logic, which stays in the harness and the shared `canvus-mcp` tool boundary. Explicit owner ratification of this direction is absent from the source transcript; do not treat it as approved.
 
 ## Current limitations
 
-- Robot execution is mock only.
+- `wet_lab_execution_enabled` defaults to false, so Phase 7 watcher operation performs no robot execution. The opt-in Phase 8-compatible branch remains model-generated mock-result behavior only; no hardware/lab SDK exists.
 - Retrieval is canvas/RagCluster/read-tool-oriented with a local approved acronym dictionary; future wiki/KG/vector sources are adapters or external gates, not a full vector DB or knowledge graph runtime today.
-- Flywheel/in-silico gates are represented in docs and roadmap, not implemented as live integrations.
+- The deterministic validation/approval gate infrastructure is implemented, but it is not a live scientific in-silico integration. Flywheel, a real in-silico provider, production identity verification, and real laboratory execution remain unavailable.
 - The durable harness is local-disk, single-host, single-active-writer-per-canvas scoped (SQLite WAL) — not a shared/replicated store; see "Local-disk, single-host scope" above for the Postgres/multi-host migration trigger.
 - External live Canvus reachability to the artifact public base URL and production TLS/private-ingress verification remain operational gates; this repository documents the requirement but does not prove deployment.
 - Governance is local/source-tested, not an external authorization: operators must maintain approved provider/locality classifications, HTTPS endpoints, and versioned model prices. This repository does not verify live provider SDK/API behavior, endpoint reachability, organization approval, or invoice reconciliation.

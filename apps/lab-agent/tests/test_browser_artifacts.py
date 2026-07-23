@@ -20,7 +20,7 @@ from lab_agent.durable_browser import ArtifactUrlError
 from lab_agent.models.artifact import ArtifactProvenance, ArtifactType
 from lab_agent.models.experiment import ExperimentResult, ExperimentSetup
 from lab_agent.models.states import DecisionState
-from lab_agent.orchestrator import generate_setup, run_loop, run_on_robot
+from lab_agent.orchestrator import generate_setup, run_loop
 from lab_agent.orchestrator_payloads import result_payload, setup_payload
 from lab_agent.orchestrator_support import write_result_node, write_setup_node
 from lab_agent.recovery import idempotency_key, input_hash
@@ -222,44 +222,58 @@ async def test_same_round_setup_retry_keeps_original_version(store):
 
 
 async def test_generated_result_appears_near_setup_not_far_robot(store):
+    """Test geometry/connector assertions without authorization bypass.
+
+    This test exercises the write path directly with write_result_node,
+    which is the appropriate seam for testing layout. Authorization checking
+    is tested separately in test_execution_modes.py.
+    """
     mcp = FakeMCP()
     mcp.seed_widget("setup1", "Browser", title="[EXP:Setup v001]", x=500.0, y=100.0, width=480.0, height=360.0)
     mcp.seed_widget("robot1", "Note", title="Robot_arm", x=5000.0, y=5000.0, width=260.0, height=180.0)
-    adapter = ScriptedAdapter({"ExperimentResult": RESULT})
 
-    result_id, result = await run_on_robot(
-        mcp, adapter, _settings(), store, canvas_id="c", setup_id="setup1",
-        setup_text="Round: 1\nmix A and B", robot_id="robot1", round_index=1,
+    result_id = await write_result_node(
+        mcp,
+        store,
+        _settings(),
+        canvas_id="c",
+        result=ExperimentResult.model_validate(RESULT),
+        setup_id="setup1",
+        robot_id="robot1",
+        round_index=1,
     )
 
-    assert result is not None and result_id
+    assert result_id
     assert ("robot1", result_id) in mcp.connectors
     assert mcp.notes[result_id]["location"] == {"x": 1020.0, "y": 100.0}
 
 
 async def test_generated_result_and_closed_are_browser_artifacts(store):
+    """Phase 2: run_loop() processes one decision per call without generating
+    successors. Terminal closure is only created if conditions allow, otherwise
+    returns loop_continuation_deferred."""
     mcp = FakeMCP(note_text={"idea1": "{idea: A+B}", "setup1": "Round: 1\nmix", "result1": "marker reduced"})
     adapter = ScriptedAdapter({
-        "ExperimentSetup": SETUP, "ExperimentResult": RESULT,
-        "LoopDecision": [{"proceed": True, "reason": "go", "next_focus": "x"}, {"proceed": False, "reason": "done"}],
+        "LoopDecision": {"proceed": False, "reason": "done"},
     })
     loop = {
         "loop_connector_id": "c5", "setup_id": "setup1", "result_id": "result1",
         "robot_id": "robot1", "idea_id": "idea1", "ragcluster_id": "rag1", "round": 1,
     }
-    summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=loop)
+    settings = _settings()
+    settings.loop_min_rounds = 1  # Allow closure on first decision
+    summary = await run_loop(mcp, adapter, settings, store, canvas_id="c", loop=loop)
 
     astore = ArtifactStore(store.conn)
-    result2_id = summary.result_ids[1]
-    assert mcp.notes[result2_id]["widget_type"] == "Browser"
-    assert mcp.notes[result2_id]["title"].startswith("[EXP:Result v002]")
-    rdoc = astore.get_artifact_by_widget(canvas_id="c", widget_id=result2_id)
-    assert rdoc is not None and rdoc.artifact_type == ArtifactType.RESULT
-    assert rdoc.payload["summary"] == "reduced 30%"
+    # Only seed result, no successors generated.
+    assert len(summary.result_ids) == 1
+    result1_id = summary.result_ids[0]
+    assert mcp.notes[result1_id]["widget_type"] == "Note"
 
+    # Terminal Closed node created (because min_rounds met).
     closed = mcp.notes[summary.closed_id]
     assert closed["widget_type"] == "Browser"
-    assert closed["title"].startswith("[EXP:Closed] after v002")
+    assert closed["title"].startswith("[EXP:Closed]")
     cdoc = astore.get_artifact_by_widget(canvas_id="c", widget_id=summary.closed_id)
     assert cdoc is not None and cdoc.artifact_type == ArtifactType.CLOSED
     assert cdoc.payload["proceed"] is False

@@ -30,7 +30,8 @@ _SECTION_KEYS = {
         "evidence_status", "ambiguity_flags",
     ),
     TabKey.VALIDATION: (
-        "validation", "validations", "quality_flags", "approval", "approval_status", "confidence",
+        "validation", "validations", "quality_flags", "approval", "approval_history",
+        "approval_status", "confidence",
     ),
     TabKey.EXECUTION: (
         "execution", "inputs", "conditions", "steps", "parameters",

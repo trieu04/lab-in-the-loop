@@ -10,7 +10,7 @@
 ## Overview
 
 - Priority: P1 (safety boundary)
-- Status: pending
+- Status: complete
 - Effort: 8d
 - Description: Add a typed in-silico validation stage and durable, proposal-bound scientist/lab-lead approvals. The phase ends at `APPROVED_FOR_WET_LAB`; it does not execute a real lab action.
 
@@ -19,7 +19,7 @@
 - Approval cannot be represented only by an enum. Durable evidence must record actor, role, decision, timestamp, rationale, and the exact proposal hash.
 - A changed setup invalidates prior validation and approvals automatically.
 - The mandatory order is: AI design → in-silico → scientist authorization → lab-lead approval → wet lab. Preliminary screening is optional and non-authorizing.
-- In-silico endpoints are unavailable, so a deterministic mock/dry-run adapter and shared contract tests land before any real adapter.
+- In-silico endpoints are unavailable, so a deterministic structural dry-run adapter and shared contract tests land before any real adapter; this is not scientific validation.
 
 ## Requirements
 
@@ -37,9 +37,9 @@ Evidence-backed ExperimentSetup (proposal_hash)
   → InSilicoResult: proceed | revise | reject
       revise/reject → state + reason; return to design/close
       proceed → NEEDS_SCIENTIST_REVIEW
-  → human-authored ScientistApproval bound to proposal_hash + result_hash
+  → credential-bearing scientist approval API bound to proposal_hash + result_hash
   → NEEDS_LAB_LEAD_APPROVAL
-  → human-authored LabLeadApproval bound to same hashes
+  → credential-bearing lab-lead approval API bound to the same hashes
   → APPROVED_FOR_WET_LAB (terminal output of this phase)
 ```
 
@@ -74,15 +74,15 @@ Every transition is checked against the durable ledger and current hashes. The m
 
 ## Todo List
 
-- [ ] In-silico and approval contracts added
-- [ ] Mock `InSilicoAdapter` and contract tests pass
-- [ ] State lifecycle and transition guard implemented
-- [ ] Identity-provider boundary and production identity readiness gate added
-- [ ] Durable proposal/result/actor-bound approval evidence added
-- [ ] Canvus pending-validation/review markers detected
-- [ ] Scientist then lab-lead order enforced; stale approvals rejected
-- [ ] Phase ends at `APPROVED_FOR_WET_LAB`; no real lab call exists
-- [ ] Safety, workflow, architecture, operations, roadmap, spec, and changelog updated
+- [x] In-silico and approval contracts added
+- [x] Mock `InSilicoAdapter` and contract tests pass
+- [x] State lifecycle and transition guard implemented
+- [x] Identity-provider boundary and production identity readiness gate added
+- [x] Durable proposal/result/actor-bound approval evidence added
+- [x] Canvus pending-validation/review markers detected
+- [x] Scientist then lab-lead order enforced; stale approvals rejected
+- [x] Phase ends at `APPROVED_FOR_WET_LAB`; no real lab call exists
+- [x] Safety, workflow, architecture, operations, roadmap, spec, and changelog updated
 
 ## Success Criteria / Validation
 
@@ -94,6 +94,31 @@ Every transition is checked against the durable ledger and current hashes. The m
 - Editing the setup invalidates all prior validation/approval evidence for authorization purposes while preserving audit history.
 - No test or code path invokes a real robot/wet-lab system.
 
+## Phase 7 Completion Evidence
+
+**Final validation counts:**
+- lab-agent: 597 tests passed
+- canvus-mcp: 163 tests passed
+- Ruff (both apps): passed
+- mypy: 97 + 32 files pass
+- compileall (both apps): passed
+- workflow parity: passed
+- git diff --check: passed
+
+**Final review seal:**
+- Inspector score: 9.7/10
+- Critical: 0 | High: 0 | Medium: 0 | Low: 1
+- Low finding: doc wording (subsequently fixed and parity re-run)
+- Safety contract: INTACT
+- Decision: SEALED
+
+**Terminal boundary:**
+- Reached: `APPROVED_FOR_WET_LAB`
+- execution_enabled: false
+- Real hardware/lab path: not implemented
+- Mock/dry-run labels: present in code, config, and docs
+- Production identity integration: requires external gate approval before real execution
+
 ## Risk Assessment
 
 | Risk | Likelihood | Impact | Mitigation |
@@ -101,7 +126,7 @@ Every transition is checked against the durable ledger and current hashes. The m
 | Canvas identity is mistaken for authenticated approver identity | Med | Critical | IdentityProvider verification is mandatory in production; free text/marker/connector alone never authorizes. |
 | Stale approval authorizes changed proposal | Low | Critical | Proposal/result hashes on every gate and transition; mutation invalidation tests. |
 | State enum becomes the only audit record | Med | High | Append-only GateApproval/validation records are authoritative evidence; enum is current projection only. |
-| Mock adapter is mistaken for scientific validation | Med | High | Prominent mock/dry-run labels in state, note, config, and docs; real gate disabled by default. |
+| Structural dry run is mistaken for scientific validation | Med | High | Prominent deterministic-dry-run labels in state, artifact, config, and docs; real adapter disabled by default. |
 
 ## Security Considerations
 

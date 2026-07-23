@@ -12,7 +12,9 @@ import json
 
 from lab_agent import admin
 from lab_agent.config import Settings
+from lab_agent.notifications import NotificationEnvelope
 from lab_agent.runtime import RuntimeContext
+from lab_agent.state.notification_outbox import FailureCategory
 from lab_agent.state_store import AttemptStatus, StateStore
 
 RUNTIME_ID = "test-runtime"
@@ -120,6 +122,31 @@ def test_reset_attempt_fails_when_not_quarantined(tmp_path, capsys):
         code = admin.reset_attempt(_ctx(store), "canvas-a", "loop:c1")
         assert code == 1
         assert "ERROR" in capsys.readouterr().out
+    finally:
+        store.close()
+
+
+def test_notification_operator_status_list_and_targeted_retry(tmp_path, capsys):
+    store = StateStore(tmp_path / "state.db")
+    try:
+        envelope = NotificationEnvelope(canvas_id="canvas-a", trigger_id="loop:1", closure_id="closed-1", round_index=1, reason="max_rounds")
+        queued = store.enqueue_notification(envelope)
+        leased = store.lease_due_notification(queued.logical_key, lease_owner=RUNTIME_ID, lease_ttl_seconds=30, reconciliation_window_seconds=60)
+        assert leased is not None
+        store.quarantine_notification(queued.logical_key, RUNTIME_ID, leased.lease_generation, FailureCategory.SMTP_REJECTED)
+
+        assert admin.notification_status(_ctx(store), "canvas-a") == 0
+        assert "quarantined=1" in capsys.readouterr().out
+        assert admin.list_notification_quarantined(_ctx(store), "canvas-a") == 0
+        output = capsys.readouterr().out
+        assert queued.logical_key in output
+        assert "operator@example.test" not in output
+        assert admin.retry_notification(_ctx(store), queued.logical_key) == 0
+        reset = store.get_notification(queued.logical_key)
+        assert reset is not None and reset.status.value == "pending"
+        assert admin.quarantine_notification(_ctx(store), queued.logical_key) == 0
+        quarantined = store.get_notification(queued.logical_key)
+        assert quarantined is not None and quarantined.status.value == "quarantined"
     finally:
         store.close()
 

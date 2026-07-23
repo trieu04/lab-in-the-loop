@@ -59,10 +59,7 @@ async def test_generate_setup_needs_input_when_idea_has_unresolved_acronym_not_i
 
 
 async def test_loop_next_round_needs_input_when_idea_has_unresolved_acronym_not_in_setup(store):
-    """``run_loop`` re-reads the same idea text for every round it grounds;
-    an unresolved acronym confined to that idea (never quoted into the
-    freshly emitted next-round setup) must still force NEEDS_INPUT instead
-    of an executable next setup."""
+    """Continuation applies the grounding boundary before successor writes."""
     seed = {
         "idea1": IDEA_WITH_UNRESOLVED_ACRONYM,
         "setup1": "Round: 1\nmix A and B",
@@ -71,12 +68,13 @@ async def test_loop_next_round_needs_input_when_idea_has_unresolved_acronym_not_
     mcp = FakeMCP(note_text=seed)
     adapter = ScriptedAdapter({
         "ExperimentSetup": SETUP,
-        "ExperimentResult": {"summary": "A+B reduced marker 30%", "metrics": ["reduction=0.30"]},
-        "LoopDecision": [{"proceed": True, "reason": "promising", "next_focus": "raise dose"}],
+        "LoopDecision": {"proceed": True, "reason": "promising", "next_focus": "raise dose"},
     })
 
     summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))
 
-    assert summary.stopped_reason.startswith("needs_input:")
-    assert "BIA" in summary.stopped_reason
-    assert len(summary.setup_ids) == 1  # no next-round setup written
+    assert summary.stopped_reason.startswith("needs_input:unresolved term(s): BIA")
+    assert summary.setup_ids == ["setup1"]
+    assert summary.result_ids == ["result1"]
+    assert adapter.schema_calls == ["LoopDecision", "ExperimentSetup"]
+    assert not [event for event in store.list_audit_events("c") if event.event == "loop_stopped"]

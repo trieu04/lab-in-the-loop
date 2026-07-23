@@ -5,12 +5,12 @@
 | Field | Value |
 |---|---|
 | Status | Draft for review |
-| Version | 1.2 |
-| Date | 2026-07-19 |
+| Version | 1.3 |
+| Date | 2026-07-23 |
 | Source vision | [docs/notes/use-case-lab-in-the-loop.md](notes/use-case-lab-in-the-loop.md) (original meeting notes, excluded from normalization) |
 | Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lap-in-the-loop` repository |
 | Owner / Approver | Pending |
-| Status notation | `[MVP]` = code path exists in this repository and confirmed from source; local unit/type/lint verification is complete where stated, while live Canvus E2E demo verification remains Phase 2; `[Future]` = in roadmap/target architecture but not yet implemented; `[Proposed]` = proposed direction (harness-first architecture), not yet ratified by owner |
+| Status notation | `[MVP]` = code path exists in this repository and confirmed from source; local verification is complete where stated, while live Canvus E2E demo verification remains Phase 2; `[MVP partial]` = a safe local/source subset exists but external/live capability remains unavailable; `[Future]` = not implemented; `[Proposed]` = proposed direction (harness-first architecture), not yet ratified by owner |
 
 **Scope statement:** This document specifies the **entire target vision** of the Lab-in-the-Loop use case, inherited from the original meeting notes (`docs/notes/use-case-lab-in-the-loop.md`). Each requirement, flow, and data field is tagged with implementation status. The document does **not claim** that `[Future]`/`[Proposed]` capabilities are installed — only records them as part of the target specification to guide development. The harness-first architectural direction (independent, provider-neutral, decoupled from Claude Code skill) described in `docs/system-architecture.md` § "Target harness boundary (proposed)" and `docs/development-roadmap.md` remains a **proposal awaiting owner ratification**, not officially approved.
 
@@ -63,7 +63,7 @@ Canonical descriptor (bilingual, preserved from original vision):
 
 | Notation | Meaning |
 |---|---|
-| `[MVP]` | Code path exists in `apps/canvus-mcp` + `apps/lab-agent`, confirmed directly from source; local test/lint/type verification is complete where noted, while live Canvus E2E demo verification remains Phase 2 |
+| `[MVP]` | Code path exists in `apps/canvus-mcp` + `apps/lab-agent`, confirmed directly from source; local verification is complete where noted, while live Canvus E2E demo verification remains Phase 2 |
 | `[MVP partial]` | Implementation exists but covers only part of the vision requirement |
 | `[Future]` | In roadmap/vision but not yet implemented |
 | `[Proposed]` | Proposed architectural direction (harness-first), not yet ratified |
@@ -96,7 +96,7 @@ apps/canvus-mcp ingestion runtime
   └─ authenticated canvas-scoped status/chunk MCP reads
 ```
 
-Current system boundary `[MVP]` consists of the 2 runtime apps plus separate local SQLite/WAL ledgers: `lab-agent` persists attempts, leases, side-effect intents/outbox, audit, and canonical generated-artifact records; `canvus-mcp` persists bounded local-source ingestion assets, sources, jobs, units, leases, attempts, chunks, and cancellation state. The ingestion cache keeps SHA-256 raw bytes outside model context; only bounded extracted chunks can become untrusted evidence. The Phase 3 artifact service serves generated Setup/Result/Closed and generated Needs Input prompt/status artifacts as capability-protected Browser widgets; `{idea: ...}` and human-authored approval/review/input responses remain Notes. Target components — Knowledge Retrieval Service, independent Execution Orchestrator beyond today's `lab-agent`, Flywheel wrapper, Knowledge Update Service, In-silico service — are all `[Future/Proposed]`, not yet existing as separate modules (see `docs/system-architecture.md` § "Target harness boundary (proposed)").
+Current system boundary `[MVP]` consists of the 2 runtime apps plus separate local SQLite/WAL ledgers: `lab-agent` persists attempts, leases, side-effect intents/outbox, audit, canonical generated-artifact records, and Phase 7 append-only canvas-scoped validation/approval evidence; `canvus-mcp` persists bounded local-source ingestion assets, sources, jobs, units, leases, attempts, chunks, and cancellation state. Phase 7 hashes typed proposals/results with `litl-canonical-json-v1`, runs only a visibly non-scientific deterministic dry run by default, and projects durable ordered approvals into Browser artifacts. The real in-silico adapter, Flywheel, and real lab execution remain unavailable. Canvas Notes, titles, connectors, and author text are non-authorizing topology only; credentials are verified by an `IdentityProvider` and never persisted.
 
 ---
 
@@ -105,16 +105,16 @@ Current system boundary `[MVP]` consists of the 2 runtime apps plus separate loc
 | ID | Actor | Role | Status | Evidence |
 |---|---|---|---|---|
 | ACT-LITL-01 | Scientist / Researcher | Pose scientific questions, choose knowledge scope, initialize `{idea: ...}` | `[MVP]` note `{idea:...}` written by user on canvas | `experiment-workflow.md` "Example happy path" step 3 |
-| ACT-LITL-02 | Lab scientist / technician | Review experiment design; run real lab or connect mock | `[MVP mock]` connects only `Setup → Robot_`; real review gate is `[Future]` | Original UC §2.2, §12 Gate 1/3 |
+| ACT-LITL-02 | Lab scientist / technician | Review validation evidence; may activate a future mock execution branch | `[MVP partial]` credential-verified scientist approval gate; no real lab execution | Original UC §2.2, §12 Gate 1/3 |
 | ACT-LITL-03 | Data / imaging scientist | Prepare R/Python analysis pipeline, read analysis results | `[Future]`, no code path | Original UC §2.3 |
 | ACT-LITL-04 | Engineer / platform team | Build canvas workflow, connectors, model orchestration | `[MVP]` — author of `canvus-mcp`/`lab-agent` | Original UC §2.4 |
-| ACT-LITL-05 | PI / Lab lead / project lead | Approve wet lab, resource, budget | `[Future]` — no gate code | Original UC §2.5, §12 Gate 3 |
+| ACT-LITL-05 | PI / Lab lead / project lead | Approve a validated proposal after scientist approval | `[MVP partial]` credential-verified lab-lead evidence gate; it does not dispatch real wet-lab work | Original UC §2.5, §12 Gate 3 |
 | ACT-LITL-06 | AI harness/orchestrator (`lab-agent`) | Orchestrate loop, call model, write canvas | `[MVP]` | `system-architecture.md` "Runtime apps" |
 | ACT-LITL-07 | Model provider (Claude/OpenAI/Ollama/vLLM/internal) | Generate setup/result/decision | `[MVP partial]` only 2 named adapters `openai`/`claude`; Ollama/vLLM only via `LAB_AGENT_OPENAI_BASE_URL` under `openai` provider | `lab_agent/adapters/factory.py` |
 | ACT-LITL-08 | Canvus (canvas server) | Durable state store, source of truth for workflow | `[MVP]` | `system-architecture.md` § "State and idempotency" |
 | ACT-LITL-09 | Internal knowledge sources (wiki/KG/vector DB/acronym dict) | Grounding context | `[MVP partial]`; RagCluster/read tools plus approved acronym dictionary exist; wiki/KG/vector DB are future adapters/external gates | `canvus_mcp/ragcluster.py`, `lab_agent/evidence.py`, `lab_agent/acronyms.py` |
-| ACT-LITL-10 | In-silico / digital-twin service | Validate design before wet lab | `[Future]` | Original UC §8; roadmap Phase 5 |
-| ACT-LITL-11 | Robotic/wet-lab system | Execute real experiments | `[Future]`; currently `Robot_` is only a mock widget | roadmap "Real robot integration: Future" |
+| ACT-LITL-10 | In-silico / digital-twin service | Validate design before wet lab | `[MVP partial]` deterministic local structural dry-run adapter only; real service disabled/unimplemented | Original UC §8; roadmap Phase 5 |
+| ACT-LITL-11 | Robotic/wet-lab system | Execute real experiments | `[Future]`; Phase 7 watcher is execution-disabled and no hardware/lab SDK exists | roadmap "Real robot integration: Future" |
 | ACT-LITL-12 | Flywheel / imaging analysis platform | Auto-run analysis gear (e.g., lung fibrosis quantification) | `[Future]`, no wrapper | Original UC §9.4; roadmap Phase 6 |
 | ACT-LITL-13 | Administrator / auditor | Audit log, quarantine reset/backup, observability, multi-user isolation | **`MVP partial / Future inferred`** — operator CLI and hash-chained audit exist; multi-user observability remains Future; actor is inferred, not explicitly listed in original UC | `lab_agent/admin.py`, roadmap Phase 7; no direct actor reference in vision |
 
@@ -148,7 +148,7 @@ Current system boundary `[MVP]` consists of the 2 runtime apps plus separate loc
 - Durable local operation depends on the SQLite WAL ledger at `LAB_AGENT_STATE_DB_PATH`; it is local-disk/single-host scoped and must be backed up/restored intentionally. The same DB contains generated-artifact records, versions, token hashes, Browser widget mappings, model-call intents, and budget reservations.
 - Browser artifact writes depend on a configured `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` reachable by intended Canvus clients; production requires HTTPS/private ingress. Live external reachability/TLS verification is a deployment gate, not proven by this repo.
 - Local-source ingestion depends on `CANVUS_MCP_INGESTION_DB_PATH` and `CANVUS_MCP_INGESTION_CACHE_DIR`, static role tokens/exact canvas scopes, an optional restrictive PDF password file, and an independently managed worker. The MCP server does not run a worker, has no worker CLI, and has no ingestion backup/restore/integrity CLI.
-- Target components (Flywheel, in-silico, knowledge/versioning service, wiki/KG/vector retrieval services) are **not yet in existence** — all use cases involving them are `[Future]`. The current grounding gate accepts future retrieval sources only as adapters/external gates.
+- Flywheel, knowledge/versioning, and wiki/KG/vector retrieval services remain `[Future]`. Phase 7 has a typed in-silico boundary and deterministic dry-run adapter, but a real adapter remains disabled/unimplemented and fails closed.
 
 **Constraints**
 
@@ -192,10 +192,10 @@ No additional use case per canvas node type is created (§ vision section 7 list
 |---|---|---|---|
 | FR-LITL-001 | Knowledge grounding from internal knowledge scope before design generation | Must | `[MVP partial]` — RagCluster/read-tool context with per-run evidence ledger; no real wiki/KG/vector DB |
 | FR-LITL-002 | AI generates experiment design (`ExperimentSetup`) from idea + context | Must | `[MVP]` — setup writes are gated by evidence/citation/ambiguity validation |
-| FR-LITL-003 | Validate design via in-silico/digital-twin before permitting wet lab | Must (safety) | `[Future]` |
-| FR-LITL-004 | Scientist review/approval gate for experiment design | Must (safety) | `[Future]` — no approve/reject button in code |
-| FR-LITL-005 | Lab-lead approval gate for resource/budget before wet lab | Must (safety) | `[Future]` |
-| FR-LITL-006 | Execute experiment (human lab or robotic lab) | Must | `[MVP mock]` — `Robot_` widget, no real robot/lab connection |
+| FR-LITL-003 | Validate design via in-silico/digital-twin before permitting wet lab | Must (safety) | `[MVP partial]` — typed deterministic dry-run result, canonical hashes, and durable evidence exist; real scientific validation is disabled/unimplemented |
+| FR-LITL-004 | Scientist review/approval gate for experiment design | Must (safety) | `[MVP partial]` — credential-verified, durable scientist approval/reject evidence; no Canvas approval UI or topology authorization |
+| FR-LITL-005 | Lab-lead approval gate for resource/budget before wet lab | Must (safety) | `[MVP partial]` — credential-verified lab-lead gate after scientist; real resource/lab integration remains unavailable |
+| FR-LITL-006 | Execute experiment (human lab or robotic lab) | Must | `[MVP mock partial]` — default watcher execution is disabled; an explicitly enabled Phase 8-compatible branch creates only model-generated `MOCK_RESULT`, with no real robot/lab connection |
 | FR-LITL-007 | Generate raw data from execution (imaging/omics/table/assay) | Must | `[MVP mock]` — model emits mock `ExperimentResult`, labeled mock |
 | FR-LITL-008 | Automated analysis via Flywheel/HPC pipeline | Must | `[Future]` — no Flywheel wrapper |
 | FR-LITL-009 | Interpret results against original hypothesis | Must | `[MVP mock form]` — `[EXP:Result vNNN]` generated by model |
@@ -247,10 +247,10 @@ No additional use case per canvas node type is created (§ vision section 7 list
 |---|---|---|---|
 | 1 | Knowledge grounding — retrieve wiki + historical data by context | `[MVP partial]` | RagCluster/read tools with per-run evidence ledger; no real wiki/KG/vector DB |
 | 2 | Experiment design — AI generates proposal | `[MVP]` | `lab-agent` creates `[EXP:Setup vNNN]` only after citation/evidence/ambiguity gates pass |
-| 3 | In-silico validation — predict outcome, uncertainty, risk, recommendation | `[Future]` | No in-silico service or output schema |
-| 4 | Scientist review — read in-silico results and approve/revise/reject | `[Future]` | No approval UI/transition logic |
-| 5 | Lab-lead approval — review resource, budget, safety before wet lab | `[Future]` | No resource/budget gate |
-| 6 | Wet-lab/robot execution | `[MVP mock]` | `Robot_` widget; not connected to real robot/lab |
+| 3 | In-silico validation — predict outcome, uncertainty, risk, recommendation | `[MVP partial]` | Typed `InSilicoResult`, canonical hash, durable evidence, and deterministic dry run; it is not scientific validation and the real adapter is disabled |
+| 4 | Scientist review — read in-silico results and approve/revise/reject | `[MVP partial]` | Credential-bearing `IdentityProvider` verification and ordered durable evidence; Canvas UI/topology is non-authorizing |
+| 5 | Lab-lead approval — review resource, budget, safety before wet lab | `[MVP partial]` | Credential-bearing durable gate after scientist; it does not claim live resource or lab integration |
+| 6 | Wet-lab/robot execution | `[Future]` | Default Phase 7 watcher dispatch is disabled; Phase 8-compatible opt-in remains model-generated `MOCK_RESULT` only, with no hardware/lab SDK |
 | 7 | Data generation | `[MVP mock]` | Model emits mock `ExperimentResult`, labeled mock |
 | 8 | Automated analysis (Flywheel/HPC) | `[Future]` | No Flywheel wrapper |
 | 9 | Result interpretation | `[MVP mock form]` | `[EXP:Result vNNN]` generated by model |
@@ -273,7 +273,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | MCP server unavailable | — | `[MVP]` CLI fails/logs warning, watcher continues polling |
 | Model does not emit correct schema | — | `[MVP]` current run writes nothing; canvas stays pending; durable attempt is failed/backed off/quarantine-eligible |
 | Provider call uncertain after submission | Do not duplicate charged/side-effecting call | `[MVP]` submitted/executed/ambiguous intent reconciles only with provider capability; otherwise it blocks safely with no blind redispatch |
-| Human rejection at gate | Reject design/result, request revise | `[Future]` — no gate to reject |
+| Human rejection at gate | Reject design/result, request revise | `[MVP]` — credential-bearing scientist or lab-lead rejection is durable evidence that projects `REJECTED`; no Canvas approval UI exists |
 | Resource/budget rejection | Harness denies numeric/price-unavailable model dispatch; lab-lead resource approval remains separate | `[MVP partial]` — per-run/per-canvas token/cost reservations and unknown-price denial exist; no human lab-resource approval gate |
 | Duplicate/retry/idempotency failure | Don't create duplicate on retry | `[MVP]` — connector graph checks plus durable `workflow_attempts` and side-effect intents; generated Browser artifacts use title tags and bucket probes, while legacy Note recovery remains available for migrated canvases |
 
@@ -281,7 +281,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 **Data inputs/outputs:** Input = RagCluster context, idea note text, setup artifact text, result artifact text. Output = `[EXP:Setup vNNN]`, `[EXP:Result vNNN]`, `[EXP:Closed]` Browser artifacts backed by `ArtifactStore`, with legacy generated Notes still readable during migration — actual schema in `lab_agent/models/experiment.py` plus artifact metadata/versioning in `lab_agent/models/artifact.py` (see §13).
 
-**Approval points:** Gates 1–5 (§12 vision) are defined but **only state framework (`DecisionState` enum) exists** — 6/9 states lack transition logic (see §11 Workflow state model).
+**Approval points:** Phase 7 implements the validation and approval segment: a current typed validation `proceed` requires credential-verified scientist then lab-lead evidence to project `APPROVED_FOR_WET_LAB`. The projection remains `execution_enabled=false`; the remaining vision gates and real execution are future work.
 
 **Implementation mapping:** `lab_agent/orchestrator.py` (`run_loop`, `generate_setup`, `run_on_robot`), `lab_agent/watch.py`, `canvus_mcp/tools/experiments.py` (`scan_experiment_workflow`, `detect_experiment_loops`).
 
@@ -294,7 +294,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | AC-UC-LITL-02-003 | Connect result→setup → agent decides CONTINUE (`[EXP:Setup v002]`) or STOP (`[EXP:Closed]`) | `[MVP]` code path exists and local tests pass; live Canvus E2E verification pending |
 | AC-UC-LITL-02-004 | No duplicate setup/result/closed/connector side effects across repeated scans or restart/retry windows | `[MVP]` local regression tests pass; live Canvus E2E verification pending |
 | AC-UC-LITL-02-005 | Node Experiment Design connects to Flywheel Data Node; Flywheel job runs (or mock) and returns Analysis output to canvas (MVP 2 — Flywheel-connected demo) | `[Future]` not achieved |
-| AC-UC-LITL-02-006 | Simulation returns predicted outcome + uncertainty; only proceed to lab if human approves (MVP 3 — in-silico gate) | `[Future]` not achieved |
+| AC-UC-LITL-02-006 | Validation returns typed predicted outcome + uncertainty; ordered approvals are required before an eligible execution state | `[MVP partial]` — deterministic dry run only, durable evidence/identity gates implemented, `execution_enabled=false`, and no real scientific/lab execution |
 
 ---
 
@@ -326,8 +326,8 @@ No additional use case per canvas node type is created (§ vision section 7 list
 3. System retrieves internal context through RagCluster/read tools and records successful reads in a per-run evidence ledger `[MVP partial — no wiki/KG/vector DB]`.
 4. Model creates experiment proposal (`ExperimentSetup`) with citations/evidence status/ambiguity flags `[MVP]`.
 5. System validates citations and ambiguity before attaching proposal to canvas as Experiment Design Node (`[EXP:Setup vNNN]`) `[MVP]`.
-6. Optional preliminary scientist screening may request revise/reject before in-silico `[Future — no approve/reject button]`.
-7. Proposal moves to UC-LITL-03 for in-silico validation; preliminary screening is not wet-lab authorization `[Future]`.
+6. The watcher produces a typed deterministic dry-run validation result `[MVP partial]`; it is explicitly not scientific validation.
+7. Credential-verified scientist and then lab-lead decisions project the only eligible wet-lab state `[MVP partial]`; no Canvas text, connector, or author field can authorize the transition, and execution remains disabled.
 
 **Alternate/Exception flows:** Insufficient context or unresolved ambiguity → write deduplicated `[EXP:Needs Input]` Browser artifact `[MVP]`; invalid/fabricated citations → write nothing and keep the attempt retryable (see FR-LITL-015/016).
 
@@ -335,7 +335,7 @@ No additional use case per canvas node type is created (§ vision section 7 list
 
 **Data inputs/outputs:** Input = knowledge scope id, query text, optional constraints `[Vision]`, and retrieved evidence ledger `[MVP]`. Output = `ExperimentSetup` with `rationale`, `inputs`, `conditions`, `steps`, `parameters`, `expected_readouts`, plus additive grounding fields `hypothesis`, `success_criteria`, `constraints`, `confidence`, `citations`, `evidence_status`, and `ambiguity_flags` (actual schema — see §13). Vision fields for recommended analysis pipeline and typed budget/platform constraints remain gaps.
 
-**Approval points:** Preliminary design screening may allow revise/reject before in-silico `[Future]`, but does not authorize wet lab. Wet-lab authorization occurs only after UC-LITL-03, scientist review of in-silico results, and lab-lead approval.
+**Approval points:** A current typed validation `proceed` is followed by credential-verified scientist review and credential-verified lab-lead approval. Those durable, canvas-scoped records may project `APPROVED_FOR_WET_LAB`; they do not enable execution in Phase 7.
 
 **Implementation mapping:** `lab_agent/orchestrator.py:generate_setup`, `canvus_mcp/tools/experiments.py` (`ideas_needing_setup`).
 
@@ -356,65 +356,45 @@ No additional use case per canvas node type is created (§ vision section 7 list
 | ID | UC-LITL-03 |
 | Name | In silico before wet lab |
 | Level | Supporting (`extend` — inserted between "Experiment design" and "Lab execution" of UC-LITL-02) |
-| Scope | Digital-twin/in-silico validation before permitting wet lab |
-| Status | `[Future]` entirely — not a single line of code in `apps/canvus-mcp`/`apps/lab-agent` implements in-silico |
+| Scope | Typed validation and ordered approval evidence before any eligible execution state |
+| Status | `[MVP partial]` — deterministic local dry-run validation, durable evidence, and ordered human gates exist; real scientific validation and real wet-lab execution do not |
 | Priority | Must (safety) |
-| Primary actor | ACT-LITL-10 (In-silico/digital-twin service) |
-| Supporting actors | ACT-LITL-01 (Scientist, review), ACT-LITL-05 (Lab lead, after) |
-| Goal | Block expensive wet lab with a simulation validation step before permitting real execution |
+| Primary actor | ACT-LITL-10 (in-silico adapter boundary) |
+| Supporting actors | ACT-LITL-01 (Scientist), ACT-LITL-05 (Lab lead) |
+| Goal | Fail closed unless one exact proposal has current validation and ordered credential-verified approval evidence |
 
-**Trigger:** An `[EXP:Setup]` has been created and requires decision routing before wet lab (vision §8).
+**Trigger:** A canonical `[EXP:Setup]` Browser artifact is available for validation.
 
-**Preconditions:** Setup exists. A preliminary design screening may have occurred, but is not mandatory in the wet-lab authorization chain and does not authorize wet lab execution.
+**Preconditions:** The setup payload parses as `ExperimentSetup`. Its SHA-256 proposal identity is computed through `litl-canonical-json-v1`, not from rendered canvas text. The real validation adapter remains unavailable; the default adapter is deterministic local dry-run behavior only.
 
-**Minimal guarantee:** No experiment proceeds directly to wet lab bypassing in-silico when gate is activated.
+**Minimal guarantee:** No Canvas Note, title, connector, Browser label, or author text can create approval evidence. A credential is verified through `IdentityProvider` and never persisted.
 
-**Success guarantee (postconditions):** Output JSON has structure:
-
-```json
-{
-  "predicted_outcome": "...",
-  "confidence": 0.72,
-  "key_assumptions": [],
-  "risk_flags": [],
-  "recommended_changes": [],
-  "decision": "revise_before_wet_lab"
-}
-```
-
-where `decision ∈ {proceed, revise_before_wet_lab, reject}`.
+**Success guarantee (postconditions):** The SQLite ledger holds an append-only, canvas-scoped typed validation record and, if the validation decision is `proceed`, may hold one scientist and one lab-lead decision bound to the exact proposal and validation-result hashes. The Browser Validation and Approval Status artifacts project that evidence. `APPROVED_FOR_WET_LAB` remains an eligibility projection with `execution_enabled=false` in Phase 7.
 
 **Main success flow:**
-1. AI Experiment Design exists (from UC-LITL-01/02).
-2. Digital Twin / In Silico Simulation runs on the design.
-3. Simulation returns predicted outcome + confidence/uncertainty and recommendation: proceed, revise, or reject.
-4. Scientist reviews in-silico results; revise/reject returns to design step.
-5. Lab lead approves resource, budget, safety for scientist-approved proposal.
-6. Wet lab is permitted only when both scientist review and lab-lead approval are complete.
+1. The watcher loads the canonical Setup payload and derives its versioned proposal hash.
+2. `DeterministicInSilicoAdapter` returns a typed `InSilicoResult` with predicted outcome, confidence, uncertainty, assumptions, risk flags, recommended changes, and decision `[MVP partial]`. The rendered artifact explicitly says **DETERMINISTIC DRY RUN — NOT SCIENTIFIC VALIDATION**.
+3. The result is append-only durable evidence and projects `NEEDS_SCIENTIST_REVIEW` for a `proceed`, `NEEDS_REVIEW` for a `revise`, or `REJECTED` for a `reject`.
+4. A scientist approval/rejection requires credential verification for the scientist role. An approve projects `NEEDS_LAB_LEAD_APPROVAL`.
+5. A lab-lead approval/rejection requires credential verification for the lab-lead role. A second approval projects `APPROVED_FOR_WET_LAB`.
+6. Phase 7 does not execute work after that projection: watcher execution is disabled by default. Any explicit later Phase 8-compatible path can produce only a model-generated `MOCK_RESULT`, not a real lab action.
 
-All 6 steps above are `[Future]`.
+**Alternate/exception flows:**
+- A typed validation `revise` returns to review; `reject` projects `REJECTED` `[MVP]`.
+- Wrong role/order, a duplicate role, a missing or invalid identity credential, validation metadata mismatch, or an outdated proposal/result hash fails closed `[MVP]`.
+- Replay of a stable approval is idempotent even if identity-verification timestamps vary; incompatible replay fails. Stale validation/approval history remains retained but never authorizes edited content `[MVP]`.
+- Adapter timeout, provider failure, or invalid schema writes only sanitized failure metadata and does not advance the gate `[MVP]`.
 
-**Alternate/Exception flows:**
-- `decision = revise_before_wet_lab` → return to UC-LITL-01 for design adjustment `[Future]`.
-- `decision = reject` → don't move to wet lab, record reason `[Future]`.
+**Implementation mapping:** `lab_agent/models/validation.py`, `lab_agent/integrations/in_silico.py`, `lab_agent/orchestrator_validation.py`, `lab_agent/approval.py`, `lab_agent/approval_service.py`, `lab_agent/integrations/identity.py`, `lab_agent/state/validation_evidence.py`, and `lab_agent/state/gate_approvals.py`.
 
-**Business rules reference:** BR-LITL-007 (don't send every experiment straight to wet lab — Professor Do's proposal, strong consensus to include in SOW).
-
-**Why it matters:** If lab-in-the-loop runs on wrong design, consequences can include wasted chemicals, antibodies, animal models, robot/lab time, generation of useless data, and corruption of knowledge graph update.
-
-**Data inputs/outputs:** Input = created `ExperimentSetup`. Output = in-silico result JSON (above) — **no corresponding fields in current schema**, completely a gap versus real `ExperimentResult` (see §13.3).
-
-**Approval points:** In-silico threshold → scientist approval of simulation outcome → lab-lead approval of resources/safety. All are `[Future]`; no transition logic or approval UI currently.
-
-**Implementation mapping:** None — 100% Future; roadmap Phase 5 confirms "Status: Future".
-
-**Acceptance criteria (MVP 3, vision §14):**
+**Acceptance criteria (Phase 7 local/source gate):**
 
 | ID | Criterion | Status |
 |---|---|---|
-| AC-UC-LITL-03-001 | Simulation returns predicted outcome + uncertainty | `[Future]` not achieved |
-| AC-UC-LITL-03-002 | System recommends proceed/revise/reject | `[Future]` not achieved |
-| AC-UC-LITL-03-003 | Only proceed to lab if human approves | `[Future]` not achieved |
+| AC-UC-LITL-03-001 | A canonical Setup receives a typed, hash-bound validation result with predicted outcome and uncertainty | `[MVP partial]` — deterministic structural dry run only |
+| AC-UC-LITL-03-002 | Validation chooses proceed/revise/reject and projects the corresponding safe state | `[MVP]` local/source gate |
+| AC-UC-LITL-03-003 | Only current, credential-verified scientist then lab-lead approvals project `APPROVED_FOR_WET_LAB` | `[MVP]` local/source gate; topology is non-authorizing |
+| AC-UC-LITL-03-004 | Default watcher operation cannot enable or dispatch wet-lab execution | `[MVP]` `wet_lab_execution_enabled=false`; no real hardware/lab SDK |
 
 ---
 
@@ -436,28 +416,27 @@ Connector presence is the workflow transition signal (`system-architecture.md` �
 
 Generated Browser artifacts carry `DecisionState` in their canonical `ArtifactStore` record and render it in the Browser HTML header. Legacy generated Notes may carry a `Status: <DecisionState.value>` line from the older `create_node` path during migration.
 
-### 11.2 Layer 2 — Target decision-state lifecycle (vision §12)
+### 11.2 Layer 2 — Decision-state lifecycle and gate projection
 
 ```text
-DRAFT → NEEDS_REVIEW → APPROVED_FOR_IN_SILICO → APPROVED_FOR_WET_LAB
-      → RUNNING → ANALYSIS_COMPLETE → KNOWLEDGE_UPDATE_PENDING → CLOSED | REJECTED
+DRAFT → NEEDS_REVIEW → APPROVED_FOR_IN_SILICO → IN_SILICO_RUNNING
+      → IN_SILICO_COMPLETE → NEEDS_SCIENTIST_REVIEW → NEEDS_LAB_LEAD_APPROVAL
+      → APPROVED_FOR_WET_LAB
 ```
 
-`lab_agent/models/states.py` declares all 9 `DecisionState` values (`StrEnum`). Generated Setup/Result/Closed artifacts currently use `RUNNING`, `ANALYSIS_COMPLETE`, and `CLOSED`. Generated Needs Input prompt/status artifacts can use `NEEDS_REVIEW` as a safe request state, but there is no implemented approval workflow that transitions from that state. The other five — `DRAFT`, `APPROVED_FOR_IN_SILICO`, `APPROVED_FOR_WET_LAB`, `KNOWLEDGE_UPDATE_PENDING`, `REJECTED` — **exist in enum but have no transition logic that assigns them**. This remains concrete evidence for "no human-approval gate in code" in `system-architecture.md`.
+`lab_agent/models/states.py` declares the lifecycle. Phase 7 enforces the validation/approval segment through typed durable evidence, rather than accepting a Canvas marker as a transition. The canonical gate sequence is `AI design → validation → scientist → lab lead → eligible execution state`. `APPROVED_FOR_WET_LAB` is not an execution command: approval-status Browser projections retain `execution_enabled=false`, and the watcher default disables execution dispatch.
 
-Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` or `NEEDS_POST_SILICO_REVIEW`**. The enum sequence above does not yet fully represent the canonical authorization order `AI design → in-silico → scientist review → lab lead approval → wet lab`; state model must be revised when implementing Phase 5–6.
-
-| DecisionState | Has transition logic in `orchestrator.py`? | Notes |
+| DecisionState | Gate behavior | Notes |
 |---|---|---|
-| `DRAFT` | No | Framework for future gate/approval |
-| `NEEDS_REVIEW` | Partial | Generated Needs Input prompt/status artifact state only — approval/review transitions remain `[Future]` |
-| `APPROVED_FOR_IN_SILICO` | No | Gate 1 output → in-silico — `[Future]` |
-| `APPROVED_FOR_WET_LAB` | No | Gate 2/3 output — `[Future]` |
-| `RUNNING` | **Yes** — assigned when creating `[EXP:Setup vNNN]` | `[MVP]` |
-| `ANALYSIS_COMPLETE` | **Yes** — assigned when creating `[EXP:Result vNNN]` | `[MVP]` |
-| `KNOWLEDGE_UPDATE_PENDING` | No | Gate 5 (Knowledge Update Service) — `[Future]` |
-| `CLOSED` | **Yes** — assigned when `LoopDecision.proceed=false` or backstop | `[MVP]` |
-| `REJECTED` | No | Human/lab-lead reject — `[Future]` |
+| `DRAFT` / `NEEDS_REVIEW` | Existing setup/input workflow | Needs Input Browser artifact is still a request/status marker, not approval evidence |
+| `APPROVED_FOR_IN_SILICO` | Transition contract | Used to enter validation; Canvas topology cannot assert it |
+| `IN_SILICO_RUNNING` / `IN_SILICO_COMPLETE` | Implemented | Canonical typed validation result is required and hash-bound to the current proposal |
+| `NEEDS_SCIENTIST_REVIEW` | Implemented | Current `proceed` validation result waits for credential-verified scientist evidence |
+| `NEEDS_LAB_LEAD_APPROVAL` | Implemented | Current scientist approval waits for credential-verified lab-lead evidence |
+| `APPROVED_FOR_WET_LAB` | Implemented eligibility projection | Requires current ordered evidence; Phase 7 keeps execution disabled |
+| `RUNNING` / `ANALYSIS_COMPLETE` / `CLOSED` | Existing mock loop behavior | Direct legacy compatibility remains mock behavior and is not watcher-dispatched by default |
+| `KNOWLEDGE_UPDATE_PENDING` | Future | No Knowledge Update Service |
+| `REJECTED` | Implemented for gate reject outcomes | A validation/scientist/lab-lead reject projects it without execution |
 
 ### 11.3 Canvas node type mapping (vision §7 → current marker)
 
@@ -467,8 +446,8 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 | Query Node | Note `{idea: ...}` | `[MVP]` |
 | Experiment Design Node | Browser `[EXP:Setup vNNN]` backed by `ArtifactStore`; legacy Note readable | `[MVP]` |
 | Human Review Node | Browser `[EXP:Needs Input]` prompt/status infrastructure; human response Note | `[MVP infrastructure only]` — no approve gate/button or transition workflow |
-| In Silico Simulation Node | — | `[Future]` — see UC-LITL-03 |
-| Lab Execution Node | Widget `Robot_` (mock) | `[MVP mock]` — not connected to real robot/lab |
+| In Silico Simulation Node | Browser `[EXP:Validation]` backed by a typed durable result | `[MVP partial]` — deterministic dry run only; real scientific adapter disabled/unimplemented |
+| Lab Execution Node | Widget `Robot_` (mock compatibility) | `[Future]` — watcher dispatch disabled by default; no robot/lab SDK |
 | Flywheel Data Node | — | `[Future]` — no Flywheel wrapper |
 | Analysis Gear Node | — | `[Future]` |
 | Result Interpretation Node | Browser `[EXP:Result vNNN]` backed by `ArtifactStore`; legacy Note readable | `[MVP mock form]` |
@@ -488,10 +467,10 @@ Additionally, the current enum **lacks explicit states for `IN_SILICO_COMPLETE` 
 | BR-LITL-003 | Don't self-generate acronyms/domain terms without approved evidence; unresolved terms across idea/setup/evidence excerpts trigger Needs Input instead of guessing | `[MVP]` for local dictionary scan; external dictionary sources remain Future | `code-standards.md` § "Grounding and scientific caution"; `lab_agent/grounding.py` |
 | BR-LITL-004 | Mock results always clearly labeled as mock | `[MVP]` | `lab_agent/prompts.py` (RESULT_SYSTEM), render output |
 | BR-LITL-005 | Proposal must contain complete structure plus evidence/citation status before writes: rationale, inputs, conditions, steps, parameters, expected_readouts, grounding fields | `[MVP]` | `lab_agent/models/experiment.py`, `lab_agent/grounding.py` |
-| BR-LITL-006 | Don't auto-send to wet lab without approval; orchestrator doesn't auto-route to real wet lab | `[Future]` — because no wet-lab integration exists to gate | vision §9.3, roadmap Phase 6 |
-| BR-LITL-007 | Don't send every experiment directly to wet lab — must validate via in-silico first (Professor Do's proposal, consensus to include in SOW) | `[Future]` | vision §8 |
+| BR-LITL-006 | Don't auto-send to wet lab without approval; execution needs current validation plus ordered credential-verified approvals | `[MVP]` — default watcher dispatch is disabled; stale/topology-only evidence never authorizes | approval service, roadmap Phase 6 |
+| BR-LITL-007 | Don't send every experiment directly to wet lab — validate before eligibility | `[MVP partial]` — deterministic structural dry run, not scientific validation; real adapter remains future | vision §8 |
 | BR-LITL-008 | Don't overwrite old knowledge version; always create new version with metadata (`version_id`, `source_experiment_id`, ...) | `[Future]` | vision §9.5 |
-| BR-LITL-009 | Mandatory safe-order for wet-lab authorization: `AI design → in-silico validation → scientist review → lab lead approval → wet lab` | `[Future]` (chain lacks real gates, but canonical order is consistent across README/system-architecture/roadmap) | roadmap Phase 6, see §12 below |
+| BR-LITL-009 | Mandatory safe-order for wet-lab authorization: `AI design → in-silico validation → scientist review → lab lead approval → wet lab` | `[MVP partial]` — typed/durable order is enforced; only the eligibility projection exists, not real wet-lab execution | approval service, roadmap Phase 6 |
 
 ---
 
@@ -543,7 +522,7 @@ Fields still required by the full vision but not yet implemented as separate typ
 | `risk_flags` / explicit risk-uncertainty | No | Have `expected_readouts`, `constraints`, and ambiguity flags, but no separate risk field |
 | `constraints.budget_limit`, `assay_type`, `disease_area`, `available_platforms` | Partial | `constraints` is a free-text list, not typed structured subfields |
 | Recommended analysis pipeline | No | Vision §4/§9.4; no Flywheel/HPC wrapper |
-| In-silico output (`predicted_outcome`, `confidence`, `key_assumptions`, `risk_flags`, `recommended_changes`, `decision`) | No | 100% Future — see UC-LITL-03 |
+| In-silico output (`predicted_outcome`, `confidence`, `assumptions`, `risk_flags`, `recommended_changes`, `decision`) | Yes | Typed `InSilicoResult`; deterministic dry run only, not scientific validation — see UC-LITL-03 |
 | Audit/version metadata (`version_id`, `source_experiment_id`, `input_data_ids`, `analysis_job_ids`, `created_at`) | No | Vision §9.5; no Knowledge Update Service/Versioning Service |
 
 ### 13.5 Canvas generated artifacts (Browser current, Note legacy)
@@ -596,7 +575,7 @@ Strict local extractors support UTF-8 text, CSV/TSV, JSON records, PNG/JPEG/GIF 
 | Model provider dispatch | Unapproved data flow, unknown price, duplicate/ambiguous submission | Classify/authorize endpoint before dispatch; require known price, durable intent/reservation; typed retry and capability-aware reconciliation only | `[MVP]` local/source gates; organization approval, price maintenance, live API checks remain operational |
 | Provider telemetry/errors | Raw prompt/response/secret/diagnostic persistence | Durable records contain fixed categories, digests, counts, and approved metadata only | `[MVP]` |
 | Loop autonomy | Runaway execution or side effects after terminal stop | Model decision plus max-round/token/cost/wall-time/no-progress/locality/reservation closures; one closure then no further provider/canvas writes | `[MVP]` |
-| Wet-lab authorization | Unapproved experiment execution | 5-step canonical chain (below) + Gate 1-5 | `[Future]` — no gate code |
+| Wet-lab authorization | Unapproved experiment execution | Current canonical validation hash plus scientist then lab-lead credential-verified approvals | `[MVP partial]` — durable eligibility gate exists; execution is disabled and no real lab integration exists |
 
 **Mandatory wet-lab authorization chain (canonical, consistent across README/system-architecture/roadmap):**
 
@@ -606,7 +585,7 @@ AI design → in-silico validation → scientist review → lab lead approval �
 
 **Comparison with 5-gate vision (§12):** Original vision meeting describes Gate 1 (scientist approves design) before in-silico, while canonical authorization chain places scientist review after in-silico results. This document standardizes as follows: an optional **preliminary design screening** before in-silico allows revise/reject of design; it **does not authorize wet lab**. Mandatory scientist review occurs after in-silico, followed by lab-lead approval. This standardization requires owner confirmation (see §18).
 
-Post-silico review state is also missing from current `DecisionState`; this is a gap in state model, not evidence gates are implemented.
+`DecisionState` includes the post-silico review states, and Phase 7 enforces their validation-to-scientist-to-lab-lead evidence sequence. Preliminary pre-silico screening remains optional and non-authorizing.
 
 **Privacy/data governance:** Model dispatch applies fail-closed source/evidence classification and provider endpoint authorization before content leaves the process `[MVP]`; unknown/restricted/unapproved classifications deny. The repository does not itself approve an organization's provider/locality matrix, validate live endpoints/SDKs, or establish PII policy; those remain external operator controls.
 
@@ -619,11 +598,11 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 | §4 (Design next experiment) | UC-LITL-01, FR-LITL-002 | Note `{idea: ...}`, `RAGCluster_` widget, `ideas_needing_setup` (`canvus_mcp/tools/experiments.py`) |
 | §5 (Close the loop) | UC-LITL-02, FR-LITL-001…013 | `lab_agent/orchestrator.py`, `lab_agent/watch.py` |
 | §7 (Node types) | §11.3 mapping table | Full mapping table in vision §7 lines 278-292 |
-| §8 (In silico) | UC-LITL-03, FR-LITL-003 | No module — 100% Future |
+| §8 (In silico) | UC-LITL-03, FR-LITL-003 | `models/validation.py`, `orchestrator_validation.py`, deterministic dry-run adapter; real adapter is Future |
 | §9.1 (Knowledge Retrieval) | FR-LITL-001 | `canvus_mcp/ragcluster.py` plus `lab_agent/evidence.py` ledger; wiki/KG/vector DB remain Future |
 | §9.4 (Flywheel) | FR-LITL-008, FR-LITL-017 | None — distinct from `{exp:}` integration in `integrations/canvus-serving-experiment-prepare/`, unrelated to Flywheel |
 | §10 (Model-agnostic) | FR-LITL-014, NFR-LITL-003 | `lab_agent/adapters/factory.py`, `openai_adapter.py`, `claude_adapter.py` |
-| §12 (Gates/decision states) | §11 Workflow state model | `lab_agent/models/states.py` (enum has all 9, 6/9 lack transition) |
+| §12 (Gates/decision states) | §11 Workflow state model | `lab_agent/models/states.py`, `approval_service.py`, and durable gate evidence implement the validation and ordered-approval segment; real execution remains Future |
 | §13 (Error cases) | Exception flows UC-LITL-02 | `experiment-workflow.md` § "Failure handling" |
 | §14 (MVP acceptance criteria) | AC-UC-LITL-02-001…006 | §10.1 Acceptance criteria |
 
@@ -640,8 +619,8 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 | Phase 4 | Stronger grounding (ledger/citations/acronym/Needs Input) | Complete — 314/314 `lab-agent` tests, focused `canvus-mcp` marker tests 8/8, reviewer score 9.6/10 SEALED; wiki/KG/vector sources remain Future adapters | FR-LITL-001, FR-LITL-015, FR-LITL-016, NFR-LITL-004 |
 | Phase 4b | Token/resource governance, model routing | Complete for local/source gates on 2026-07-19 — routing/locality/pricing/budgets/intents/reconciliation/stops verified; `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED; organization approval matrix, maintained prices, and live provider checks remain operational | FR-LITL-013, NFR-LITL-002, NFR-LITL-009 |
 | Phase 4c | Async multimodal ingestion | Complete for local-source implementation — 2026-07-19; final evidence sealed 2026-07-20. `canvus-mcp` full/focused suites 134/77 passed; `lab-agent` full/focused suites 480/122 passed. Ruff, mypy, compileall, locks, builds, workflow parity, tracked/untracked whitespace, and Phase 7 isolation passed; final inspection is 9.7/10 SEALED with `criticalCount: 0`. Deprecation warnings remain; statement/branch coverage is unclaimed. Hosted CI, live credentials, large-format validation, retention/capacity policy, and queue/object storage remain external gates. | FR-LITL-020, NFR-LITL-007 |
-| Phase 5 | In-silico validation gate | Future | UC-LITL-03, FR-LITL-003 |
-| Phase 6 | In-silico + human approval + Flywheel + lab integration | Future | FR-LITL-004, FR-LITL-005, FR-LITL-006, FR-LITL-008, FR-LITL-010, BR-LITL-006, BR-LITL-009 |
+| Phase 5 | In-silico validation gate | Complete for Phase 7 local/source gate infrastructure — deterministic dry run, canonical hashes, durable validation evidence; real scientific adapter remains Future | UC-LITL-03, FR-LITL-003 |
+| Phase 6 | In-silico + human approval + Flywheel + lab integration | Partially complete — Phase 7 durable scientist/lab-lead gates and execution-default deny are implemented; Flywheel, real in-silico, and real lab integration remain Future | FR-LITL-004, FR-LITL-005, FR-LITL-006, FR-LITL-008, FR-LITL-010, BR-LITL-006, BR-LITL-009 |
 | Phase 7 | Production hardening, multi-user, observability | Future | NFR-LITL-006, NFR-LITL-008, ACT-LITL-13 |
 
 **MVP acceptance (vision §14) — status mapping:**
@@ -650,7 +629,7 @@ Post-silico review state is also missing from current `DecisionState`; this is a
 |---|---|---|
 | MVP 1 — Text-only simulation | Idea → setup → mock approve → mock result → interpret → update version → suggest next | `[MVP]` core exists with code path; local verification complete (Phase 1), E2E demo (Phase 2) still pending; "update knowledge version" still `[Future]` |
 | MVP 2 — Flywheel-connected demo | Setup connects Flywheel Data Node → job runs/mock → Analysis output → Result Interpretation → Knowledge Update versioned → Next Experiment | `[Future]` not achieved — no implementation evidence |
-| MVP 3 — In silico gate | AI design → digital twin/simulation → predicted outcome + uncertainty → proceed/revise/reject → proceed only if human approves | `[Future]` not achieved |
+| MVP 3 — In silico gate | AI design → typed validation → predicted outcome + uncertainty → ordered approvals → eligibility projection | `[MVP partial]` — deterministic dry run and durable gate infrastructure only; no real scientific simulation or laboratory execution |
 
 ---
 

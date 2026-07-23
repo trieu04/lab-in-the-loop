@@ -1,5 +1,28 @@
 # Project Changelog
 
+## 2026-07-23 — Phase 7: deterministic validation and durable approval gates
+
+### Added
+
+- Typed `InSilicoRequest`, `InSilicoResult`, identity, and approval contracts. Canonical proposal/result identity uses SHA-256 over `litl-canonical-json-v1`.
+- A deterministic local in-silico dry-run adapter that returns typed structural outcomes. Its rendered validation artifact explicitly states that it is **not scientific validation**. The real adapter boundary remains disabled/unimplemented and fails closed.
+- Canvas-scoped append-only SQLite validation and approval evidence. Scientist and lab-lead roles are unique and ordered; records bind current proposal/result hashes plus validation adapter/version/algorithm metadata. Stable approval replay is idempotent despite volatile verification timestamps; old evidence is retained but cannot authorize an edited proposal or different validation result.
+- Credential-bearing `IdentityProvider` verification for approvals. Canvas Notes, titles, connectors, Browser artifacts, and author text are projections/topology only and cannot authorize. Credentials are never persisted.
+- Browser Validation and Approval Status projections. Their terminal `APPROVED_FOR_WET_LAB` state keeps `execution_enabled=false`.
+
+### Changed
+
+- `wet_lab_execution_enabled` now defaults to false. The watcher does not dispatch the direct legacy `run_loop` path and cannot call `run_on_robot` by default. The explicitly enabled Phase 8-compatible branch remains model-generated `MOCK_RESULT` behavior only after durable gates; no real hardware, robotic-lab, wet-lab, or laboratory SDK is present.
+
+### Verified
+
+- Final baseline: `lab-agent` **597 passed**; `canvus-mcp` **163 passed**. Ruff, mypy, compileall, workflow-contract parity, and whitespace checks were clean.
+- Focused approval replay validation: **25 passed** after the reviewer fix. Coverage includes validation retries/recovery, approval replay idempotency, proposal edits/stale evidence, and restart recovery.
+
+### Not claimed
+
+- No real scientific/digital-twin validation, production identity provider, hardware/lab execution, Flywheel integration, or Phase 8 completion.
+
 ## 2026-07-21 — Experiment-loop HTML, version accumulation, and min-rounds fixes
 
 ### Fixed

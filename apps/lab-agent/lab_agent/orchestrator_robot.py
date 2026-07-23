@@ -56,6 +56,8 @@ async def run_on_robot(
 ) -> tuple[str, ExperimentResult | None]:
     """Emit one mock result only after current validation, approvals, and mode gates."""
 
+    if not settings.wet_lab_execution_enabled:
+        raise RobotExecutionAuthorizationError("wet-lab execution is disabled")
     _require_execution_evidence(store, canvas_id, setup_id, execution_mode)
     result = await emit_result(adapter, setup_text, settings=settings)
     if result is None:

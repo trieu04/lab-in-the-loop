@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from lab_agent.config import Settings
+from lab_agent.notification_outbox import NotificationOutbox
 from lab_agent.state_store import StateStore
 
 
@@ -29,6 +30,24 @@ class RuntimeContext:
     store: StateStore
     runtime_instance_id: str
     settings: Settings
+    notifications: NotificationOutbox | None = None
+
+
+def build_notification_outbox(
+    store: StateStore, settings: Settings, runtime_instance_id: str
+) -> NotificationOutbox:
+    """Build notification delivery with the process-wide retry and lease settings."""
+    return NotificationOutbox(
+        store,
+        settings.notification_smtp,
+        runtime_instance_id,
+        retry_base_seconds=settings.retry_base_seconds,
+        retry_max_seconds=settings.retry_max_seconds,
+        max_attempts=settings.max_attempts,
+        reconciliation_seconds=settings.notification_reconciliation_seconds,
+        lease_ttl_seconds=settings.notification_lease_ttl_seconds,
+        batch_size=settings.notification_batch_size,
+    )
 
 
 def build_runtime_context(settings: Settings) -> RuntimeContext:
@@ -57,7 +76,13 @@ def build_runtime_context(settings: Settings) -> RuntimeContext:
     except Exception as exc:  # audit-chain tamper or other verification failure
         store.close()
         raise RuntimeStartupError(f"Durable ledger verification failed: {exc}") from exc
-    return RuntimeContext(store=store, runtime_instance_id=str(uuid.uuid4()), settings=settings)
+    runtime_id = str(uuid.uuid4())
+    return RuntimeContext(
+        store=store,
+        runtime_instance_id=runtime_id,
+        settings=settings,
+        notifications=build_notification_outbox(store, settings, runtime_id),
+    )
 
 
 def close_runtime_context(ctx: RuntimeContext) -> None:
@@ -80,6 +105,10 @@ def release_lease_with_audit(store: StateStore, runtime_instance_id: str, canvas
 
 
 __all__ = [
-    "RuntimeContext", "RuntimeStartupError", "build_runtime_context",
-    "close_runtime_context", "release_lease_with_audit",
+    "RuntimeContext",
+    "RuntimeStartupError",
+    "build_notification_outbox",
+    "build_runtime_context",
+    "close_runtime_context",
+    "release_lease_with_audit",
 ]

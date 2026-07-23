@@ -144,3 +144,51 @@ def test_core_scanner_remains_policy_independent() -> None:
     for bucket in ("ideas_needing_setup", "setups_needing_run", "loops"):
         assert snapshot[bucket]
         assert all("data_classification" not in item for item in snapshot[bucket])
+
+
+async def test_registered_scan_propagates_modes_and_stamps_safe_mode_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = [
+        _widget("rag", "RAGCluster_fixture", widget_type="Image"),
+        _widget("legacy", text="draft {idea: preserve legacy matching"),
+        _widget("auto", text="{idea+auto: run this automatically}"),
+        _widget("mixed", text="{idea+auto: valid} {idea+batch: must fail closed}"),
+        _widget("unknown", text="{idea+batch: never execute}"),
+        _connector("legacy-source", "rag", "legacy"),
+        _connector("auto-source", "rag", "auto"),
+        _connector("mixed-source", "rag", "mixed"),
+    ]
+    monkeypatch.setattr(tools, "get_client", lambda: _FakeClient(_FakeWidgets(fixture)))
+    monkeypatch.setattr(
+        tools,
+        "get_settings",
+        lambda: Settings(api_url="https://canvus.example/api/v1", api_key="test-key"),
+    )
+    mcp = _FakeMCP()
+    tools.register(mcp, classification_for_canvas=lambda _canvas_id: "internal")
+
+    result = await mcp.tools["scan_experiment_workflow"](CANVAS_ID)
+
+    assert {
+        item["widget_id"]: item["execution_mode"] for item in result["ideas"]
+    } == {"legacy": "manual", "auto": "auto"}
+    assert {
+        item["widget_id"]: item["execution_mode"] for item in result["ideas_needing_setup"]
+    } == {"legacy": "manual", "auto": "auto"}
+    assert result["mode_errors"] == [
+        {
+            "widget_id": "mixed",
+            "widget_type": "Note",
+            "parse_error": "unsupported_mode",
+            "data_classification": "internal",
+        },
+        {
+            "widget_id": "unknown",
+            "widget_type": "Note",
+            "parse_error": "unsupported_mode",
+            "data_classification": "internal",
+        },
+    ]
+    assert {"mixed", "unknown"}.isdisjoint(item["widget_id"] for item in result["ideas"])
+    assert all("text" not in item for item in result["mode_errors"])

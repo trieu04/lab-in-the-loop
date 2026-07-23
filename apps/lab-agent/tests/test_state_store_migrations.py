@@ -33,6 +33,28 @@ def test_migrate_records_applied_version_and_checksum(store: StateStore) -> None
     assert len(row["checksum"]) == 64  # sha256 hex digest
 
 
+def test_terminal_audit_lookup_is_indexed_and_trigger_scoped(store: StateStore) -> None:
+    first = {"trigger_id": "loop:first", "reason": "max_rounds"}
+    second = {"trigger_id": "loop:second", "reason": "model_decision"}
+    store.append_audit_event("canvas", "loop_stopped", first, round=1)
+    store.append_audit_event("canvas", "loop_stopped", second, round=2)
+
+    found = store.find_terminal_event("canvas", "loop:first")
+    indexes = {
+        row["name"] for row in store.conn.execute("PRAGMA index_list('audit_events')")
+    }
+
+    plan = store.conn.execute(
+        "EXPLAIN QUERY PLAN SELECT * FROM audit_events WHERE canvas_id=? "
+        "AND event='loop_stopped' AND json_extract(payload_json, '$.trigger_id')=? "
+        "ORDER BY sequence DESC LIMIT 1", ("canvas", "loop:first"),
+    ).fetchall()
+    assert found is not None and found.payload == first
+    assert store.find_terminal_event("canvas", "loop:missing") is None
+    assert "idx_audit_events_terminal_trigger" in indexes
+    assert any("idx_audit_events_terminal_trigger" in row["detail"] for row in plan)
+
+
 def test_migrate_is_idempotent_on_reopen(tmp_path, clock, rng) -> None:
     db_path = tmp_path / "state.db"
     first = StateStore(db_path, clock=clock, rng=rng)

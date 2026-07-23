@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from lab_agent.notification_smtp import SMTPConfiguration
 from lab_agent.provider_endpoints import default_provider_endpoints
 
 
@@ -14,7 +15,12 @@ class Settings(BaseSettings):
     """Environment-backed settings for the agent."""
 
     model_config = SettingsConfigDict(
-        env_prefix="LAB_AGENT_", env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
+        env_prefix="LAB_AGENT_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="__",
+        extra="ignore",
+        case_sensitive=False,
     )
 
     # ── canvus-mcp endpoint and safe result boundary ──────────────────
@@ -70,6 +76,10 @@ class Settings(BaseSettings):
     # until at least this many experiment rounds exist. Governance backstops
     # (budget/wall-time/no-progress/max-rounds) are never overridden.
     loop_min_rounds: int = Field(default=2, ge=1)
+    wet_lab_execution_enabled: bool = Field(
+        default=False,
+        description="Explicit external gate for Phase 8 execution dispatch; disabled in Phase 7.",
+    )
 
     # ── Durable harness (Phase 2: SQLite WAL ledger, single-host scope) ──
     state_db_path: str = Field(default=".state/lab_agent.db")
@@ -78,6 +88,12 @@ class Settings(BaseSettings):
     retry_base_seconds: float = Field(default=5.0, gt=0)
     retry_max_seconds: float = Field(default=300.0, gt=0)
     max_attempts: int = Field(default=5, ge=1)
+
+    # ── Terminal notification delivery (disabled unless explicitly configured) ──
+    notification_smtp: SMTPConfiguration = Field(default_factory=SMTPConfiguration)
+    notification_lease_ttl_seconds: float = Field(default=60.0, gt=0, le=600)
+    notification_reconciliation_seconds: float = Field(default=3600.0, gt=0, le=86400)
+    notification_batch_size: int = Field(default=1, ge=1, le=100)
 
     # ── Artifact service (Phase 3: capability-protected ASGI server) ─
     artifact_bind_host: str = Field(default="127.0.0.1")

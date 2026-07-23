@@ -1,9 +1,4 @@
-"""Crash-safe generated-artifact Browser writes over the canonical store.
-
-The durable primitive converges retries onto one artifact, Browser widget, and
-connector. Capability tokens and full URLs are bearer secrets and never enter
-logs or audit payloads.
-"""
+"""Crash-safe canonical-artifact Browser writes."""
 
 from __future__ import annotations
 
@@ -20,23 +15,20 @@ from lab_agent.models.artifact import ArtifactProvenance, ArtifactType
 from lab_agent.models.states import DecisionState
 from lab_agent.state_store import StateStore
 
-#: Payload key holding the human-readable rendering the model consumes on a
-#: later round (Browser widgets carry no body text; the canonical store does).
 RENDERED_TEXT_KEY = "rendered"
 
-#: Which ``scan_experiment_workflow`` bucket a generated Browser artifact lands
-#: in -- the tag-probe search space for crash recovery.
 _BUCKET = {
     ArtifactType.SETUP: "setups",
     ArtifactType.RESULT: "results",
     ArtifactType.CLOSED: "closeds",
     ArtifactType.NEEDS_INPUT: "needs_inputs",
+    ArtifactType.IN_SILICO: "validations",
+    ArtifactType.APPROVAL_STATUS: "validations",
 }
 
 
 class ArtifactUrlError(RuntimeError):
-    """Raised when ``artifact_public_base_url`` is empty/malformed for Browser
-    use -- fail closed before issuing any capability token or Browser mutation."""
+    """Browser writes need a valid public artifact URL."""
 
 
 def require_public_base(base: str) -> None:
@@ -63,9 +55,9 @@ def provenance_for(
     )
 
 
-#: Needs-input artifacts get their own column so they never overlap the
-#: setup/result/closed grid regardless of which round/predecessor raised one.
 _NEEDS_INPUT_X = 780.0
+_IN_SILICO_X = 1040.0
+_APPROVAL_STATUS_X = 1560.0
 
 
 def _layout(artifact_type: ArtifactType, round_index: int) -> tuple[float, float]:
@@ -75,6 +67,10 @@ def _layout(artifact_type: ArtifactType, round_index: int) -> tuple[float, float
         return _RESULT_X, round_index * _ROW
     if artifact_type is ArtifactType.NEEDS_INPUT:
         return _NEEDS_INPUT_X, round_index * _ROW
+    if artifact_type is ArtifactType.IN_SILICO:
+        return _IN_SILICO_X, round_index * _ROW
+    if artifact_type is ArtifactType.APPROVAL_STATUS:
+        return _APPROVAL_STATUS_X, round_index * _ROW
     return _CLOSED_X, (round_index + 1) * _ROW
 
 
@@ -96,27 +92,15 @@ async def _reconcile_browser(
     legacy_browser_keys: tuple[str, ...] = (),
     legacy_intent_hashes: tuple[str, ...] = (),
 ) -> str:
-    """Create or repair the Browser widget under one durable intent.
-
-    The current intent payload excludes the URL/token (they rotate each attempt),
-    while ``legacy_browser_keys`` lets an upgrade probe widgets tagged by older
-    discriminator schemes before creating anything new.
-    """
-    legacy_hash = artifact_compat.legacy_browser_intent_hash(
-        opaque_id=opaque_id, tagged_title=tagged_title, x=x, y=y,
-    )
-    artifact_compat.prepare_browser_intent(
-        store, canvas_id=canvas_id, browser_key_value=browser_key,
-        opaque_id=opaque_id, compatible_hashes=(legacy_hash, *legacy_intent_hashes),
-    )
+    """Create or repair one Browser widget under its durable intent."""
+    legacy_hash = artifact_compat.legacy_browser_intent_hash(opaque_id=opaque_id, tagged_title=tagged_title, x=x, y=y)
+    artifact_compat.prepare_browser_intent(store, canvas_id=canvas_id, browser_key_value=browser_key, opaque_id=opaque_id, compatible_hashes=(legacy_hash, *legacy_intent_hashes))
     found_key = browser_key
     try:
         existing = mapped_widget_id
         if not existing:
             for key in artifact_compat.unique_keys((browser_key, *legacy_browser_keys)):
-                existing = await canvas_probe.probe_browser_by_tag(
-                    mcp, canvas_id=canvas_id, bucket=bucket, idempotency_key=key
-                )
+                existing = await canvas_probe.probe_browser_by_tag(mcp, canvas_id=canvas_id, bucket=bucket, idempotency_key=key)
                 if existing:
                     found_key = key
                     break
@@ -129,21 +113,14 @@ async def _reconcile_browser(
         astore.map_widget(opaque_id, canvas_id=canvas_id, widget_id=widget_id)
     except Exception as exc:
         store.mark_intent_failed(browser_key, error=str(exc)[:200])
-        store.append_audit_event(
-            canvas_id, "intent_failed",
-            {"kind": "create_browser", "key": browser_key[:16], "error": str(exc)[:200]}, round=round_index,
-        )
+        store.append_audit_event(canvas_id, "intent_failed", {"kind": "create_browser", "key": browser_key[:16], "error": str(exc)[:200]}, round=round_index)
         raise
     if created:
         store.mark_intent_executed(browser_key, external_id=widget_id)
     store.mark_intent_reconciled(browser_key, external_id=widget_id)
     if found_key != browser_key and store.get_intent(found_key) is not None:
         store.mark_intent_reconciled(found_key, external_id=widget_id)
-    store.append_audit_event(
-        canvas_id, "intent_reconciled",
-        {"kind": "create_browser", "key": browser_key[:16], "external_id": widget_id, "repaired": not created},
-        round=round_index,
-    )
+    store.append_audit_event(canvas_id, "intent_reconciled", {"kind": "create_browser", "key": browser_key[:16], "external_id": widget_id, "repaired": not created}, round=round_index)
     return widget_id
 
 
@@ -171,20 +148,13 @@ async def write_artifact_browser_durable(
     require_public_base(base)  # fail closed before any token/MCP mutation
     astore = ArtifactStore(store.conn, clock=store.clock)
     artifact_key = artifact_compat.artifact_key(canvas_id, artifact_type, discriminator)
-    legacy_artifact_keys = tuple(
-        artifact_compat.artifact_key(canvas_id, artifact_type, legacy)
-        for legacy in legacy_discriminators
-    )
-    doc = artifact_compat.find_existing_artifact(
-        astore, canvas_id=canvas_id, artifact_type=artifact_type,
-        keys=(artifact_key, *legacy_artifact_keys), reuse_widget_id=reuse_artifact_widget_id,
-    )
+    legacy_artifact_keys = tuple(artifact_compat.artifact_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)
+    doc = artifact_compat.find_existing_artifact(astore, canvas_id=canvas_id, artifact_type=artifact_type, keys=(artifact_key, *legacy_artifact_keys), reuse_widget_id=reuse_artifact_widget_id)
     if doc is None:
-        doc = astore.get_or_create_artifact(
-            canvas_id=canvas_id, idempotency_key=artifact_key, artifact_type=artifact_type,
-            state=state, payload=payload, provenance=provenance, round=round_index,
-        )
-    if round_index > doc.round:
+        doc = astore.get_or_create_artifact(canvas_id=canvas_id, idempotency_key=artifact_key, artifact_type=artifact_type, state=state, payload=payload, provenance=provenance, round=round_index)
+    if round_index > doc.round or (
+        artifact_type is ArtifactType.APPROVAL_STATUS and doc.payload != payload
+    ):
         doc = astore.append_version(
             doc.opaque_id,
             canvas_id=canvas_id,
@@ -197,30 +167,14 @@ async def write_artifact_browser_durable(
     token = astore.issue_token(doc.opaque_id, canvas_id=canvas_id)  # fresh per attempt
     url = _capability_url(base, doc.opaque_id, token)
     fallback = _layout(artifact_type, round_index)
-    x, y = await artifact_layout.resolve_artifact_position(
-        mcp, canvas_id=canvas_id, anchor_widget_id=layout_anchor_id or predecessor_id,
-        artifact_type=artifact_type, fallback=fallback,
-    )
+    x, y = await artifact_layout.resolve_artifact_position(mcp, canvas_id=canvas_id, anchor_widget_id=layout_anchor_id or predecessor_id, artifact_type=artifact_type, fallback=fallback)
     browser_key = artifact_compat.browser_key(canvas_id, artifact_type, discriminator)
-    legacy_browser_keys = tuple(
-        artifact_compat.browser_key(canvas_id, artifact_type, legacy)
-        for legacy in legacy_discriminators
-    )
+    legacy_browser_keys = tuple(artifact_compat.browser_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)
     tagged = canvas_probe.tagged_title(title, browser_key)
-    legacy_grid_hash = artifact_compat.legacy_browser_intent_hash(
-        opaque_id=doc.opaque_id, tagged_title=tagged, x=fallback[0], y=fallback[1]
-    )
-    widget_id = await _reconcile_browser(
-        mcp, store, astore, canvas_id=canvas_id, browser_key=browser_key, bucket=_BUCKET[artifact_type],
-        opaque_id=doc.opaque_id, mapped_widget_id=doc.widget_id, tagged_title=tagged,
-        url=url, x=x, y=y, round_index=round_index, legacy_browser_keys=legacy_browser_keys,
-        legacy_intent_hashes=(legacy_grid_hash,),
-    )
+    legacy_grid_hash = artifact_compat.legacy_browser_intent_hash(opaque_id=doc.opaque_id, tagged_title=tagged, x=fallback[0], y=fallback[1])
+    widget_id = await _reconcile_browser(mcp, store, astore, canvas_id=canvas_id, browser_key=browser_key, bucket=_BUCKET[artifact_type], opaque_id=doc.opaque_id, mapped_widget_id=doc.widget_id, tagged_title=tagged, url=url, x=x, y=y, round_index=round_index, legacy_browser_keys=legacy_browser_keys, legacy_intent_hashes=(legacy_grid_hash,))
     if widget_id and predecessor_id:
-        await connect_durable(
-            mcp, store, canvas_id=canvas_id, src_id=predecessor_id, dst_id=widget_id,
-            edge_kind=edge_kind, round_index=round_index,
-        )
+        await connect_durable(mcp, store, canvas_id=canvas_id, src_id=predecessor_id, dst_id=widget_id, edge_kind=edge_kind, round_index=round_index)
     return widget_id
 
 
@@ -237,11 +191,4 @@ async def read_stage_text(mcp: MCPClient, store: StateStore, canvas_id: str, wid
     return await nodes.read_note_text(mcp, canvas_id, widget_id)
 
 
-__all__ = [
-    "ArtifactUrlError",
-    "RENDERED_TEXT_KEY",
-    "provenance_for",
-    "read_stage_text",
-    "require_public_base",
-    "write_artifact_browser_durable",
-]
+__all__ = ["ArtifactUrlError", "RENDERED_TEXT_KEY", "provenance_for", "read_stage_text", "require_public_base", "write_artifact_browser_durable"]

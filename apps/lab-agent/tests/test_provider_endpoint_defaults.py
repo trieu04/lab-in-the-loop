@@ -100,7 +100,7 @@ async def test_cli_builds_governed_context_with_legacy_canonical_endpoints(monke
     settings = build_isolated_settings(
         openai_api_key="openai-key", state_db_path=str(tmp_path / "state.db")
     )
-    runtime = SimpleNamespace(store=object(), runtime_instance_id="worker")
+    runtime = SimpleNamespace(store=object(), runtime_instance_id="worker", notifications=None)
     captured: dict[str, object] = {}
 
     class FakeMCP:
@@ -127,7 +127,7 @@ async def test_cli_builds_governed_context_with_legacy_canonical_endpoints(monke
     monkeypatch.setattr(cli, "MCPClient", lambda _url, _token, **_limits: FakeMCP())
     monkeypatch.setattr(cli, "release_lease_with_audit", lambda *args: True)
 
-    async def process_once(*args: object) -> dict[str, int]:
+    async def process_once(*args: object, **kwargs: object) -> dict[str, int]:
         return {"setups": 0, "runs": 0, "loops": 0}
 
     monkeypatch.setattr(cli, "process_once", process_once)

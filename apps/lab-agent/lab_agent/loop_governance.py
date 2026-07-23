@@ -17,8 +17,10 @@ import structlog
 from lab_agent.config import Settings
 from lab_agent.mcp_client import MCPClient
 from lab_agent.model_gateway import GovernanceContext, LocalityDeniedError
+from lab_agent.models.artifact import ArtifactProvenance
 from lab_agent.models.experiment import LoopDecision
-from lab_agent.models.governance import StopReason
+from lab_agent.models.governance import StopReason, TerminalStopEvent
+from lab_agent.notification_outbox import enqueue_terminal_notification
 from lab_agent.orchestrator_support import LoopSummary, write_closed_node
 from lab_agent.policy import (
     BudgetExceededError,
@@ -87,19 +89,40 @@ def stop_decision(reason: StopReason) -> LoopDecision:
 
 async def close_with_reason(
     mcp: MCPClient, settings: Settings, store: StateStore, summary: LoopSummary, *, canvas_id: str,
-    result_id: str, round_index: int, reason: StopReason,
-) -> bool:
-    """Write the one terminal closure and its audit record."""
+    result_id: str, round_index: int, reason: StopReason, trigger_id: str = "",
+    decision: LoopDecision | None = None, provenance: ArtifactProvenance | None = None,
+) -> TerminalStopEvent:
+    """Reconcile one terminal closure and emit its safe, idempotent event."""
+    terminal_decision = decision or stop_decision(reason)
     summary.closed_id = await write_closed_node(
-        mcp, store, settings, canvas_id=canvas_id, decision=stop_decision(reason),
-        reason=reason.value, backstop=True, round_index=round_index, result_id=result_id,
+        mcp, store, settings, canvas_id=canvas_id, decision=terminal_decision,
+        reason=reason.value if decision is None else terminal_decision.reason,
+        backstop=decision is None, round_index=round_index, result_id=result_id, provenance=provenance,
     )
     summary.stopped_reason = reason.value
-    store.append_audit_event(
-        canvas_id, "loop_stopped", {"reason": reason.value, "rounds": summary.rounds},
-        round=round_index,
+    event = TerminalStopEvent(
+        canvas_id=canvas_id, trigger_id=trigger_id or f"loop:result:{result_id}",
+        predecessor_id=result_id, reason=reason, round_index=round_index,
+        closure_id=summary.closed_id,
     )
-    return True
+    summary.terminal_notification_ready = reconcile_terminal_event(store, settings, event)
+    return event
+
+
+def reconcile_terminal_event(store: StateStore, settings: Settings, event: TerminalStopEvent) -> bool:
+    """Persist the event and report whether its notification requirement is satisfied."""
+    if not _terminal_event_recorded(store, event):
+        store.append_audit_event(
+            event.canvas_id, "loop_stopped", event.audit_payload, round=event.round_index
+        )
+    notification_enqueued = enqueue_terminal_notification(store, settings.notification_smtp, event)
+    return not settings.notification_smtp.enabled or notification_enqueued
+
+
+def _terminal_event_recorded(store: StateStore, event: TerminalStopEvent) -> bool:
+    """Avoid duplicating the durable terminal event after restart/reconciliation."""
+    audit = store.find_terminal_event(event.canvas_id, event.trigger_id)
+    return audit is not None and audit.round == event.round_index and audit.payload == event.audit_payload
 
 
 def governance_stop_reason(
@@ -121,12 +144,13 @@ async def close_governance_error(
     result_id: str,
     round_index: int,
     error: BudgetExceededError | LocalityDeniedError,
+    trigger_id: str = "",
 ) -> LoopSummary:
     """Close a loop after locality, reservation, or committed-usage denial."""
     reason = governance_stop_reason(error)
     await close_with_reason(
         mcp, settings, store, summary, canvas_id=canvas_id, result_id=result_id,
-        round_index=round_index, reason=reason,
+        round_index=round_index, reason=reason, trigger_id=trigger_id,
     )
     return summary
 
@@ -144,6 +168,7 @@ async def evaluate_and_close(
     result_id: str,
     round_index: int,
     observe: bool = True,
+    trigger_id: str = "",
 ) -> bool:
     """Evaluate the harness stop backstops; on a stop, write and audit the closed
     node and return ``True`` (no further provider/canvas writes follow).
@@ -158,13 +183,14 @@ async def evaluate_and_close(
     if reason is None:
         return False
     log.info("experiment_loop_stopped", canvas_id=canvas_id, rounds=summary.rounds, reason=reason.value)
-    return await close_with_reason(
+    await close_with_reason(
         mcp, settings, store, summary, canvas_id=canvas_id, result_id=result_id,
-        round_index=round_index, reason=reason,
+        round_index=round_index, reason=reason, trigger_id=trigger_id,
     )
+    return True
 
 
 __all__ = [
     "StopTracker", "close_governance_error", "close_with_reason", "evaluate_and_close",
-    "governance_stop_reason", "make_stop_tracker", "stop_decision",
+    "governance_stop_reason", "make_stop_tracker", "reconcile_terminal_event", "stop_decision",
 ]

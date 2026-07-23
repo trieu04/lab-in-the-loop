@@ -44,7 +44,7 @@ async def test_second_runtime_is_blocked_by_a_live_canvas_lease(tmp_path):
 
         counts = await process_once(mcp, adapter, _settings(), store2, "rt2", "c")  # type: ignore[arg-type]
 
-        assert counts == {"setups": 0, "runs": 0, "loops": 0}  # denied -> no work attempted
+        assert counts == {"setups": 0, "runs": 0, "loops": 0, "validations": 0}  # denied -> no work attempted
         assert len(mcp.notes) == 1  # only the seed idea note; nothing written
         denied = [e for e in store2.list_audit_events("c") if e.event == "canvas_lease_denied"]
         assert len(denied) == 1

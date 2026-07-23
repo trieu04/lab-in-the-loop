@@ -1,186 +1,74 @@
 {
   "commands": [
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run pytest -q",
       "exitCode": 0,
       "status": "pass",
-      "summary": "134 passed; 3 known contextlib DeprecationWarnings.",
-      "ts": "2026-07-20T00:26:17+07:00"
+      "summary": "601 passed, 4 deprecation warnings in 8.55s; current shared tree includes Phase 7 and concurrent dependent-plan coverage.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run pytest -q tests/test_extractors.py tests/test_ingestion_access_reads.py tests/test_ingestion_cache_publication.py tests/test_ingestion_cache_security.py tests/test_ingestion_chunk_pagination.py tests/test_ingestion_crash_recovery.py tests/test_ingestion_cross_canvas_mutations.py tests/test_ingestion_download_hardening.py tests/test_ingestion_durable_hardening.py tests/test_ingestion_enqueue_race.py tests/test_ingestion_pipeline.py tests/test_ingestion_recovery_security.py tests/test_ingestion_runtime_artifacts.py tests/test_ingestion_runtime_hardening.py tests/test_ingestion_store.py tests/test_ingestion_tools.py tests/test_ingestion_worker.py tests/test_ingestion_worker_lease_loss.py tests/test_ingestion_worker_retry_timing.py tests/test_ingestion_worker_shutdown.py tests/test_secure_download_acquisition.py tests/test_server_lifecycle.py",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run pytest -q",
       "exitCode": 0,
       "status": "pass",
-      "summary": "77 focused Phase 6 regression tests passed.",
-      "ts": "2026-07-20T00:26:22+07:00"
+      "summary": "163 passed, 3 deprecation warnings in 4.32s.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run ruff check canvus_mcp tests",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run ruff check lab_agent tests",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Ruff all checks passed for canvus_mcp and tests.",
-      "ts": "2026-07-20T00:26:26+07:00"
+      "summary": "All lab-agent source and test lint checks passed.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run mypy canvus_mcp",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run ruff check canvus_mcp tests",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Mypy no issues in 31 source files.",
-      "ts": "2026-07-20T00:26:26+07:00"
+      "summary": "All Canvus-MCP source and test lint checks passed.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv run python -m compileall -q canvus_mcp",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run mypy lab_agent",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Python compileall completed with no errors.",
-      "ts": "2026-07-20T00:26:26+07:00"
+      "summary": "Success: no issues found in 98 lab-agent source files.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv lock --check",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run mypy canvus_mcp",
       "exitCode": 0,
       "status": "pass",
-      "summary": "uv lock --check resolved lockfile successfully.",
-      "ts": "2026-07-20T00:26:26+07:00"
+      "summary": "Success: no issues found in 32 Canvus-MCP source files.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "out_dir=$(mktemp -d /tmp/canvus-mcp-phase6-evidence-XXXXXX) && cd /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp && uv build --out-dir \"$out_dir\" && printf 'BUILD_OUT=%s\\n' \"$out_dir\"",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run python -m compileall -q /home/ntdm/dev/lap-in-the-loop/apps/lab-agent/lab_agent",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Built source distribution and wheel successfully in /tmp/canvus-mcp-phase6-evidence-YF9UE1.",
-      "ts": "2026-07-20T00:26:26+07:00"
+      "summary": "Lab-agent Python source compiled with no errors.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp run python -m compileall -q /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp/canvus_mcp",
       "exitCode": 0,
       "status": "pass",
-      "summary": "480 passed; 1 StarletteDeprecationWarning and 3 contextlib DeprecationWarnings.",
-      "ts": "2026-07-20T00:26:27+07:00"
+      "summary": "Canvus-MCP Python source compiled with no errors.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_phase6_safety_regressions.py tests/test_result_safety.py tests/test_ingestion_tool_bridge.py tests/test_ingestion_multistep_security.py tests/test_mcp_result_bounds.py tests/test_evidence.py tests/test_tool_bridge.py tests/test_loop.py tests/test_model_gateway.py tests/test_nodes.py tests/test_orchestrator.py",
+      "command": "uv --directory /home/ntdm/dev/lap-in-the-loop run python scripts/check-workflow-contract-parity.py",
       "exitCode": 0,
       "status": "pass",
-      "summary": "122 focused Phase 6 regression tests passed.",
-      "ts": "2026-07-20T00:26:33+07:00"
+      "summary": "Self-test and parity check passed; Canvus-MCP markers, lab-agent markers, and docs are aligned.",
+      "ts": "2026-07-23T08:05:50+07:00"
     },
     {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
+      "command": "git -C /home/ntdm/dev/lap-in-the-loop diff --check",
       "exitCode": 0,
       "status": "pass",
-      "summary": "Ruff all checks passed for lab_agent and tests.",
-      "ts": "2026-07-20T00:26:34+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Mypy no issues in 77 source files.",
-      "ts": "2026-07-20T00:26:35+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run python -m compileall -q lab_agent",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Python compileall completed with no errors.",
-      "ts": "2026-07-20T00:26:35+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv lock --check",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "uv lock --check resolved lockfile successfully.",
-      "ts": "2026-07-20T00:26:35+07:00"
-    },
-    {
-      "command": "out_dir=$(mktemp -d /tmp/lab-agent-phase6-evidence-XXXXXX) && cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv build --out-dir \"$out_dir\" && printf 'BUILD_OUT=%s\\n' \"$out_dir\"",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Built source distribution and wheel successfully in /tmp/lab-agent-phase6-evidence-NcmKg0.",
-      "ts": "2026-07-20T00:26:35+07:00"
-    },
-    {
-      "command": "uv run python scripts/check-workflow-contract-parity.py",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Parity self-test and cross-app marker/document check passed.",
-      "ts": "2026-07-20T00:26:36+07:00"
-    },
-    {
-      "command": "git diff --check",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "No tracked diff whitespace errors.",
-      "ts": "2026-07-20T00:26:36+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop && files=$(git ls-files --others --exclude-standard -- apps/canvus-mcp apps/lab-agent docs plans/260716-1253-lab-in-the-loop-use-case-implementation | grep -vE '(^|/)(reports|evidence|journals)/' || true); if [ -n \"$files\" ]; then bad=0; while IFS= read -r f; do if grep -nH -E '[[:blank:]]$' \"$f\"; then bad=1; fi; done <<< \"$files\"; exit \"$bad\"; fi",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "No trailing whitespace in untracked source/test/config files; generated reports/evidence excluded.",
-      "ts": "2026-07-20T00:26:36+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop && phase7=$(find plans/260716-1253-lab-in-the-loop-use-case-implementation -maxdepth 1 -type f -iname '*phase-07*' -print); if git diff --name-only HEAD | grep -Ei 'phase-07|phase7'; then exit 1; fi; if [ -n \"$phase7\" ]; then while IFS= read -r f; do [ -z \"$f\" ] && continue; if git status --short -- \"$f\" | grep -q .; then exit 1; fi; done <<< \"$phase7\"; fi",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Phase 7 files exist and have no diff or status changes.",
-      "ts": "2026-07-20T00:26:36+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q tests/test_provider_endpoint_defaults.py",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "4 passed in 1.14s; endpoint settings tests pass under the normal environment.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run pytest -q",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "480 passed, 4 warnings in 7.47s.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run ruff check lab_agent tests",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Ruff all checks passed for lab_agent and tests.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "cd /home/ntdm/dev/lap-in-the-loop/apps/lab-agent && uv run mypy lab_agent",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Mypy no issues in 77 source files.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "cd /tmp && env -i HOME=\"$HOME\" PATH=\"$PATH\" uv --directory /home/ntdm/dev/lap-in-the-loop/apps/lab-agent run pytest -q /home/ntdm/dev/lap-in-the-loop/apps/lab-agent/tests/test_provider_endpoint_defaults.py",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "4 passed in 1.12s from /tmp with an empty environment and no project dotenv loading.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "git diff --check",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "No tracked diff whitespace errors.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "phase7=$(find plans/260716-1253-lab-in-the-loop-use-case-implementation -maxdepth 1 -type f -iname '*phase-07*' -print); if git diff --name-only HEAD | grep -Ei 'phase-07|phase7'; then exit 1; fi; if [ -n \"$phase7\" ]; then while IFS= read -r f; do [ -z \"$f\" ] && continue; if git status --short -- \"$f\" | grep -q .; then exit 1; fi; done <<< \"$phase7\"; fi",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "Phase 7 files exist and have no diff or status changes.",
-      "ts": "2026-07-20T03:06:42+07:00"
-    },
-    {
-      "command": "cutoff=$(date -d '2026-07-19T17:26:26Z' +%s); changed=0; while IFS= read -r f; do [ -z \"$f\" ] && continue; mt=$(stat -c %Y \"$f\"); if [ \"$mt\" -gt \"$cutoff\" ]; then printf '%s\\n' \"$f\"; changed=1; fi; done < <(git ls-files -co --exclude-standard apps/canvus-mcp); if [ \"$changed\" -ne 0 ]; then exit 1; fi; printf 'No tracked or non-ignored Canvus-MCP files newer than 2026-07-19T17:26:26Z\\n'",
-      "exitCode": 0,
-      "status": "pass",
-      "summary": "No tracked or non-ignored Canvus-MCP files changed after the 134-pass, Ruff, and mypy results.",
-      "ts": "2026-07-20T03:06:42+07:00"
+      "summary": "No diff whitespace errors.",
+      "ts": "2026-07-23T08:05:50+07:00"
     }
   ]
 }

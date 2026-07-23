@@ -13,27 +13,24 @@ from typing import Any
 from lab_agent.mcp_client import MCPClient
 from lab_agent.models.states import DecisionState
 
-# Title-prefix markers. Setup/Result take a versioned "vNNN" suffix; Closed/Needs Input are literal.
 EXP_SETUP = "[EXP:Setup"
 EXP_RESULT = "[EXP:Result"
 CLOSED = "[EXP:Closed]"
 EXP_NEEDS_INPUT = "[EXP:Needs Input]"
+EXP_VALIDATION = "[EXP:Validation]"
+EXP_SCIENTIST_REVIEW = "[EXP:Scientist Review]"
+EXP_LAB_LEAD_APPROVAL = "[EXP:Lab Lead Approval]"
 
 _COLUMN_X = 0.0
 _ROW_STEP = 420.0
 
-# Generated-artifact Browser widget size: larger than a legacy Note for the
-# capability-served tabbed view, yet still inside the setup/result/closed grid
-# (columns 520 apart, rows 420 apart -- durable_writes.py) so nodes never
-# overlap. Centralised here as the one source of truth.
+# Generated-artifact Browser widget dimensions.
 BROWSER_WIDTH = 480.0
 BROWSER_HEIGHT = 360.0
 
 
 @dataclass
 class Layout:
-    """Stacks nodes in a vertical column so connectors read top-to-bottom."""
-
     x: float = _COLUMN_X
     y: float = 0.0
     step: float = _ROW_STEP
@@ -193,7 +190,8 @@ async def read_note_text(mcp: MCPClient, canvas_id: str, note_id: str) -> str:
 
 
 __all__ = [
-    "BROWSER_HEIGHT", "BROWSER_WIDTH", "CLOSED", "EXP_NEEDS_INPUT", "EXP_RESULT", "EXP_SETUP",
+    "BROWSER_HEIGHT", "BROWSER_WIDTH", "CLOSED", "EXP_LAB_LEAD_APPROVAL", "EXP_NEEDS_INPUT",
+    "EXP_RESULT", "EXP_SCIENTIST_REVIEW", "EXP_SETUP", "EXP_VALIDATION",
     "Layout", "MCPToolError", "connect", "create_artifact_widget", "create_node",
     "read_note_text", "update_artifact_widget",
 ]

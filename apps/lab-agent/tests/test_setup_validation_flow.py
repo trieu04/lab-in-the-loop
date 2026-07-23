@@ -51,14 +51,35 @@ def store(tmp_path):
     state.close()
 
 
-async def test_only_validation_bucket_reaches_deterministic_validator(store: StateStore) -> None:
+async def test_canonical_setup_reaches_validator_when_pending_bucket_is_empty_no_fallback(
+    store: StateStore,
+) -> None:
+    """Explicitly present empty setups_needing_validation is authoritative.
+
+    Must not fall back to setups bucket. The new key presence takes precedence.
+    """
     _persist(store)
-    mcp = FakeMCP(workflow={"setups": [{"widget_id": "setup"}], "setups_needing_validation": []})
+    mcp = FakeMCP(workflow={"setups_needing_validation": [], "setups": [{"widget_id": "setup"}]})
 
     counts = await process_once(mcp, ScriptedAdapter({}), SETTINGS, store, "runtime", "canvas")
 
-    assert counts["validations"] == 0
-    assert store.list_validation_results("canvas") == []
+    assert counts["validations"] == 0  # empty bucket is authoritative, no fallback
+
+
+async def test_canonical_setup_reaches_validator_when_pending_bucket_absent_falls_back_to_setups(
+    store: StateStore,
+) -> None:
+    """When setups_needing_validation key is absent, fall back to setups bucket.
+
+    Ensures backward compatibility when the new key is not present.
+    """
+    _persist(store)
+    mcp = FakeMCP(workflow={"setups": [{"widget_id": "setup"}]})
+
+    counts = await process_once(mcp, ScriptedAdapter({}), SETTINGS, store, "runtime", "canvas")
+
+    assert counts["validations"] == 1
+    assert len(store.list_validation_results("canvas")) == 1
 
 
 async def test_failed_validation_never_reaches_robot_execution(store: StateStore) -> None:

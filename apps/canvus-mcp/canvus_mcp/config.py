@@ -119,6 +119,18 @@ class Settings(BaseSettings):
         default="[EXP:Needs Input]",
         description="Title prefix of a generated needs-input Note/Browser widget.",
     )
+    mcp_exp_validation_marker: str = Field(
+        default="[EXP:Validation]",
+        description="Decision-neutral title prefix of a generated in-silico validation Note/Browser widget.",
+    )
+    mcp_exp_scientist_review_marker: str = Field(
+        default="[EXP:Scientist Review]",
+        description="Title prefix of a non-authorizing human scientist-review Note.",
+    )
+    mcp_exp_lab_lead_approval_marker: str = Field(
+        default="[EXP:Lab Lead Approval]",
+        description="Title prefix of a non-authorizing human lab-lead approval Note.",
+    )
 
 
 __all__ = ["Settings"]

@@ -154,6 +154,38 @@ def test_nested_and_large_payloads_are_preserved_in_sorted_safe_views() -> None:
     assert "large &lt;&amp;&gt; data &quot;quoted&quot;" in rendered
 
 
+def test_validation_and_approval_history_render_in_the_safe_validation_section() -> None:
+    rationale = '<reviewed & approved "carefully">'
+    document = _document(
+        {
+            "title": "Approval status",
+            "validation": {"decision": "proceed", "confidence": 0.9},
+            "approval_history": [
+                {
+                    "actor_id": "scientist-1",
+                    "role": "scientist",
+                    "decision": "approve",
+                    "rationale": rationale,
+                }
+            ],
+            "approval_status": {
+                "state": "APPROVED_FOR_WET_LAB",
+                "production_eligible": False,
+            },
+            "execution_enabled": False,
+        }
+    )
+
+    rendered = render_artifact_html(document)
+
+    assert "<h2>Validation</h2>" in rendered
+    assert "scientist-1" in rendered
+    assert html.escape(rationale, quote=True) in rendered
+    assert "APPROVED_FOR_WET_LAB" in rendered
+    assert "<dt>execution_enabled</dt>" in rendered
+    assert "<p class=\"data-value\">false</p>" in rendered
+
+
 def test_dependency_free_assets_cover_accessible_responsive_behavior() -> None:
     script = (ASSETS / "artifact-tabs.js").read_text(encoding="utf-8")
     styles = (ASSETS / "artifact-view.css").read_text(encoding="utf-8")

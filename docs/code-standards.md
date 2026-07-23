@@ -102,6 +102,16 @@ Do not let an unconstrained model decide arbitrary write tool calls. Successful 
 - Persist only safe fixed categories, digests, counts, and approved metadata for provider intents/failures. Never persist or audit raw prompt, response, secret, or provider-error values. Typed, known-not-dispatched transients alone may retry with a durable `next_retry_at`; deterministic, ambiguous, and untyped outcomes fail closed or reconcile only through a provider capability.
 - Treat model decision, maximum rounds, token/cost budget, wall time, no progress, locality denial, and reservation denial as distinct terminal closures. After a terminal closure begins, do not issue another provider call or canvas mutation for that run.
 
+## In-silico validation and approval gates
+
+- Bind typed `ExperimentSetup` proposals and `InSilicoResult` records to canonical SHA-256 hashes. The canonical serialization contract is `litl-canonical-json-v1`; do not replace it with incidental JSON formatting or untyped canvas text.
+- Treat `DeterministicInSilicoAdapter` output as a local structural dry run, not scientific validation. It must remain visibly labelled as such. A real adapter is disabled/unimplemented and must fail closed until its explicit readiness controls and integration exist.
+- Store validation and approval evidence append-only in the local SQLite ledger, scoped to the canvas. A durable approval must bind the exact proposal hash, validation-result hash, validation adapter/version/algorithm metadata, credential-verified identity, role, and decision.
+- Approval roles are unique per current proposal/result and ordered: scientist first, then lab lead. Retain stale evidence for audit, but never use it to authorize an edited proposal or changed validation result.
+- Canvas Notes, titles, connectors, widget author text, and Browser status artifacts are topology or projections only. They are never approval evidence. Obtain approvals only through an `IdentityProvider` that verifies a credential; never persist the credential or include it in an audit, artifact, prompt, log, or error.
+- Browser validation and approval-status artifacts project durable evidence. Their terminal `APPROVED_FOR_WET_LAB` state does not enable execution: `execution_enabled` remains `false` in Phase 7.
+- `wet_lab_execution_enabled` defaults to `false`. The watcher must not call the legacy `run_loop` path. An explicitly enabled future Phase 8 branch may produce only a model-generated `MOCK_RESULT` after the durable gates; it is not a hardware or laboratory integration.
+
 ## Structured output
 
 Model outputs that drive workflow state should be schema-bound:
@@ -166,6 +176,7 @@ Update docs when changing:
 - safety/idempotency behavior;
 - generated artifact storage/rendering, capability URL handling, artifact service deployment, or migration behavior;
 - evidence/citation validation, acronym dictionary behavior, untrusted-data boundaries, or durable audit payload policy;
+- typed validation/approval hashes, IdentityProvider behavior, durable gate evidence, or execution-gate defaults;
 - any future real lab/Flywheel integration.
 
 Docs to keep in sync:

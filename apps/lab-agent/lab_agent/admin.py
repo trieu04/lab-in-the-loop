@@ -11,9 +11,15 @@ that overwrites a live database.
 
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from lab_agent.runtime import RuntimeContext
+from lab_agent.state.notification_outbox import (
+    FailureCategory,
+    NotificationNotQuarantinedError,
+    NotificationStatus,
+)
 from lab_agent.state_store import AttemptNotQuarantinedError
 
 #: Audit events for harness-wide operator actions (integrity check, backup)
@@ -84,4 +90,64 @@ def backup(ctx: RuntimeContext, destination: str) -> int:
     return 0
 
 
-__all__ = ["GLOBAL_CANVAS", "backup", "check_integrity", "list_quarantined", "reset_attempt"]
+def notification_status(ctx: RuntimeContext, canvas_id: str | None) -> int:
+    """Print only delivery counts, optionally for one canvas identifier."""
+    counts = Counter(
+        record.status for record in ctx.store.list_notification_records(canvas_id=canvas_id)
+    )
+    print(" ".join(f"{status.value}={counts[status]}" for status in NotificationStatus))
+    return 0
+
+
+def list_notification_quarantined(ctx: RuntimeContext, canvas_id: str | None) -> int:
+    """List safe identifiers and fixed categories for quarantined notifications."""
+    records = ctx.store.list_notification_records(canvas_id=canvas_id, status=NotificationStatus.QUARANTINED)
+    if not records:
+        print("No quarantined notifications.")
+        return 0
+    for record in records:
+        category = record.failure_category.value if record.failure_category else "none"
+        print(
+            f"{record.canvas_id}\t{record.logical_key}"
+            f"\tattempts={record.attempt_count}\tcategory={category}"
+        )
+    return 0
+
+
+def retry_notification(ctx: RuntimeContext, logical_key: str) -> int:
+    """Explicitly return one quarantined notification to the durable queue."""
+    try:
+        ctx.store.reset_quarantined_notification(logical_key)
+    except NotificationNotQuarantinedError:
+        print("ERROR: notification is not quarantined.")
+        return 1
+    print("Notification retry queued.")
+    return 0
+
+
+def quarantine_notification(ctx: RuntimeContext, logical_key: str) -> int:
+    """Quarantine one currently due notification without attempting delivery."""
+    record = ctx.store.get_notification(logical_key)
+    if record is None or record.status is not NotificationStatus.PENDING:
+        print("ERROR: notification is not pending.")
+        return 1
+    leased = ctx.store.lease_due_notification(
+        logical_key,
+        lease_owner=ctx.runtime_instance_id,
+        lease_ttl_seconds=ctx.settings.notification_lease_ttl_seconds,
+        reconciliation_window_seconds=ctx.settings.notification_reconciliation_seconds,
+    )
+    if leased is None:
+        print("ERROR: notification is not due.")
+        return 1
+    ctx.store.quarantine_notification(
+        logical_key,
+        ctx.runtime_instance_id,
+        leased.lease_generation,
+        FailureCategory.IDEMPOTENCY_CONFLICT,
+    )
+    print("Notification quarantined.")
+    return 0
+
+
+__all__ = ["GLOBAL_CANVAS", "backup", "check_integrity", "list_notification_quarantined", "list_quarantined", "notification_status", "quarantine_notification", "reset_attempt", "retry_notification"]
