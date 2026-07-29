@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from lab_agent.config import Settings
-from lab_agent.loop_governance import governance_stop_reason, stop_decision
+from lab_agent.loop_governance import (
+    governance_stop_reason,
+    reconcile_terminal_event,
+    stop_decision,
+)
 from lab_agent.mcp_client import MCPClient
 from lab_agent.model_gateway import LocalityDeniedError
 from lab_agent.models.artifact import ArtifactProvenance
-from lab_agent.models.governance import StopReason
+from lab_agent.models.governance import StopReason, TerminalStopEvent
 from lab_agent.orchestrator_support import write_closed_node
 from lab_agent.policy import BudgetExceededError
 from lab_agent.state_store import StateStore
@@ -22,8 +26,9 @@ async def close_trigger_with_reason(
     predecessor_id: str,
     round_index: int,
     reason: StopReason,
-) -> str:
-    """Write one deduplicated harness closure for a pre-loop trigger."""
+    trigger_id: str,
+) -> tuple[TerminalStopEvent, bool]:
+    """Write and reconcile one terminal pre-loop governance closure."""
     lineage = f"governance/predecessor:{predecessor_id}/reason:{reason.value}"
     closed_id = await write_closed_node(
         mcp,
@@ -44,13 +49,22 @@ async def close_trigger_with_reason(
             source_widget_id=predecessor_id,
         ),
     )
-    store.append_audit_event(
-        canvas_id,
-        "governance_stopped",
-        {"reason": reason.value, "predecessor_id": predecessor_id},
-        round=round_index,
+    event = TerminalStopEvent(
+        canvas_id=canvas_id,
+        trigger_id=trigger_id,
+        predecessor_id=predecessor_id,
+        reason=reason,
+        round_index=round_index,
+        closure_id=closed_id,
     )
-    return closed_id
+    if store.find_terminal_event(canvas_id, trigger_id) is None:
+        store.append_audit_event(
+            canvas_id,
+            "governance_stopped",
+            {"reason": reason.value, "predecessor_id": predecessor_id},
+            round=round_index,
+        )
+    return event, reconcile_terminal_event(store, settings, event)
 
 
 async def close_trigger_governance_error(
@@ -62,10 +76,11 @@ async def close_trigger_governance_error(
     predecessor_id: str,
     round_index: int,
     error: BudgetExceededError | LocalityDeniedError,
-) -> StopReason:
+    trigger_id: str,
+) -> tuple[StopReason, bool]:
     """Close a pre-loop trigger after any locality or budget denial."""
     reason = governance_stop_reason(error)
-    await close_trigger_with_reason(
+    _, notification_ready = await close_trigger_with_reason(
         mcp,
         settings,
         store,
@@ -73,8 +88,9 @@ async def close_trigger_governance_error(
         predecessor_id=predecessor_id,
         round_index=round_index,
         reason=reason,
+        trigger_id=trigger_id,
     )
-    return reason
+    return reason, notification_ready
 
 
 __all__ = ["close_trigger_governance_error", "close_trigger_with_reason"]

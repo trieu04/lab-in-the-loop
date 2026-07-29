@@ -32,7 +32,7 @@
 
 - Exact `{idea: ...}` legacy/manual and `{idea+auto: ...}` automatic execution markers. Unsupported mode variants remain visible but non-actionable and converge on one Needs Input request.
 - Deterministic setup validation with typed proceed/revise/reject outcomes, canonical proposal/result hashes, ordered credential-verified scientist then lab-lead approval, and hash-bound first-round manual activation.
-- Typed terminal stop events for model, budget, wall-time, no-progress, locality, reservation, and maximum-round reasons. Terminal replay reconciles before another provider or Canvas write; the predecessor Phase 8 branch still has multi-round continuation that must be moved behind the validation/approval gate before this plan is fully complete.
+- Typed terminal stop events for model, budget, wall-time, no-progress, locality, reservation, and maximum-round reasons. Terminal replay reconciles before another provider or Canvas write; the preserved multi-round continuation now stages successors and routes changed proposals through fresh validation and ordered approval before Result generation.
 - SQLite notification outbox with deterministic logical key and SMTP Message-ID, fenced leases, retry/quarantine/ambiguous states, TLS-only transport, exact address allowlists, bounded indexed drains, and safe operator status/retry/quarantine commands.
 - Local integration coverage for manual restart/activation, auto approval gates, unknown-mode rejection, bounded per-canvas notification delivery, quarantine/reset, ambiguity reconciliation, and metadata redaction.
 
@@ -44,7 +44,7 @@
 
 ### Verified
 
-- Final current-tree matrix: `lab-agent` **614 passed** (4 warnings); `canvus-mcp` **163 passed** (3 warnings). Ruff, mypy, compileall, workflow-contract parity, Markdown-link validation, and whitespace checks passed.
+- Final current-tree matrix: `lab-agent` **697 passed** (4 warnings); `canvus-mcp` **165 passed** (3 warnings). Ruff, mypy, compileall, workflow-contract parity, Markdown-link validation, and whitespace checks passed.
 
 ### Not claimed
 
@@ -335,7 +335,7 @@ A separate, read-only Claude Code session (id `958a41ff-c7bc-4992-8559-5bcf9e229
 
 ### Added
 
-- Created standalone `lap-in-the-loop` repository at `~/dev/lap-in-the-loop`.
+- Created standalone `lab-in-the-loop` repository at `~/dev/lab-in-the-loop`.
 - Migrated `apps/canvus-mcp` from `rag-canvus`.
 - Migrated `apps/lab-agent` from `rag-canvus`.
 - Added root `README.md` with quick start, workflow overview, docs map, and security notes.
@@ -355,7 +355,7 @@ A separate, read-only Claude Code session (id `958a41ff-c7bc-4992-8559-5bcf9e229
 
 ### Changed
 
-- Renamed Python package metadata from `rag-canvus-*` to `lap-in-the-loop-*` in migrated app `pyproject.toml` files.
+- Renamed Python package metadata from `rag-canvus-*` to `lab-in-the-loop-*` in migrated app `pyproject.toml` files.
 - Reframed docs around standalone Lab-in-the-Loop ownership rather than embedding in `rag-canvus`.
 
 ### Preserved

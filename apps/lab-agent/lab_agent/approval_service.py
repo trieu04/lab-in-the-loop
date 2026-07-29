@@ -42,13 +42,16 @@ class ApprovalSubmission(BaseModel):
 @dataclass(frozen=True)
 class ApprovalOutcome:
     """Persisted approval and durable state projection after a submission."""
-
     approval: GateApproval
     state: DecisionState
     production_eligible: bool
+    tenant_id: str = "default"
+    canvas_id: str = "default"
 
 @dataclass(frozen=True)
 class ExecutionAuthorization:
+    tenant_id: str
+    canvas_id: str
     proposal_hash: str
     validation_result_hash: str
     state: DecisionState
@@ -70,7 +73,9 @@ def require_current_execution_authorization(
         raise RobotExecutionAuthorizationError("current approval evidence is invalid") from exc
     if state is not DecisionState.APPROVED_FOR_WET_LAB:
         raise RobotExecutionAuthorizationError("current ordered approval evidence is required")
-    return ExecutionAuthorization(proposal_hash, validation_result_hash, state)
+    return ExecutionAuthorization(
+        state_store.tenant_id, canvas_id, proposal_hash, validation_result_hash, state
+    )
 
 def _activation_key(canvas_id: str, setup_id: str, proposal_hash: str, result_hash: str) -> str:
     material = f"manual-activation:{canvas_id}:{setup_id}:{proposal_hash}:{result_hash}".encode()
@@ -105,7 +110,7 @@ async def submit_manual_execution_activation(
         input_hash=hashlib.sha256(f"{current_proposal_hash}:{current_validation_result_hash}:manual".encode()).hexdigest(),
     )
     if intent.status.value != "reconciled":
-        state_store.mark_intent_reconciled(key)
+        state_store.mark_intent_reconciled(key, canvas_id=canvas_id)
         state_store.append_audit_event(canvas_id, "manual_execution_activated", {
             "setup_id": setup_id, "proposal_hash": current_proposal_hash,
             "validation_result_hash": current_validation_result_hash,
@@ -119,7 +124,7 @@ def has_manual_execution_activation(
 
     if not setup_id or len(setup_id) > 200:
         return False
-    intent = state_store.get_intent(_activation_key(canvas_id, setup_id, proposal_hash, validation_result_hash))
+    intent = state_store.get_intent(_activation_key(canvas_id, setup_id, proposal_hash, validation_result_hash), canvas_id=canvas_id)
     return intent is not None and intent.status.value == "reconciled"
 
 async def submit_approval(
@@ -149,6 +154,7 @@ async def submit_approval(
     if identity.role is not submission.required_role:
         raise ApprovalServiceError("verified identity role does not match required role")
     approval = GateApproval(
+        tenant_id=state_store.tenant_id, canvas_id=canvas_id,
         approval_id=submission.approval_id, proposal_hash=current_proposal_hash,
         validation_result_hash=current_validation_result_hash, identity=identity, decision=submission.decision,
         rationale=submission.rationale, decided_at=identity.verified_at, validation_adapter=result.adapter_name,
@@ -181,7 +187,7 @@ def _project_outcome(
     eligible = evidence.validation_result.mode is ValidationMode.REAL and all(
         item.identity.production_eligible for item in evidence.approvals
     )
-    return ApprovalOutcome(approval, state, eligible)
+    return ApprovalOutcome(approval, state, eligible, state_store.tenant_id, canvas_id)
 
 def _transition_evidence(result: InSilicoResult, approvals: tuple[GateApproval, ...]) -> TransitionEvidence:
     slots = {approval.identity.role: approval for approval in approvals}

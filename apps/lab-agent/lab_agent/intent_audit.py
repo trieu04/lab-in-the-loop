@@ -34,11 +34,12 @@ async def reconcile_with_audit(
     Audit payloads carry ids/hashes/reasons only -- never the note body or
     any model output (docs/code-standards.md § audit log).
     """
-    key = idempotency_key(canvas_id, kind, discriminator)
+    store._require_canvas_scope(canvas_id)
+    key = idempotency_key(canvas_id, kind, discriminator, tenant_id=store.tenant_id)
     try:
         result = await reconcile_or_execute(
-            store.conn, clock=store.clock, canvas_id=canvas_id, kind=kind, key=key,
-            payload=payload, live_probe=live_probe, execute=execute,
+            store.conn, clock=store.clock, tenant_id=store.tenant_id, canvas_id=canvas_id,
+            kind=kind, key=key, payload=payload, live_probe=live_probe, execute=execute,
         )
     except Exception as exc:
         store.append_audit_event(

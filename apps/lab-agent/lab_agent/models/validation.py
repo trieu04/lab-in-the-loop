@@ -63,6 +63,8 @@ class InSilicoRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    tenant_id: str = Field(default="default", min_length=1, max_length=128)
+    canvas_id: str = Field(default="default", min_length=1, max_length=200)
     request_id: str = Field(min_length=1, max_length=200)
     setup_id: str = Field(min_length=1, max_length=200)
     setup: ExperimentSetup
@@ -81,6 +83,8 @@ class InSilicoResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    tenant_id: str = Field(default="default", min_length=1, max_length=128)
+    canvas_id: str = Field(default="default", min_length=1, max_length=200)
     validation_id: str = Field(min_length=1, max_length=200)
     proposal_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     decision: ValidationDecision
@@ -102,6 +106,8 @@ class GateApproval(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    tenant_id: str = Field(default="default", min_length=1, max_length=128)
+    canvas_id: str = Field(default="default", min_length=1, max_length=200)
     approval_id: str = Field(min_length=1, max_length=200)
     proposal_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     validation_result_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -118,7 +124,11 @@ def _canonical_hash(kind: str, value: BaseModel) -> str:
     payload = {
         "kind": kind,
         "schema_version": HASH_SCHEMA_VERSION,
-        "value": value.model_dump(mode="json", exclude_none=False),
+        # Scope is ledger routing metadata, not scientific evidence. Excluding it
+        # preserves the historical litl-canonical-json-v1 result hash contract.
+        "value": value.model_dump(
+            mode="json", exclude_none=False, exclude={"tenant_id", "canvas_id"}
+        ),
     }
     encoded = json.dumps(
         payload,

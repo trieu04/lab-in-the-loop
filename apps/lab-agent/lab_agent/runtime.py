@@ -22,6 +22,7 @@ from lab_agent.integrations.lab_execution import DeterministicLabExecutionAdapte
 from lab_agent.mcp_client import MCPClient
 from lab_agent.notification_outbox import NotificationOutbox
 from lab_agent.state_store import StateStore
+from lab_agent.tenant import TenantContext
 
 
 class RuntimeStartupError(RuntimeError):
@@ -39,6 +40,7 @@ class RuntimeContext:
     store: StateStore
     runtime_instance_id: str
     settings: Settings
+    tenant_context: TenantContext | None = None
     notifications: NotificationOutbox | None = None
 
 
@@ -77,7 +79,43 @@ def build_notification_outbox(
     )
 
 
-def build_runtime_context(settings: Settings) -> RuntimeContext:
+def resolve_tenant_context(
+    settings: Settings, requested_canvas_ids: tuple[str, ...] | list[str] = (),
+) -> TenantContext | None:
+    """Resolve and validate the one immutable process scope.
+
+    Legacy default-tenant test runtimes remain unbound. Every named tenant
+    requires an explicit configured allowlist; command requests may only
+    narrow that configured scope.
+    """
+    if not settings.allowed_canvas_ids:
+        if settings.tenant_id != "default":
+            raise RuntimeStartupError("non-default tenants require allowed_canvas_ids")
+        return None
+    context = TenantContext(
+        settings.tenant_id, settings.allowed_canvas_ids, settings.credential_domain
+    )
+    validate_requested_canvases(context, requested_canvas_ids)
+    return context
+
+
+def validate_requested_canvases(
+    tenant_context: TenantContext | None,
+    requested_canvas_ids: tuple[str, ...] | list[str],
+) -> None:
+    """Require every requested canvas when the runtime has a configured scope."""
+    if tenant_context is None:
+        return
+    for canvas_id in requested_canvas_ids:
+        tenant_context.require_canvas(canvas_id)
+
+
+def build_runtime_context(
+    settings: Settings,
+    *,
+    tenant_context: TenantContext | None = None,
+    requested_canvas_ids: tuple[str, ...] | list[str] = (),
+) -> RuntimeContext:
     """Create the DB parent dir, open/migrate the store, and verify integrity.
 
     Fails closed: any SQLite integrity problem or audit-chain tamper raises
@@ -86,10 +124,13 @@ def build_runtime_context(settings: Settings) -> RuntimeContext:
     config -- so two processes started with identical config still get
     distinct writer identities for the single-writer canvas lease.
     """
+    resolved_tenant = resolve_tenant_context(settings, requested_canvas_ids)
+    if tenant_context is not None and tenant_context != resolved_tenant:
+        raise RuntimeStartupError("runtime tenant context does not match settings")
     db_path = Path(settings.state_db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        store = StateStore(db_path)
+        store = StateStore(db_path, tenant_context=resolved_tenant)
     except Exception as exc:  # corrupt/non-SQLite file, un-migratable schema, etc.
         raise RuntimeStartupError(f"Failed to open/migrate durable ledger at {db_path}: {exc}") from exc
     try:
@@ -108,6 +149,7 @@ def build_runtime_context(settings: Settings) -> RuntimeContext:
         store=store,
         runtime_instance_id=runtime_id,
         settings=settings,
+        tenant_context=resolved_tenant,
         notifications=build_notification_outbox(store, settings, runtime_id),
     )
 
@@ -140,4 +182,6 @@ __all__ = [
     "build_runtime_context",
     "close_runtime_context",
     "release_lease_with_audit",
+    "resolve_tenant_context",
+    "validate_requested_canvases",
 ]

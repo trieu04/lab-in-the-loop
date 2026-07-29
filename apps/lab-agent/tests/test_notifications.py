@@ -21,9 +21,13 @@ from lab_agent.notifications import (
 
 
 class FakeSMTP:
-    def __init__(self, *, starttls: bool = True, send_error: Exception | None = None) -> None:
+    def __init__(
+        self, *, starttls: bool = True, send_error: Exception | None = None,
+        refused: dict[str, tuple[int, bytes]] | None = None,
+    ) -> None:
         self.starttls_available = starttls
         self.send_error = send_error
+        self.refused = refused or {}
         self.messages: list[EmailMessage] = []
         self.started_tls = False
         self.quit_called = False
@@ -46,7 +50,7 @@ class FakeSMTP:
         if self.send_error is not None:
             raise self.send_error
         self.messages.append(message)
-        return {}
+        return self.refused
 
     def quit(self) -> None:
         self.quit_called = True
@@ -132,6 +136,17 @@ def test_disabled_smtp_never_opens_a_connection() -> None:
 
     assert result.disposition is SendDisposition.DISABLED
     assert client.messages == []
+
+
+def test_partial_recipient_refusal_is_ambiguous_not_retryable_rejection() -> None:
+    recipients = ("accepted@example.test", "refused@example.test")
+    client = FakeSMTP(refused={recipients[1]: (550, b"denied")})
+    result = _sink(client, _configuration(
+        recipients=recipients, recipient_allowlist=recipients,
+    )).send(_envelope())
+
+    assert result.disposition is SendDisposition.AMBIGUOUS
+    assert result.failure_category is NotificationFailureCategory.SMTP_AMBIGUOUS
 
 
 def test_starttls_is_required_and_verified_before_delivery() -> None:

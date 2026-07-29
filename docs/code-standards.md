@@ -111,7 +111,7 @@ Do not let an unconstrained model decide arbitrary write tool calls. Successful 
 - Approval roles are unique per current proposal/result and ordered: scientist first, then lab lead. Retain stale evidence for audit, but never use it to authorize an edited proposal or changed validation result.
 - Canvas Notes, titles, connectors, widget author text, and Browser status artifacts are topology or projections only. They are never approval evidence. Obtain approvals only through an `IdentityProvider` that verifies a credential; never persist the credential or include it in an audit, artifact, prompt, log, or error.
 - Browser validation and approval-status artifacts project durable evidence. Their terminal `APPROVED_FOR_WET_LAB` state does not enable execution: `execution_enabled` remains `false` in Phase 7.
-- `wet_lab_execution_enabled` defaults to `false` and blocks the legacy setup-to-robot synthetic mock path. Result-to-setup decisions remain governed and the legacy multi-round synthetic mock loop remains compatible; neither is a real execution or measured-evidence path.
+- `wet_lab_execution_enabled` defaults to `false` and blocks the legacy setup-to-robot synthetic mock path. Result-to-setup decisions remain governed: each continuation stages only a successor Setup, then requires fresh validation and ordered approval before Result generation. Neither branch is a real execution or measured-evidence path.
 
 ## Phase 8 dry-run execution, analysis, and knowledge standards
 

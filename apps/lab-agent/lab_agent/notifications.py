@@ -33,9 +33,10 @@ class SendDisposition(StrEnum):
 
 
 def notification_logical_key(
-    *, canvas_id: str, trigger_id: str, closure_id: str, round_index: int, reason: str
+    *, canvas_id: str, trigger_id: str, closure_id: str, round_index: int, reason: str,
+    tenant_id: str = "default",
 ) -> str:
-    """Return the stable logical identity for one terminal closure notification."""
+    """Return a tenant-qualified logical identity for one terminal closure."""
     payload = {
         "canvas_id": canvas_id,
         "closure_id": closure_id,
@@ -44,6 +45,10 @@ def notification_logical_key(
         "schema_version": _KEY_VERSION,
         "trigger_id": trigger_id,
     }
+    # Existing single-tenant ledgers derive their key without this field. Keep
+    # that exact default value stable while separating non-default tenants.
+    if tenant_id != "default":
+        payload["tenant_id"] = tenant_id
     encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode()
     return hashlib.sha256(encoded).hexdigest()
 
@@ -71,10 +76,11 @@ class NotificationEnvelope(BaseModel):
     closure_id: str = Field(min_length=1, max_length=200)
     round_index: int = Field(ge=0)
     reason: str = Field(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
+    tenant_id: str = Field(default="default", min_length=1, max_length=128)
     logical_key: str = ""
     message_id: str = ""
 
-    @field_validator("canvas_id", "trigger_id", "closure_id", "reason")
+    @field_validator("canvas_id", "trigger_id", "closure_id", "reason", "tenant_id")
     @classmethod
     def reject_control_characters(cls, value: str) -> str:
         return _safe_metadata(value)
@@ -87,6 +93,7 @@ class NotificationEnvelope(BaseModel):
             closure_id=self.closure_id,
             round_index=self.round_index,
             reason=self.reason,
+            tenant_id=self.tenant_id,
         )
         if self.logical_key and self.logical_key != expected_key:
             raise ValueError("logical_key does not match terminal closure metadata")

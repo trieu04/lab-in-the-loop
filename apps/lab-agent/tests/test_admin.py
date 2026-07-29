@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from lab_agent import admin
 from lab_agent.config import Settings
 from lab_agent.notifications import NotificationEnvelope
@@ -157,7 +159,9 @@ def test_backup_writes_consistent_copy_and_creates_parent_dirs(tmp_path, capsys)
         store.append_audit_event("c", "attempt_leased", {"trigger_id": "t1"})
         dest = tmp_path / "backups" / "state.db.bak"
 
-        code = admin.backup(_ctx(store), str(dest))
+        with pytest.raises(PermissionError, match="explicit global authority"):
+            admin.backup(_ctx(store), str(dest))
+        code = admin.backup(_ctx(store), str(dest), global_authority=True)
         assert code == 0
         assert dest.exists()
         assert f"Backup written to {dest}" in capsys.readouterr().out

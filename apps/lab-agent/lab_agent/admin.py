@@ -22,11 +22,13 @@ from lab_agent.state.notification_outbox import (
 )
 from lab_agent.state_store import AttemptNotQuarantinedError
 
-#: Audit events for harness-wide operator actions (integrity check, backup)
-#: are not scoped to one canvas, but ``audit_events.canvas_id`` is NOT NULL --
-#: this sentinel makes that scope explicit rather than picking an arbitrary
-#: real canvas id.
+#: Unbound legacy stores use this sentinel for explicitly global operator events.
 GLOBAL_CANVAS = "_global"
+
+
+def _require_global_store(ctx: RuntimeContext) -> None:
+    if getattr(ctx.store, "tenant_context", None) is not None:
+        raise PermissionError("global operator action is unavailable to a tenant-bound runtime")
 
 
 def check_integrity(ctx: RuntimeContext) -> int:
@@ -37,16 +39,21 @@ def check_integrity(ctx: RuntimeContext) -> int:
     """
     problems = ctx.store.integrity_check()
     chain_error = ""
+    global_operator = getattr(ctx, "tenant_context", None) is None
     try:
-        ctx.store.verify_audit_chain()
+        if global_operator:
+            ctx.store.verify_all_audit_chains()
+        else:
+            ctx.store.verify_audit_chain()
     except Exception as exc:  # noqa: BLE001 - report, don't crash the admin command
         chain_error = str(exc)[:200]
 
     ok = not problems and not chain_error
-    ctx.store.append_audit_event(
-        GLOBAL_CANVAS, "operator_integrity_check",
-        {"ok": ok, "problem_count": len(problems), "chain_error": chain_error},
-    )
+    if global_operator and getattr(ctx.store, "tenant_context", None) is None:
+        ctx.store.append_audit_event(
+            GLOBAL_CANVAS, "operator_integrity_check",
+            {"ok": ok, "problem_count": len(problems), "chain_error": chain_error},
+        )
     if ok:
         print("OK: SQLite integrity and audit chain verified.")
         return 0
@@ -80,8 +87,11 @@ def reset_attempt(ctx: RuntimeContext, canvas_id: str, trigger_id: str) -> int:
     return 0
 
 
-def backup(ctx: RuntimeContext, destination: str) -> int:
-    """Take a consistent hot backup of the durable ledger (safe under WAL)."""
+def backup(ctx: RuntimeContext, destination: str, *, global_authority: bool = False) -> int:
+    """Take a consistent hot backup only under explicit global authority."""
+    if not global_authority:
+        raise PermissionError("full SQLite backup requires explicit global authority")
+    _require_global_store(ctx)
     dest = Path(destination)
     dest.parent.mkdir(parents=True, exist_ok=True)
     ctx.store.backup(dest)

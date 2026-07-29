@@ -101,7 +101,9 @@ class GovernanceBudget:
         if reservation.settled:
             return
         try:
-            self._store.settle_budget(reservation.reservation_id, action="released")
+            self._store.settle_budget(
+                reservation.reservation_id, canvas_id=self._canvas_id, action="released"
+            )
         except BudgetReservationConflictError:
             reservation.settled = True
             self._refresh()
@@ -114,8 +116,8 @@ class GovernanceBudget:
         if reservation.settled:
             return
         record, transitioned = self._store.settle_budget(
-            reservation.reservation_id, action="committed", actual_tokens=usage.total_tokens,
-            actual_cost_usd=cost.cost_usd,
+            reservation.reservation_id, canvas_id=self._canvas_id, action="committed",
+            actual_tokens=usage.total_tokens, actual_cost_usd=cost.cost_usd,
         )
         reservation.settled = True
         self._refresh()

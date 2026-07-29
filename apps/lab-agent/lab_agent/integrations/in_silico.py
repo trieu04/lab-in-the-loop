@@ -116,6 +116,8 @@ class DeterministicInSilicoAdapter:
             changes = ()
 
         return InSilicoResult(
+            tenant_id=request.tenant_id,
+            canvas_id=request.canvas_id,
             validation_id=f"dry-run-{request.proposal_hash[:24]}",
             proposal_hash=request.proposal_hash,
             decision=decision,

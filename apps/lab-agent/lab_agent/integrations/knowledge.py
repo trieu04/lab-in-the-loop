@@ -22,7 +22,6 @@ class KnowledgeAdapterError(RuntimeError):
         value = code.value if isinstance(code, ExternalFailureCode) else code
         super().__init__(value)
 
-
 class KnowledgeNotReadyError(KnowledgeAdapterError):
     """The real knowledge adapter has not passed declared readiness gates."""
 
@@ -47,12 +46,12 @@ class KnowledgeAdapter(Protocol):
         ...
 
     async def append(self, version: KnowledgeVersion) -> KnowledgeVersion: ...
-    async def status(self, idempotency_key: str) -> ExternalRunStatus: ...
-    async def cancel(self, idempotency_key: str) -> ExternalRunStatus: ...
-    async def result(self, idempotency_key: str) -> KnowledgeVersion | None: ...
-    async def find_by_idempotency_key(self, key: str) -> KnowledgeVersion | None: ...
+    async def status(self, idempotency_key: str, *, tenant_id: str = "default") -> ExternalRunStatus: ...
+    async def cancel(self, idempotency_key: str, *, tenant_id: str = "default") -> ExternalRunStatus: ...
+    async def result(self, idempotency_key: str, *, tenant_id: str = "default") -> KnowledgeVersion | None: ...
+    async def find_by_idempotency_key(self, key: str, *, tenant_id: str = "default") -> KnowledgeVersion | None: ...
     async def record_conflict(self, conflict: ConflictRecord) -> ConflictRecord: ...
-    async def find_conflict_by_idempotency_key(self, key: str) -> ConflictRecord | None: ...
+    async def find_conflict_by_idempotency_key(self, key: str, *, tenant_id: str = "default") -> ConflictRecord | None: ...
 
 
 @dataclass(frozen=True)
@@ -75,8 +74,8 @@ class DeterministicKnowledgeAdapter:
     adapter_name: str = "deterministic-knowledge-dry-run"
     adapter_version: str = "1"
     visible_label: str = DRY_RUN_EVIDENCE_LABEL
-    _versions: dict[str, KnowledgeVersion] = field(default_factory=dict, init=False, repr=False)
-    _conflicts: dict[str, ConflictRecord] = field(default_factory=dict, init=False, repr=False)
+    _versions: dict[tuple[str, str], KnowledgeVersion] = field(default_factory=dict, init=False, repr=False)
+    _conflicts: dict[tuple[str, str], ConflictRecord] = field(default_factory=dict, init=False, repr=False)
 
     @property
     def reconciliation_supported(self) -> bool:
@@ -84,44 +83,45 @@ class DeterministicKnowledgeAdapter:
 
     async def append(self, version: KnowledgeVersion) -> KnowledgeVersion:
         self._require_mock_evidence(version.evidence_kind)
-        existing = self._versions.get(version.idempotency_key)
+        existing = self._versions.get((version.tenant_id, version.idempotency_key))
         if existing is not None:
             if existing != version:
                 raise KnowledgeAdapterError(ExternalFailureCode.INVALID_SCHEMA)
             return existing
-        self._versions[version.idempotency_key] = version
+        self._versions[(version.tenant_id, version.idempotency_key)] = version
         return version
 
-    async def status(self, idempotency_key: str) -> ExternalRunStatus:
+    async def status(self, idempotency_key: str, *, tenant_id: str = "default") -> ExternalRunStatus:
         return (
             ExternalRunStatus.SUCCEEDED
-            if idempotency_key in self._versions
+            if (tenant_id, idempotency_key) in self._versions
             else ExternalRunStatus.PENDING
         )
 
-    async def cancel(self, idempotency_key: str) -> ExternalRunStatus:
+    async def cancel(self, idempotency_key: str, *, tenant_id: str = "default") -> ExternalRunStatus:
         """Never remove persisted history; an already-appended version remains preserved."""
         return (
             ExternalRunStatus.BLOCKED
-            if idempotency_key in self._versions
+            if (tenant_id, idempotency_key) in self._versions
             else ExternalRunStatus.ABORTED
         )
 
-    async def result(self, idempotency_key: str) -> KnowledgeVersion | None:
-        return self._versions.get(idempotency_key)
+    async def result(self, idempotency_key: str, *, tenant_id: str = "default") -> KnowledgeVersion | None:
+        return self._versions.get((tenant_id, idempotency_key))
 
-    async def find_by_idempotency_key(self, key: str) -> KnowledgeVersion | None:
-        return self._versions.get(key)
+    async def find_by_idempotency_key(self, key: str, *, tenant_id: str = "default") -> KnowledgeVersion | None:
+        return self._versions.get((tenant_id, key))
 
     async def record_conflict(self, conflict: ConflictRecord) -> ConflictRecord:
-        existing = self._conflicts.get(conflict.idempotency_key)
+        existing = self._conflicts.get((conflict.tenant_id, conflict.idempotency_key))
         if existing is not None:
             if existing != conflict:
                 raise KnowledgeAdapterError(ExternalFailureCode.INVALID_SCHEMA)
             return existing
         versions = {
             version.knowledge_version_id: version
-            for version in self._versions.values() if version.canvas_id == conflict.canvas_id
+            for version in self._versions.values()
+            if version.tenant_id == conflict.tenant_id and version.canvas_id == conflict.canvas_id
         }
         prior = versions.get(conflict.prior_knowledge_version_id)
         proposed = versions.get(conflict.proposed_knowledge_version_id)
@@ -132,11 +132,11 @@ class DeterministicKnowledgeAdapter:
             or proposed.hypothesis_hash != conflict.new_hypothesis_hash
         ):
             raise KnowledgeAdapterError(ExternalFailureCode.INVALID_SCHEMA)
-        self._conflicts[conflict.idempotency_key] = conflict
+        self._conflicts[(conflict.tenant_id, conflict.idempotency_key)] = conflict
         return conflict
 
-    async def find_conflict_by_idempotency_key(self, key: str) -> ConflictRecord | None:
-        return self._conflicts.get(key)
+    async def find_conflict_by_idempotency_key(self, key: str, *, tenant_id: str = "default") -> ConflictRecord | None:
+        return self._conflicts.get((tenant_id, key))
 
     @staticmethod
     def _require_mock_evidence(evidence_kind: EvidenceKind) -> None:
@@ -158,28 +158,28 @@ class DisabledRealKnowledgeAdapter:
         del version
         self._raise_disabled()
 
-    async def status(self, idempotency_key: str) -> ExternalRunStatus:
-        del idempotency_key
+    async def status(self, idempotency_key: str, *, tenant_id: str = "default") -> ExternalRunStatus:
+        del idempotency_key, tenant_id
         self._raise_disabled()
 
-    async def cancel(self, idempotency_key: str) -> ExternalRunStatus:
-        del idempotency_key
+    async def cancel(self, idempotency_key: str, *, tenant_id: str = "default") -> ExternalRunStatus:
+        del idempotency_key, tenant_id
         self._raise_disabled()
 
-    async def result(self, idempotency_key: str) -> KnowledgeVersion | None:
-        del idempotency_key
+    async def result(self, idempotency_key: str, *, tenant_id: str = "default") -> KnowledgeVersion | None:
+        del idempotency_key, tenant_id
         self._raise_disabled()
 
-    async def find_by_idempotency_key(self, key: str) -> KnowledgeVersion | None:
-        del key
+    async def find_by_idempotency_key(self, key: str, *, tenant_id: str = "default") -> KnowledgeVersion | None:
+        del key, tenant_id
         self._raise_disabled()
 
     async def record_conflict(self, conflict: ConflictRecord) -> ConflictRecord:
         del conflict
         self._raise_disabled()
 
-    async def find_conflict_by_idempotency_key(self, key: str) -> ConflictRecord | None:
-        del key
+    async def find_conflict_by_idempotency_key(self, key: str, *, tenant_id: str = "default") -> ConflictRecord | None:
+        del key, tenant_id
         self._raise_disabled()
 
     def _raise_disabled(self) -> NoReturn:

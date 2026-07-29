@@ -123,7 +123,7 @@ async def test_watcher_retries_terminal_enqueue_without_reopening_closure(
             mcp, GovernedAdapter(gov), settings, first, "watcher-1", "canvas", gov=gov
         )
 
-        attempt = first.get_attempt("canvas", "loop:loop-1")
+        attempt = first.get_attempt("canvas", "loop:loop-1:round:1")
         assert counts["loops"] == 0
         assert attempt is not None and attempt.status.value == "failed"
         assert first.list_notification_records() == []
@@ -153,7 +153,7 @@ async def test_watcher_retries_terminal_enqueue_without_reopening_closure(
         )
 
         records = restarted.list_notification_records()
-        attempt = restarted.get_attempt("canvas", "loop:loop-1")
+        attempt = restarted.get_attempt("canvas", "loop:loop-1:round:1")
         assert counts["loops"] == 1
         assert attempt is not None and attempt.status.value == "completed"
         assert len(records) == 1 and records[0].status.value == "sent"

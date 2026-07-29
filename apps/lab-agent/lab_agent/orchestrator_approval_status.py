@@ -104,7 +104,7 @@ async def reconcile_approval_statuses(
     evidence is projected only, never created or authenticated here.
     """
 
-    artifacts = ArtifactStore(store.conn)
+    artifacts = ArtifactStore(store.conn, tenant_context=store.tenant_context)
     reconciled = 0
     for widget_id in dict.fromkeys(validation_widget_ids):
         document = artifacts.get_artifact_by_widget(canvas_id=canvas_id, widget_id=widget_id)

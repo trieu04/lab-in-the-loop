@@ -8,7 +8,7 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 
 | Area | Status | Notes |
 |---|---|---|
-| Repo split | Complete | New repo initialized at `~/dev/lap-in-the-loop` on branch `main`; git history exists (`git log`) — the extraction is a committed release, not untracked files on disk |
+| Repo split | Complete | New repo initialized at `~/dev/lab-in-the-loop` on branch `main`; git history exists (`git log`) — the extraction is a committed release, not untracked files on disk |
 | `canvus-mcp` migration | Complete | Source/tests/docs copied, generated artifacts excluded |
 | `lab-agent` migration | Complete | Source/tests/docs copied, generated artifacts excluded |
 | Full docs initialization | Complete | README + architecture/workflow/setup/integration/standards/changelog |
@@ -19,7 +19,7 @@ A 2026-07-16 architecture-recovery review recommended evolving Lab-in-the-Loop t
 | Governance and model routing | Complete for local/source gates | Provider-neutral task-stage routing; pre-dispatch locality/known-pricing authorization; exact/estimated usage; restart-safe reservations/intents; typed retry/reconciliation; and terminal stop closures. Final local verification: `lab-agent` 406/406, `canvus-mcp` 37/37, governance matrix 131/131 across four runs without flakes, endpoint suite 15/15, reviewer cycle 3 9.7/10 SEALED. Organization-approved endpoint/classification matrix, price maintenance, invoice reconciliation, and live SDK/API checks remain operational gates. |
 | Resumable local-source ingestion | Complete for local/source gates (2026-07-19) | Separate SQLite/WAL ingestion ledger and protected cache; SHA-256/extractor-version dedup; standalone leased worker component; bounded local extractors; authenticated canvas-scoped status/chunk reads; evidence/locality integration. No deployment approval, worker CLI, queue/object store, automatic retention, hosted CI, live credentials, or large-format validation is claimed. |
 | Phase 7 validation and approval gates | Complete for local/source infrastructure (2026-07-23) | Typed canonical `litl-canonical-json-v1` SHA-256 proposal/result hashes; deterministic dry-run validation visibly not scientific; canvas-scoped append-only validation/approval evidence; credential-verified scientist then lab-lead gates; Browser projections only. |
-| Execution modes, terminal stops, and SMTP outbox | Partially complete (2026-07-23) | Mode parsing, fail-closed connected unknown modes, terminal events, and durable SMTP outbox are locally verified. The preserved legacy multi-round synthetic mock loop remains compatible but is not real execution or measured scientific truth. Real identity, scientific validation, hardware, and external SMTP operations remain gates. |
+| Execution modes, terminal stops, and SMTP outbox | Complete for local/source gates (2026-07-23) | Mode parsing, fail-closed connected unknown modes, gate-safe staged multi-round continuation, terminal events, and durable SMTP outbox are locally verified. The loop remains mock/dry-run only, while real identity, scientific validation, hardware, and external SMTP operations remain gates. |
 | Phase 8 milestone 7A — dry-run lifecycle contracts | Complete for contracts/mocks only (2026-07-23) | Typed execution/analysis/knowledge contracts, five append-only tables, deterministic memory-only adapters, approval-bound restart-safe lifecycle, and safe Browser projections. `phase8_execution_enabled=false`; all 7A output is **DRY RUN / MOCK — NOT MEASURED**. 7B real Flywheel/HPC, 7C real knowledge store, 7D real lab/robot, production identity/credential approval, retention/locality policy, and hosted integration remain external gates. |
 | Real robot integration | Future | Neither Phase 7 nor Phase 8 7A provides real robot/lab execution; no hardware/lab SDK exists. |
 | Flywheel / real in-silico integration | Future | Phase 7 implements deterministic/durable gate infrastructure, not a real scientific adapter or Flywheel integration. |
@@ -32,7 +32,7 @@ Goal: move Lab-in-the-Loop work out of `rag-canvus` into a standalone repo.
 
 Completed:
 
-- Created `~/dev/lap-in-the-loop`.
+- Created `~/dev/lab-in-the-loop`.
 - Initialized git with `main` branch and committed the extraction (`git log` shows the extraction commit and subsequent history — this is a committed release, not untracked files on disk).
 - Copied `apps/canvus-mcp` excluding `.env`, `.venv`, caches, downloads.
 - Copied `apps/lab-agent` excluding `.env`, `.venv`, caches.
@@ -300,18 +300,18 @@ Success criteria:
 
 ## Phase 6b — Execution modes, terminal stop governance, and durable notifications
 
-**Status:** Partially complete for local/source infrastructure (2026-07-23); the legacy multi-round synthetic mock loop remains compatible, while Phase 8 7A separately provides dry-run-only contracts. External identity, scientific, hardware, and SMTP operations remain gates
+**Status:** Complete for local/source infrastructure (2026-07-23); the legacy multi-round loop is gate-safe through staged successor Setup artifacts, while Phase 8 7A separately provides dry-run-only contracts. External identity, scientific, hardware, and SMTP operations remain gates
 
 Completed:
 
 - Added exact `{idea: ...}` legacy/manual and `{idea+auto: ...}` automatic mode markers. Unsupported mode tokens are visible and fail closed into one Needs Input request.
 - Added deterministic in-silico setup validation, proposal/result hash binding, ordered credential-verified scientist → lab-lead approval, and first-round manual activation. Auto mode bypasses only that extra activation pause; it never bypasses validation, approvals, freshness, locality, budgets, or execution enablement.
-- Hardened genuine terminal stops so they create one Closed artifact and sanitized `loop_stopped` event with no post-terminal writes. The preserved legacy CONTINUE branch remains multi-round synthetic mock compatibility; Phase 8 7A is a separate approval-bound dry-run lifecycle and neither branch claims real execution or measured evidence.
+- Hardened genuine terminal stops so they create one Closed artifact and sanitized `loop_stopped` event with no post-terminal writes. The legacy CONTINUE branch now stages one successor Setup per decision and routes each changed proposal through fresh validation and ordered approval; Phase 8 7A remains a separate approval-bound dry-run lifecycle and neither branch claims real execution or measured evidence.
 - Added durable SQLite terminal-notification outbox, deterministic logical key/Message-ID, TLS-only SMTP, allowlists, retry/quarantine/ambiguous reconciliation, indexed bounded drains, and safe notification CLI commands. Delivery is best-effort and logically deduplicated; only known pre-submit/transient failures retry automatically, while ambiguous outcomes require reconciliation. No exactly-once or at-least-once inbox guarantee is claimed.
 
 Verification:
 
-- Final current-tree matrix: `lab-agent` 614 passed (4 warnings); `canvus-mcp` 163 passed (3 warnings). Ruff, mypy, compileall, workflow-contract parity, Markdown-link validation, and whitespace checks passed.
+- Final current-tree matrix: `lab-agent` 697 passed (4 warnings); `canvus-mcp` 165 passed (3 warnings). Ruff, mypy, compileall, workflow-contract parity, Markdown-link validation, and whitespace checks passed.
 - Local integration matrix covers manual activation/restart, auto approval gates, unknown-mode fail-closed behavior, bounded per-canvas delivery, quarantine/reset, ambiguity reconciliation, and metadata redaction.
 
 Not claimed:
@@ -327,10 +327,10 @@ Tasks:
 - Add structured logs with run ids.
 - Add metrics: scans, setups created, results created, decisions, failures.
 - Add health checks for MCP and model providers.
-- Add integration tests with a fake Canvus/MCP server (durable-harness crash/recovery tests already exist per-canvas, see Phase 3; this item covers MCP-transport-level fakes).
+- Add integration tests with a fake Canvus/MCP server.
 - Package both apps for deployment.
 - Add CI.
-- Support multiple concurrent users/canvases with per-user/per-canvas isolation of loop state and credentials. This is the trigger for migrating the durable harness off local SQLite to a shared server-backed store — see [system architecture](system-architecture.md) → "Local-disk, single-host scope, and the Postgres/multi-host trigger".
+- Support multiple concurrent users/canvases with per-user/per-canvas isolation of loop state and credentials.
 - Add observability (dashboards/alerts) for watcher liveness, error rate, and per-canvas loop progress across users.
 
 Success criteria:

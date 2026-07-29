@@ -127,21 +127,19 @@ async def test_run_loop_stops_on_no_progress_with_distinct_reason(store):
     assert len(closed) == 1
 
 
-async def test_early_model_stop_is_overridden_without_early_terminal_audit(store):
+async def test_early_model_stop_stages_successor_without_terminal_audit(store):
     settings = _settings(artifact_public_base_url="https://lab.test", loop_min_rounds=2, loop_max_rounds=3)  # type: ignore[call-arg]
     inner = ScriptedAdapter({
         "ExperimentSetup": SETUP, "ExperimentResult": RESULT,
-        "LoopDecision": [{"proceed": False, "reason": "early"}, {"proceed": False, "reason": "final"}],
+        "LoopDecision": {"proceed": False, "reason": "early"},
     })
     summary = await run_loop(
         FakeMCP(note_text=dict(SEED)), inner, settings, store, canvas_id="c", loop=dict(LOOP)
     )
-    assert summary.rounds == 2
-    assert summary.stopped_reason == StopReason.MODEL_DECISION.value
-    assert inner.schema_calls == ["LoopDecision", "ExperimentSetup", "ExperimentResult", "LoopDecision"]
-    stopped = [event for event in store.list_audit_events("c") if event.event == "loop_stopped"]
-    assert len(stopped) == 1
-    assert stopped[0].payload["reason"] == StopReason.MODEL_DECISION.value
+    assert summary.rounds == 1 and summary.stopped_reason == "successor_staged"
+    assert not summary.closed_id and summary.result_ids == ["result1"]
+    assert inner.schema_calls == ["LoopDecision", "ExperimentSetup"]
+    assert not [event for event in store.list_audit_events("c") if event.event == "loop_stopped"]
 
 
 async def test_run_loop_closes_at_max_rounds_before_next_write(store):

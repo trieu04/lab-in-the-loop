@@ -127,7 +127,7 @@ async def test_backup_restore_preserves_completed_attempt_preventing_duplicate(t
         assert first["setups"] == 1
 
         ctx = RuntimeContext(store=store, runtime_instance_id="rt1", settings=settings)
-        assert admin.backup(ctx, str(backup_dest)) == 0
+        assert admin.backup(ctx, str(backup_dest), global_authority=True) == 0
     finally:
         store.close()
 

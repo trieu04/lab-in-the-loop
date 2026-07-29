@@ -19,6 +19,10 @@ from lab_agent.models.execution import (
 )
 
 DRY_RUN_EVIDENCE_LABEL = "DRY RUN / MOCK — NOT MEASURED"
+
+def _run_key(tenant_id: str, idempotency_key: str) -> str:
+    return f"{tenant_id}:{idempotency_key}"
+
 class FlywheelAdapterError(RuntimeError):
     """A safe, typed failure from an analysis boundary."""
 
@@ -26,7 +30,6 @@ class FlywheelAdapterError(RuntimeError):
         self.code = code
         value = code.value if isinstance(code, ExternalFailureCode) else code
         super().__init__(value)
-
 
 class FlywheelNotReadyError(FlywheelAdapterError):
     """The real analysis adapter has not passed declared readiness gates."""
@@ -55,7 +58,7 @@ class FlywheelAdapter(Protocol):
     async def status(self, run: AnalysisRun) -> ExternalRunStatus: ...
     async def cancel(self, run: AnalysisRun) -> AnalysisRun: ...
     async def result(self, run: AnalysisRun) -> tuple[ArtifactRef, ...]: ...
-    async def find_by_idempotency_key(self, key: str) -> AnalysisRun | None: ...
+    async def find_by_idempotency_key(self, tenant_id: str, key: str | None = None) -> AnalysisRun | None: ...
 
 
 @dataclass(frozen=True)
@@ -86,7 +89,7 @@ class DeterministicFlywheelAdapter:
 
     async def submit(self, request: AnalysisRequest) -> AnalysisRun:
         self._require_dry_run(request.mode, request.evidence_kind)
-        existing = self._runs.get(request.submit_intent_key)
+        existing = self._runs.get(_run_key(request.tenant_id, request.submit_intent_key))
         if existing is not None:
             if existing.input_hash != request.input_hash:
                 raise FlywheelAdapterError(ExternalFailureCode.INVALID_SCHEMA)
@@ -98,11 +101,11 @@ class DeterministicFlywheelAdapter:
             submitted_at=request.requested_at,
             finished_at=request.requested_at,
         )
-        self._runs[request.submit_intent_key] = run
+        self._runs[_run_key(request.tenant_id, request.submit_intent_key)] = run
         return run
 
     async def status(self, run: AnalysisRun) -> ExternalRunStatus:
-        known = self._runs.get(run.submit_intent_key)
+        known = self._runs.get(_run_key(run.tenant_id, run.submit_intent_key))
         return known.status if known is not None else run.status
 
     async def cancel(self, run: AnalysisRun) -> AnalysisRun:
@@ -114,7 +117,7 @@ class DeterministicFlywheelAdapter:
                 "finished_at": run.finished_at or run.requested_at,
             }
         )
-        self._runs[run.submit_intent_key] = cancelled
+        self._runs[_run_key(run.tenant_id, run.submit_intent_key)] = cancelled
         return cancelled
 
     async def result(self, run: AnalysisRun) -> tuple[ArtifactRef, ...]:
@@ -126,6 +129,7 @@ class DeterministicFlywheelAdapter:
         return (
             ArtifactRef(
                 artifact_ref_id=f"dry-run-flywheel-derived-{digest[:24]}",
+                tenant_id=run.tenant_id,
                 canvas_id=run.canvas_id,
                 analysis_run_id=run.analysis_run_id,
                 content_hash=digest,
@@ -139,8 +143,8 @@ class DeterministicFlywheelAdapter:
             ),
         )
 
-    async def find_by_idempotency_key(self, key: str) -> AnalysisRun | None:
-        return self._runs.get(key)
+    async def find_by_idempotency_key(self, tenant_id: str, key: str | None = None) -> AnalysisRun | None:
+        return self._runs.get(_run_key("default" if key is None else tenant_id, tenant_id if key is None else key))
 
     @staticmethod
     def _require_dry_run(mode: RunMode, evidence_kind: EvidenceKind) -> None:
@@ -174,8 +178,8 @@ class DisabledRealFlywheelAdapter:
         del run
         self._raise_disabled()
 
-    async def find_by_idempotency_key(self, key: str) -> AnalysisRun | None:
-        del key
+    async def find_by_idempotency_key(self, tenant_id: str, key: str | None = None) -> AnalysisRun | None:
+        del tenant_id, key
         self._raise_disabled()
 
     def _raise_disabled(self) -> NoReturn:

@@ -56,6 +56,7 @@ class WorkflowAttempt:
     created_at: float
     updated_at: float
     completed_at: float | None
+    tenant_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class CanvasLease:
     runtime_instance_id: str
     acquired_at: float
     expires_at: float
+    tenant_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,7 @@ class SideEffectIntent:
     created_at: float
     updated_at: float
     reconciled_at: float | None
+    tenant_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ class OrchestratorEdge:
     kind: str
     round: int
     created_at: float
+    tenant_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,8 @@ class AuditEvent:
 
     id: int
     sequence: int
+    tenant_id: str
+    hash_version: int
     canvas_id: str
     round: int | None
     event: str
@@ -118,6 +124,7 @@ class ArtifactRecord:
     generated artifact. Full version history lives in
     :class:`ArtifactVersionRecord`; this row never carries payload content."""
 
+    tenant_id: str
     opaque_id: str
     canvas_id: str
     idempotency_key: str
@@ -134,6 +141,7 @@ class ArtifactRecord:
 class ArtifactVersionRecord:
     """One immutable, append-only ``artifact_versions`` row."""
 
+    tenant_id: str
     opaque_id: str
     version: int
     payload: dict[str, Any]
@@ -147,6 +155,7 @@ class ArtifactVersionRecord:
 class ArtifactWidgetMapping:
     """The one Browser widget id mapped to a generated artifact."""
 
+    tenant_id: str
     opaque_id: str
     canvas_id: str
     widget_id: str

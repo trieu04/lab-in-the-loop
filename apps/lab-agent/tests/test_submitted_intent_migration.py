@@ -36,17 +36,42 @@ def test_upgrade_preserves_rows_and_promotes_legacy_pending_model_calls(
     legacy.close()
 
     shutil.copy2(MIGRATIONS / "003_model_call_submitted.sql", migration_dir)
-    upgraded = StateStore(db_path, clock=clock, rng=rng, migrations_dir=migration_dir)
+    at_migration_three = StateStore(db_path, clock=clock, rng=rng, migrations_dir=migration_dir)
     try:
-        versions = upgraded.conn.execute(
+        versions = at_migration_three.conn.execute(
             "SELECT version, checksum FROM schema_migrations ORDER BY version"
         ).fetchall()
+        rows = at_migration_three.conn.execute(
+            "SELECT idempotency_key, status, external_id FROM side_effect_intents "
+            "ORDER BY idempotency_key"
+        ).fetchall()
+        columns = {
+            row["name"]
+            for row in at_migration_three.conn.execute("PRAGMA table_info('side_effect_intents')")
+        }
         assert [row["version"] for row in versions] == [1, 2, 3]
         assert all(len(row["checksum"]) == 64 for row in versions)
-        assert upgraded.get_intent("model-pending").status is IntentStatus.SUBMITTED
-        assert upgraded.get_intent("canvas-pending").status is IntentStatus.PENDING
-        assert upgraded.get_intent("model-executed").status is IntentStatus.EXECUTED
-        assert upgraded.get_intent("model-executed").external_id == "req"
-        assert upgraded.integrity_check() == []
+        assert "tenant_id" not in columns
+        assert [tuple(row) for row in rows] == [
+            ("canvas-pending", "pending", None),
+            ("model-executed", "executed", "req"),
+            ("model-pending", "submitted", None),
+        ]
+        assert at_migration_three.integrity_check() == []
     finally:
-        upgraded.close()
+        at_migration_three.close()
+
+    current = StateStore(db_path, clock=clock, rng=rng)
+    try:
+        versions = current.conn.execute(
+            "SELECT version FROM schema_migrations ORDER BY version"
+        ).fetchall()
+        assert [row["version"] for row in versions] == list(range(1, 21))
+        assert current.get_intent("model-pending").status is IntentStatus.SUBMITTED
+        assert current.get_intent("canvas-pending").status is IntentStatus.PENDING
+        assert current.get_intent("model-executed").status is IntentStatus.EXECUTED
+        assert current.get_intent("model-executed").external_id == "req"
+        assert current.get_intent("model-pending").tenant_id == "default"
+        assert current.integrity_check() == []
+    finally:
+        current.close()

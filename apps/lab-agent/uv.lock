@@ -481,7 +481,7 @@ wheels = [
 ]
 
 [[package]]
-name = "lap-in-the-loop-lab-agent"
+name = "lab-in-the-loop-lab-agent"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

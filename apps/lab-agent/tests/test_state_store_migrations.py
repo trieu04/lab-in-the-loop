@@ -148,3 +148,49 @@ def test_sqlite_integrity_check_via_raw_connection(tmp_path, clock) -> None:
     migrate(conn, clock=clock)
     assert integrity_check(conn) == []
     conn.close()
+
+
+# ── Phase 8: Execution, Analysis, Knowledge, Conflict ──
+
+
+def test_migrate_010_and_011_create_phase8_tables(store: StateStore) -> None:
+    """Migrations 010 and 011 create Phase 8 and continuation tables."""
+    tables = {row["name"] for row in store.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    expected_phase8_tables = {
+        "execution_runs",
+        "analysis_runs",
+        "artifact_refs",
+        "knowledge_versions",
+        "conflict_records",
+        "loop_continuations",
+    }
+    for table in expected_phase8_tables:
+        assert table in tables, f"Missing Phase 8 table: {table}"
+
+
+def test_migrate_010_and_011_follow_008_009(store: StateStore) -> None:
+    """Migrations 010 and 011 apply after 008 and 009."""
+    rows = store.conn.execute(
+        "SELECT version FROM schema_migrations WHERE version IN (8, 9, 10, 11) ORDER BY version"
+    ).fetchall()
+    versions = [row["version"] for row in rows]
+    assert versions == [8, 9, 10, 11]
+
+
+def test_migrate_010_idempotent_on_reopen_includes_phase8(tmp_path, clock, rng) -> None:
+    """Migration 010 idempotent on fresh and reopen."""
+    db_path = tmp_path / "state.db"
+    first = StateStore(db_path, clock=clock, rng=rng)
+    first_tables = {row["name"] for row in first.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    first.close()
+
+    second = StateStore(db_path, clock=clock, rng=rng)
+    try:
+        second_tables = {row["name"] for row in second.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert first_tables == second_tables
+        # Verify Phase 8 tables exist
+        assert "execution_runs" in second_tables
+        assert "knowledge_versions" in second_tables
+        assert "loop_continuations" in second_tables
+    finally:
+        second.close()

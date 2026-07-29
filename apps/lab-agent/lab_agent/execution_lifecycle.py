@@ -40,7 +40,8 @@ def _request(run: ExecutionRun) -> ExecutionRequest:
 
 def _valid_remote(request: ExecutionRequest, remote: ExecutionRun) -> bool:
     return (
-        remote.canvas_id == request.canvas_id
+        remote.tenant_id == request.tenant_id
+        and remote.canvas_id == request.canvas_id
         and remote.execution_run_id == request.execution_run_id
         and remote.submit_intent_key == request.submit_intent_key
         and remote.input_hash == request.input_hash
@@ -51,7 +52,8 @@ def _valid_remote(request: ExecutionRequest, remote: ExecutionRun) -> bool:
 def _append_raw_refs(store: StateStore, run: ExecutionRun, refs: tuple[ArtifactRef, ...]) -> None:
     for ref in refs:
         if (
-            ref.canvas_id != run.canvas_id
+            ref.tenant_id != run.tenant_id
+            or ref.canvas_id != run.canvas_id
             or ref.execution_run_id != run.execution_run_id
             or ref.role is not ArtifactRole.RAW
             or ref.evidence_kind is not EvidenceKind.MOCK_OR_DRY_RUN
@@ -85,7 +87,7 @@ async def run_execution(
         return await reconcile_execution(store, adapter, run, authorize=authorize)
     authorize()
     try:
-        store.mark_intent_submitted(request.submit_intent_key)
+        store.mark_intent_submitted(request.submit_intent_key, canvas_id=request.canvas_id)
     except IntentAlreadyClaimedError:
         return store.get_execution_run(request.canvas_id, request.execution_run_id) or run
     run = store.transition_execution_run(request.canvas_id, request.execution_run_id, status=ExternalRunStatus.SUBMITTED)
@@ -96,7 +98,7 @@ async def _submit_execution(store: StateStore, adapter: LabExecutionAdapter, run
         remote = await adapter.submit(_request(run))
         if not _valid_remote(run, remote) or not remote.provider_execution_id:
             raise ExecutionLifecycleError("execution adapter returned an incompatible run")
-        store.mark_intent_executed(run.submit_intent_key, external_id=remote.provider_execution_id)
+        store.mark_intent_executed(run.submit_intent_key, canvas_id=run.canvas_id, external_id=remote.provider_execution_id)
         if run.status is ExternalRunStatus.SUBMITTED and remote.status in {ExternalRunStatus.SUCCEEDED, ExternalRunStatus.FAILED, ExternalRunStatus.ABORTED}:
             run = store.transition_execution_run(run.canvas_id, run.execution_run_id, status=ExternalRunStatus.RUNNING)
         updated = store.transition_execution_run(
@@ -108,14 +110,14 @@ async def _submit_execution(store: StateStore, adapter: LabExecutionAdapter, run
         )
         if updated.status is ExternalRunStatus.SUCCEEDED:
             _append_raw_refs(store, updated, await adapter.result(remote))
-            store.mark_intent_reconciled(run.submit_intent_key, external_id=remote.provider_execution_id)
+            store.mark_intent_reconciled(run.submit_intent_key, canvas_id=run.canvas_id, external_id=remote.provider_execution_id)
         return updated
     except LabExecutionAdapterError as exc:
-        store.mark_intent_failed(run.submit_intent_key, error=exc.code.value)
+        store.mark_intent_failed(run.submit_intent_key, canvas_id=run.canvas_id, error=exc.code.value)
         return store.transition_execution_run(run.canvas_id, run.execution_run_id, status=ExternalRunStatus.FAILED, failure_code=exc.code)
     except Exception as exc:
         code = _failure(exc)
-        store.mark_intent_ambiguous(run.submit_intent_key, error=code.value, external_id=None)
+        store.mark_intent_ambiguous(run.submit_intent_key, canvas_id=run.canvas_id, error=code.value, external_id=None)
         return store.transition_execution_run(run.canvas_id, run.execution_run_id, status=ExternalRunStatus.AMBIGUOUS)
 
 async def reconcile_execution(
@@ -124,9 +126,9 @@ async def reconcile_execution(
     """Authoritatively locate submitted work before a possible retry."""
 
     if run.status in {ExternalRunStatus.SUCCEEDED, ExternalRunStatus.FAILED, ExternalRunStatus.ABORTED}:
-        intent = store.get_intent(run.submit_intent_key)
+        intent = store.get_intent(run.submit_intent_key, canvas_id=run.canvas_id)
         if intent is not None and intent.status is not IntentStatus.RECONCILED:
-            store.mark_intent_reconciled(run.submit_intent_key, external_id=run.provider_execution_id)
+            store.mark_intent_reconciled(run.submit_intent_key, canvas_id=run.canvas_id, external_id=run.provider_execution_id)
         if run.status is ExternalRunStatus.SUCCEEDED:
             _append_raw_refs(store, run, await adapter.result(run))
         return run
@@ -142,7 +144,7 @@ async def reconcile_execution(
             run.canvas_id, run.execution_run_id, status=ExternalRunStatus.RECONCILING
         )
     try:
-        remote = await adapter.find_by_idempotency_key(run.submit_intent_key)
+        remote = await adapter.find_by_idempotency_key(run.tenant_id, run.submit_intent_key)
     except Exception:
         return store.transition_execution_run(
             run.canvas_id, run.execution_run_id, status=ExternalRunStatus.BLOCKED,
@@ -151,7 +153,7 @@ async def reconcile_execution(
     if remote is not None:
         if not _valid_remote(run, remote) or not remote.provider_execution_id:
             return store.transition_execution_run(run.canvas_id, run.execution_run_id, status=ExternalRunStatus.BLOCKED, failure_code=ExternalFailureCode.INVALID_SCHEMA)
-        store.mark_intent_reconciled(run.submit_intent_key, external_id=remote.provider_execution_id)
+        store.mark_intent_reconciled(run.submit_intent_key, canvas_id=run.canvas_id, external_id=remote.provider_execution_id)
         updated = store.transition_execution_run(
             run.canvas_id, run.execution_run_id, status=remote.status,
             provider_execution_id=remote.provider_execution_id, failure_code=remote.failure_code,
@@ -161,7 +163,7 @@ async def reconcile_execution(
         return updated
     authorize()
     try:
-        store.mark_intent_submitted(run.submit_intent_key)
+        store.mark_intent_submitted(run.submit_intent_key, canvas_id=run.canvas_id)
     except IntentAlreadyClaimedError:
         return store.get_execution_run(run.canvas_id, run.execution_run_id) or run
     run = store.transition_execution_run(run.canvas_id, run.execution_run_id, status=ExternalRunStatus.RUNNING)
@@ -178,15 +180,15 @@ async def abort_execution(store: StateStore, adapter: LabExecutionAdapter, run: 
         run.canvas_id, run.execution_run_id, status=ExternalRunStatus.ABORT_REQUESTED, abort_intent_key=key
     )
     try:
-        store.mark_intent_submitted(key)
+        store.mark_intent_submitted(key, canvas_id=run.canvas_id)
         remote = await adapter.abort(run)
-        if remote.execution_run_id != run.execution_run_id:
+        if (remote.tenant_id, remote.canvas_id, remote.execution_run_id) != (run.tenant_id, run.canvas_id, run.execution_run_id):
             raise ExecutionLifecycleError("execution adapter returned an incompatible abort")
-        store.mark_intent_executed(key, external_id=remote.provider_execution_id or run.execution_run_id)
-        store.mark_intent_reconciled(key, external_id=remote.provider_execution_id or run.execution_run_id)
+        store.mark_intent_executed(key, canvas_id=run.canvas_id, external_id=remote.provider_execution_id or run.execution_run_id)
+        store.mark_intent_reconciled(key, canvas_id=run.canvas_id, external_id=remote.provider_execution_id or run.execution_run_id)
         return store.transition_execution_run(run.canvas_id, run.execution_run_id, status=ExternalRunStatus.ABORTED, provider_execution_id=remote.provider_execution_id, failure_code=ExternalFailureCode.ABORTED)
     except Exception:
-        store.mark_intent_ambiguous(key, error="abort_ambiguous", external_id=None)
+        store.mark_intent_ambiguous(key, canvas_id=run.canvas_id, error="abort_ambiguous", external_id=None)
         return run
 
 

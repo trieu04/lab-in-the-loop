@@ -50,7 +50,3 @@ Thumbs.db
 *.swp
 *.swo
 *~
-
-# Claude/Takumi local state
-.claude/settings.local.json
-plans/reports/*.tmp

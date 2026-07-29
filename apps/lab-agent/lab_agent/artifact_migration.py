@@ -1,8 +1,4 @@
-"""Mirror-first migration of legacy generated Notes to Browser artifacts.
-
-Dry-runs only inspect; apply reuses durable Browser/connector primitives and
-never deletes or edits original Notes. Output excludes capability secrets.
-"""
+"""Mirror-first legacy-Note migration; dry-runs inspect and apply mirrors safely."""
 
 from __future__ import annotations
 
@@ -16,6 +12,7 @@ from lab_agent.artifact_migration_probe import (
     inspect_connections,
     scan_legacy_notes,
 )
+from lab_agent.artifact_migration_scope import require_migration_scope
 from lab_agent.config import Settings
 from lab_agent.durable_browser import (
     RENDERED_TEXT_KEY,
@@ -165,6 +162,7 @@ async def run_migration(
     missing/malformed base URL before any write, isolates each item's failure,
     and preserves already-completed idempotent items for a safe rerun.
     """
+    require_migration_scope(settings, canvas_id, store=store if apply else None)
     if apply:
         require_public_base(settings.artifact_public_base_url)
         if store is None:

@@ -46,7 +46,7 @@ _READER_ACTIONS = frozenset({"get_ingestion_status", "read_ingestion_chunks"})
 _SERVICE_ACTIONS = frozenset(
     {"enqueue_ingestion", "create_note", "create_browser", "update_browser", "create_image", "create_connector"}
 )
-_OPERATOR_ACTIONS = frozenset({"retry_ingestion", "cancel_ingestion", "integrity", "admin"})
+_OPERATOR_ACTIONS = frozenset({"retry_ingestion", "cancel_ingestion", "integrity", "admin", "health"})
 _AUDIT_ACTIONS = _READER_ACTIONS | _SERVICE_ACTIONS | _OPERATOR_ACTIONS
 _AUDIT_REASONS = frozenset({"missing_or_invalid_credentials", "action_not_authorized", "canvas_not_authorized", "resource_not_available"})
 _AUDIT_CANVAS = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
@@ -104,7 +104,9 @@ class AccessPolicy:
         if action not in self._actions_for(principal.role):
             return False
         canvases = self._stdio_canvases if principal.subject == "stdio" else self._canvases[principal.role]
-        return canvas_id is None or "*" in canvases or canvas_id in canvases
+        if canvas_id is None:
+            return "*" in canvases
+        return "*" in canvases or canvas_id in canvases
 
     def require(self, principal: Principal | None, *, action: str, canvas_id: str | None, job_id: int | None = None, asset_sha256: str | None = None) -> None:
         """Authorize before a write/network call, recording fixed denial metadata."""

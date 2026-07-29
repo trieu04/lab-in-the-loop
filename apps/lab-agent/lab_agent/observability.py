@@ -82,7 +82,9 @@ def safe_event(event: str, context: EventContext, **fields: object) -> dict[str,
             values[name] = value
     return values
 
-def emit_event(logger: EventLogger, event: str, context: EventContext, **fields: object) -> dict[str, Scalar]:
+def emit_event(
+    logger: EventLogger, event: str, context: EventContext, **fields: object
+) -> dict[str, Scalar]:
     """Emit one safe structured event and return the exact emitted payload."""
 
     payload = safe_event(event, context, **fields)
@@ -109,7 +111,9 @@ class InProcessMetrics:
         with self._lock:
             return self._dropped_series
 
-    def increment(self, name: str, context: EventContext, amount: int = 1, **labels: object) -> bool:
+    def increment(
+        self, name: str, context: EventContext, amount: int = 1, **labels: object
+    ) -> bool:
         """Increment a bounded counter and return whether it was accepted."""
 
         if isinstance(amount, bool) or not isinstance(amount, int) or amount < 1:
@@ -121,7 +125,9 @@ class InProcessMetrics:
             self._counters[key] = self._counters.get(key, 0) + amount
         return True
 
-    def observe_duration(self, name: str, seconds: float, context: EventContext, **labels: object) -> bool:
+    def observe_duration(
+        self, name: str, seconds: float, context: EventContext, **labels: object
+    ) -> bool:
         """Record one non-negative duration and return whether it was accepted."""
 
         if not _is_duration(seconds):
@@ -170,9 +176,17 @@ class InProcessMetrics:
         """Return a bounded, safe snapshot of counters and timers."""
 
         with self._lock:
-            counters = [MetricSeries(kind, name, labels, count) for (kind, name, labels), count in self._counters.items()]
-            timers = [MetricSeries(kind, name, labels, stats.count, stats) for (kind, name, labels), stats in self._timers.items()]
-        return tuple(sorted(counters + timers, key=lambda item: (item.kind, item.name, item.labels)))
+            counters = [
+                MetricSeries(kind, name, labels, count)
+                for (kind, name, labels), count in self._counters.items()
+            ]
+            timers = [
+                MetricSeries(kind, name, labels, stats.count, stats)
+                for (kind, name, labels), stats in self._timers.items()
+            ]
+        return tuple(
+            sorted(counters + timers, key=lambda item: (item.kind, item.name, item.labels))
+        )
 
     def _accept_series(self, key: MetricKey) -> bool:
         if key in self._counters or key in self._timers:
@@ -182,10 +196,14 @@ class InProcessMetrics:
             return False
         return True
 
-def _metric_key(kind: str, name: str, context: EventContext, labels: dict[str, object]) -> MetricKey:
+def _metric_key(
+    kind: str, name: str, context: EventContext, labels: dict[str, object]
+) -> MetricKey:
     _require_label(name, "metric name")
     fields = safe_event(name, context, **labels)
-    dimensions = tuple((key, value) for key, value in fields.items() if key != "event")
+    dimensions = tuple(
+        (key, value) for key, value in fields.items() if key != "event"
+    )
     return kind, name, dimensions
 
 def _require_label(value: object, field_name: str) -> None:
@@ -193,8 +211,19 @@ def _require_label(value: object, field_name: str) -> None:
         raise ValueError(f"{field_name} must be a bounded identifier")
 
 def _is_duration(value: object) -> TypeGuard[int | float]:
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value >= 0
+    )
 
 __all__ = [
-    "EventContext", "EventLogger", "InProcessMetrics", "MetricSeries", "TimerStats", "emit_event", "safe_event",
+    "EventContext",
+    "EventLogger",
+    "InProcessMetrics",
+    "MetricSeries",
+    "TimerStats",
+    "emit_event",
+    "safe_event",
 ]

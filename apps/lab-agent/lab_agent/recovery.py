@@ -47,8 +47,16 @@ class ReconcileResult:
     already_reconciled: bool
 
 
-def idempotency_key(canvas_id: str, kind: str, discriminator: str) -> str:
-    """Stable key for one logical mutation, e.g. ``canvas_id + kind + trigger/round``."""
+def idempotency_key(
+    canvas_id: str, kind: str, discriminator: str, *, tenant_id: str = "default",
+) -> str:
+    """Stable tenant-qualified key for one logical canvas/provider mutation."""
+    raw = f"{tenant_id}|{canvas_id}|{kind}|{discriminator}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def legacy_idempotency_key(canvas_id: str, kind: str, discriminator: str) -> str:
+    """Return the unqualified pre-P7b key for recovery probes only."""
     raw = f"{canvas_id}|{kind}|{discriminator}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -69,6 +77,7 @@ async def reconcile_or_execute(
     payload: dict[str, Any],
     live_probe: LiveProbe,
     execute: Executor,
+    tenant_id: str = "default",
 ) -> ReconcileResult:
     """Execute one mutation exactly once across restarts.
 
@@ -80,7 +89,7 @@ async def reconcile_or_execute(
     """
     digest = input_hash(payload)
     intent = intents_repo.prepare_intent(
-        conn, clock=clock, idempotency_key=key, canvas_id=canvas_id, kind=kind, input_hash=digest
+        conn, clock=clock, tenant_id=tenant_id, idempotency_key=key, canvas_id=canvas_id, kind=kind, input_hash=digest
     )
     if intent.status == IntentStatus.RECONCILED:
         return ReconcileResult(external_id=intent.external_id or "", already_reconciled=True)
@@ -88,22 +97,33 @@ async def reconcile_or_execute(
     try:
         existing_id = await live_probe()
     except Exception as exc:  # noqa: BLE001 - probe failure must not claim completion
-        intents_repo.mark_failed(conn, clock=clock, idempotency_key=key, error=f"live_probe failed: {exc}")
+        intents_repo.mark_failed(
+            conn, clock=clock, tenant_id=tenant_id, canvas_id=canvas_id, idempotency_key=key,
+            error=f"live_probe failed: {exc}",
+        )
         raise
 
     if existing_id:
-        intent = intents_repo.mark_reconciled(conn, clock=clock, idempotency_key=key, external_id=existing_id)
+        intent = intents_repo.mark_reconciled(
+            conn, clock=clock, tenant_id=tenant_id, canvas_id=canvas_id, idempotency_key=key, external_id=existing_id,
+        )
         return ReconcileResult(external_id=existing_id, already_reconciled=True)
 
     try:
         external_id = await execute()
     except Exception as exc:  # noqa: BLE001 - execution failure must not claim completion
-        intents_repo.mark_failed(conn, clock=clock, idempotency_key=key, error=str(exc))
+        intents_repo.mark_failed(
+            conn, clock=clock, tenant_id=tenant_id, canvas_id=canvas_id, idempotency_key=key, error=str(exc),
+        )
         raise
 
-    intents_repo.mark_executed(conn, clock=clock, idempotency_key=key, external_id=external_id)
-    intents_repo.mark_reconciled(conn, clock=clock, idempotency_key=key, external_id=external_id)
+    intents_repo.mark_executed(
+        conn, clock=clock, tenant_id=tenant_id, canvas_id=canvas_id, idempotency_key=key, external_id=external_id,
+    )
+    intents_repo.mark_reconciled(
+        conn, clock=clock, tenant_id=tenant_id, canvas_id=canvas_id, idempotency_key=key, external_id=external_id,
+    )
     return ReconcileResult(external_id=external_id, already_reconciled=False)
 
 
-__all__ = ["Executor", "LiveProbe", "ReconcileResult", "idempotency_key", "input_hash", "reconcile_or_execute"]
+__all__ = ["Executor", "LiveProbe", "ReconcileResult", "idempotency_key", "legacy_idempotency_key", "input_hash", "reconcile_or_execute"]

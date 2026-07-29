@@ -23,8 +23,10 @@ class ValidationEvidenceNotFoundError(RuntimeError):
 
 @dataclass(frozen=True)
 class GateEvidenceProjection:
-    """Only evidence whose supplied proposal and result hashes are current."""
+    """Current gate evidence record for one immutable tenant/canvas scope."""
 
+    tenant_id: str
+    canvas_id: str
     validation_result: InSilicoResult | None
     approvals: tuple[GateApproval, ...]
 

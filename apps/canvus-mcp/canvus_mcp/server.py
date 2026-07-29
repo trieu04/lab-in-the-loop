@@ -159,7 +159,7 @@ def build_server():  # -> FastMCP
             lifespan=_lifespan(runtime),
         )
         register_all(
-            mcp, policy=runtime.policy, pipeline=runtime.pipeline,
+            mcp, runtime=runtime,
             max_chunk_chars=cfg.mcp_ingestion_chunk_char_cap,
             max_source_bytes=cfg.mcp_ingestion_max_source_bytes,
             classification_for_canvas=lambda canvas_id: _classification(cfg, canvas_id),

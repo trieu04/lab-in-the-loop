@@ -44,12 +44,17 @@ def _static_response(filename: str) -> Response:
     return apply_security_headers(Response(data, media_type=content_type))
 
 
-def create_artifact_app(store: ArtifactStore) -> Starlette:
-    """Build the Starlette ASGI app serving one process's ``ArtifactStore``.
+def create_artifact_app(
+    store: ArtifactStore, *, expected_scope: object | None = None,
+) -> Starlette:
+    """Build an artifact app, rejecting scope disagreement before serving.
 
-    One ``threading.Lock`` per returned app instance serializes every
-    request's use of ``store``'s shared SQLite connection.
+    ``expected_scope`` is supplied by the runtime in multi-user mode.  The
+    unbound default remains intentionally supported for legacy local tests.
     """
+    if expected_scope is not None and store.tenant_context != expected_scope:
+        raise ValueError("artifact store scope does not match runtime scope")
+    scope_ready = expected_scope is None or store.tenant_context is not None
     store_lock = threading.Lock()
 
     def artifact_view(request: Request) -> Response:
@@ -81,9 +86,11 @@ def create_artifact_app(store: ArtifactStore) -> Starlette:
         return _static_response("artifact-tabs.js")
 
     def healthz(request: Request) -> Response:
-        # Deliberately static: no DB path, config, or capability token ever
-        # belongs in a health-check response.
-        return apply_security_headers(Response('{"status":"ok"}', media_type="application/json"))
+        # Deliberately content-free: scope readiness is operational only.
+        status = "ok" if scope_ready else "blocked"
+        return apply_security_headers(Response(
+            f'{{"status":"{status}"}}', media_type="application/json"
+        ))
 
     return Starlette(
         routes=[

@@ -18,7 +18,7 @@
 ## Repository layout
 
 ```text
-~/dev/lap-in-the-loop
+~/dev/lab-in-the-loop
 ├── apps/canvus-mcp
 ├── apps/lab-agent
 ├── docs
@@ -29,7 +29,7 @@
 ## Configure `canvus-mcp`
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/canvus-mcp
+cd ~/dev/lab-in-the-loop/apps/canvus-mcp
 cp .env.example .env
 ```
 
@@ -92,14 +92,14 @@ CANVUS_MCP_STDIO_CANVASES=[]
 CANVUS_CANVAS_CLASSIFICATIONS={}
 ```
 
-`CANVUS_MCP_STDIO_ROLE` is one of `reader`, `trusted_service`, or `operator` and defaults to `reader`; its scope is `CANVUS_MCP_STDIO_CANVASES`. The three role token values are secrets. `reader` can only read ingestion status/chunks; `trusted_service` can additionally enqueue ingestion and make existing canvas mutations; `operator` can additionally retry/cancel. HTTP ingestion requests must carry exactly one valid `Authorization: Bearer <token>` header. The classification map is operator-owned JSON keyed by exact canvas id; unmapped or malformed entries are `unknown`.
+`CANVUS_MCP_STDIO_ROLE` is one of `reader`, `trusted_service`, or `operator` and defaults to `reader`; its scope is `CANVUS_MCP_STDIO_CANVASES`. The three role token values are secrets. `reader` can only call `get_ingestion_status` and `read_ingestion_chunks`; `trusted_service` additionally gets `enqueue_ingestion`, `create_note`, `create_browser`, `update_browser`, `create_image`, and `create_connector`; `operator` additionally gets `retry_ingestion`, `cancel_ingestion`, `integrity`, `admin`, and `health`. Every role is limited to its exact configured canvas ids (or an explicitly configured `"*"` scope); HTTP requests must carry exactly one valid `Authorization: Bearer <token>` header. The `health` tool has no canvas parameter but remains operator-only. The classification map is operator-owned JSON keyed by exact canvas id; unmapped or malformed entries are `unknown`.
 
 Existing non-ingestion reads/downloads retain their anonymous compatibility behavior. That compatibility does not permit enqueue, retry, cancel, or any authenticated ingestion read.
 
 ## Run `canvus-mcp`
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/canvus-mcp
+cd ~/dev/lab-in-the-loop/apps/canvus-mcp
 uv sync --extra dev
 uv run canvus-mcp
 ```
@@ -128,7 +128,7 @@ Stdio alternative:
 
 ```bash
 claude mcp add -s user canvus -- \
-  uv run --directory /home/ntdm/dev/lap-in-the-loop/apps/canvus-mcp canvus-mcp --stdio
+  uv run --directory /home/ntdm/dev/lab-in-the-loop/apps/canvus-mcp canvus-mcp --stdio
 ```
 
 After registering, fully restart Claude Code. Resuming an old session may not rebuild the MCP tool schema.
@@ -136,7 +136,7 @@ After registering, fully restart Claude Code. Resuming an old session may not re
 ## Configure `lab-agent`
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/lab-agent
+cd ~/dev/lab-in-the-loop/apps/lab-agent
 cp .env.example .env
 ```
 
@@ -185,7 +185,7 @@ Validation and approvals are append-only records in `LAB_AGENT_STATE_DB_PATH`, s
 
 A Canvas Note, title, connector, author field, or Browser widget cannot approve a setup. Validation and Approval Status Browser artifacts are read-only projections of durable evidence. A projected terminal `APPROVED_FOR_WET_LAB` state still reports `execution_enabled=false` in Phase 7.
 
-`LAB_AGENT_WET_LAB_EXECUTION_ENABLED` defaults to `false`. With that default, the legacy watcher does not process `setups_needing_run` through `run_on_robot`. The legacy multi-round synthetic mock loop remains compatible, but it does not establish real execution or measured scientific truth.
+`LAB_AGENT_WET_LAB_EXECUTION_ENABLED` defaults to `false`. With that default, the legacy watcher does not process `setups_needing_run` through `run_on_robot`. Loop continuation may still stage a grounded successor Setup, but Result generation waits for fresh deterministic validation, ordered approval, and explicit execution enablement; no path establishes real execution or measured scientific truth.
 
 `LAB_AGENT_PHASE8_EXECUTION_ENABLED` also defaults to `false`. If an operator explicitly enables it, the 7A factory accepts only `LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run` and constructs deterministic memory-only lab, Flywheel, and knowledge adapters. The lifecycle rechecks the exact current proposal/result hashes, validation `proceed`, credential-verified scientist approval, and credential-verified lab-lead approval. It writes only **DRY RUN / MOCK — NOT MEASURED** execution, analysis, knowledge, and possible conflict projections. It performs no real provider API or network call, robot/wet-lab action, Flywheel/HPC job, knowledge-store write, credential handling, raw-provider-text retention, capability-URL projection, or measured-evidence production. `sandbox` and `real` modes fail closed.
 
@@ -313,7 +313,7 @@ Every subcommand opens the durable ledger first: it creates `LAB_AGENT_STATE_DB_
 One scan/process cycle:
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/lab-agent
+cd ~/dev/lab-in-the-loop/apps/lab-agent
 uv sync --extra dev
 uv run lab-agent once --canvas <canvas-id>
 ```
@@ -321,8 +321,18 @@ uv run lab-agent once --canvas <canvas-id>
 Continuous watcher:
 
 ```bash
+# One exact canvas.
 uv run lab-agent watch --canvas <canvas-id>
+
+# An explicit bounded subset (the ids must be allowlisted when
+# LAB_AGENT_ALLOWED_CANVAS_IDS is configured).
+uv run lab-agent watch --canvases <canvas-id-1> <canvas-id-2>
+
+# Or use the configured LAB_AGENT_ALLOWED_CANVAS_IDS list.
+uv run lab-agent watch
 ```
+
+`watch` accepts either `--canvas` or `--canvases`, never both. With no argument it requires `LAB_AGENT_ALLOWED_CANVAS_IDS`; it does not discover canvases to watch. The multi-canvas scheduler limits active canvas cycles to `LAB_AGENT_WATCH_MAX_CONCURRENT_CANVASES` and isolates a failed cycle so other allowlisted canvases continue. It does not make the SQLite ledger, Canvus credentials, or writer leases multi-host-safe.
 
 Artifact HTML service, in a separate long-running process using the same state DB:
 
@@ -332,13 +342,23 @@ uv run lab-agent serve-artifacts
 uv run lab-agent serve-artifacts --host 127.0.0.1 --port 8600
 ```
 
-Health check:
+Artifact-service health check:
 
 ```text
 GET /healthz -> {"status":"ok"}
 ```
 
-The health response is intentionally non-sensitive. It does not expose DB paths, artifact ids, tokens, or config.
+The artifact-service response is intentionally non-sensitive. It does not expose DB paths, artifact ids, tokens, or config.
+
+Local operator health:
+
+```bash
+uv run lab-agent health
+```
+
+This command emits one sanitized JSON readiness summary. It reports only fixed dependency states for the local state store/audit chain, configured provider endpoint, artifact service, MCP reachability, ingestion-worker check state, and Phase 8 mode; it does not print URLs, paths, secrets, raw errors, canvas contents, or provider payloads. A `blocked` summary exits `1`; a non-blocked degraded summary exits `0`.
+
+`canvus-mcp` exposes its detailed health only as the operator-authorized MCP `health` tool. It reports fixed readiness states for the process, ingestion store/cache, Canvus dependency, and ingestion-worker check state. It never returns raw SDK/storage errors, URLs, paths, tokens, or canvas content; reader and trusted-service credentials cannot call it.
 
 Stop with Ctrl-C. The watcher finishes the current operation before exiting if the process receives normal interruption; on exit (clean or Ctrl-C) it releases the canvas lease it holds, so a subsequent run (this process restarted, or a different host/runtime) is not blocked waiting for a stale lease to expire.
 
@@ -356,8 +376,9 @@ uv run lab-agent list-quarantined [--canvas <canvas-id>]
 # Reset one quarantined attempt back to pending so the next once/watch cycle retries it.
 uv run lab-agent reset --canvas <canvas-id> --trigger <trigger_id>
 
-# Write a consistent hot backup of the ledger (safe to run against a live, running watcher).
-uv run lab-agent backup --to <path>
+# Write a consistent hot backup of an unbound legacy/global ledger.
+# This requires explicit authority; tenant-bound runtimes cannot take a full-ledger backup.
+uv run lab-agent backup --global-authority --to <path>
 
 # Show only safe notification delivery counts; optionally scope to a canvas.
 uv run lab-agent notification-status [--canvas <canvas-id>]
@@ -390,7 +411,7 @@ Failed attempts wait and retry after backoff. Fix the cause before using the tar
 There is intentionally **no** command that overwrites a live ledger from a backup — an operator restoring from backup does so explicitly, outside `lab-agent`, so a live ledger is never silently clobbered. To verify a backup file is restorable:
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/lab-agent
+cd ~/dev/lab-in-the-loop/apps/lab-agent
 cp /path/to/backup.db /tmp/restore-drill.db
 LAB_AGENT_STATE_DB_PATH=/tmp/restore-drill.db uv run lab-agent integrity
 ```
@@ -405,48 +426,10 @@ Check these independent gates before a governed demo:
 2. **Artifact reachability:** `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL` is configured and reachable by intended Canvus clients.
 3. **Pricing approval:** an operator-approved `LAB_AGENT_PRICING_VERSION` is set and the selected model has an entry in `LAB_AGENT_MODEL_PRICING`.
 
-## Seed a canvas
-
-Minimum setup:
-
-1. Create a `RAGCluster_` image widget.
-2. Connect one or more PDF/note/doc widgets into the RagCluster.
-3. Create a note like:
-
-   ```text
-   {idea: Design the next experiment for lung fibrosis using the connected internal knowledge.}
-   ```
-
-4. Connect `RAGCluster_ → idea note`.
-5. Start `lab-agent watch`; it creates a deterministic-dry-run validation Browser projection for a canonical setup.
-6. Treat validation and approval-status Browser artifacts as status only. Do not use a Canvas Note, title, connector, or author text to approve a setup.
-7. The default watcher does not execute `Robot_` paths. A `Robot_` marker is relevant only to the separately enabled future Phase 8 mock-result branch, which is still not real lab execution.
-8. If a mock result has been deliberately produced through compatible legacy/manual testing, connect `[EXP:Result v001] → [EXP:Setup v001]` to request loop analysis.
-
-## Legacy generated Note migration
-
-Legacy canvases can contain generated Setup/Result/Closed Notes. They remain readable by the scanner and by `lab-agent` fallback reads. Migration is mirror-first and non-destructive.
-
-Read-only inventory (default; no DB, Browser, connector, or Note writes):
-
-```bash
-python scripts/migrate-generated-notes-to-browser-artifacts.py --canvas <canvas-id>
-```
-
-Mirror apply (requires `LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL`; creates Browser mirrors and equivalent connectors; never deletes, archives, or edits the original Notes/connectors):
-
-```bash
-python scripts/migrate-generated-notes-to-browser-artifacts.py --canvas <canvas-id> --apply
-```
-
-The script prints ids/counts/status only. It never prints token-bearing capability URLs. Re-running is intended to converge through durable idempotency and in-place Browser repair. `--apply` is the operator's explicit confirmation for mirror writes; Phase 3 has no destructive archive/delete mode and no extra deletion confirmation prompt.
-
-## Test and quality commands
-
 ### `canvus-mcp`
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/canvus-mcp
+cd ~/dev/lab-in-the-loop/apps/canvus-mcp
 uv run pytest -q
 uv run ruff check canvus_mcp tests
 uv run mypy canvus_mcp
@@ -455,7 +438,7 @@ uv run mypy canvus_mcp
 ### `lab-agent`
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/lab-agent
+cd ~/dev/lab-in-the-loop/apps/lab-agent
 uv run pytest -q
 uv run ruff check lab_agent tests
 uv run mypy lab_agent

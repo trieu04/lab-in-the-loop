@@ -80,6 +80,7 @@ Key modules:
 | `canvus_mcp/ingestion_pipeline.py` / `ingestion_extractors_core.py` | Hash/version deduplication, deterministic unit planning, and bounded local extraction |
 | `canvus_mcp/ingestion_worker.py` | Standalone leased worker component; it is deliberately not started by the MCP server |
 | `canvus_mcp/access_control.py` / `tools/ingestion.py` | Static-role auth, canvas-scoped ingestion controls, and metadata-only denial audit |
+| `canvus_mcp/tools/health.py` | Operator-only MCP health snapshot with fixed dependency states and sanitized error classes |
 
 The MCP server owns Canvus credentials. Claude Code or `lab-agent` only needs the MCP URL. Existing non-ingestion reads/downloads retain their additive anonymous compatibility path; this does not grant ingestion access.
 
@@ -97,8 +98,10 @@ Key modules:
 | `lab_agent/policy/*` | Pure routing, locality, pricing, budget-reservation, and stop policies used before provider/canvas writes |
 | `lab_agent/model_request.py` / `provider_endpoints.py` | Provider-visible request digest/conservative usage estimate and credential-gated canonical endpoint defaults/HTTPS validation |
 | `lab_agent/mcp_client.py` | MCP transport client |
-| `lab_agent/watch.py` / `watch_loops.py` | Poll loop, pending-trigger dispatcher, governed loop-attempt handling, and post-canvas-lease notification draining |
-| `lab_agent/orchestrator.py` | Legacy loop-decision and terminal-replay boundary; its preserved multi-round synthetic mock compatibility path is distinct from the Phase 8 7A approval-bound dry-run lifecycle |
+| `lab_agent/watch.py` / `watch_loops.py` | Poll loop, bounded allowlisted multi-canvas scheduler, governed loop-attempt handling, and post-canvas-lease notification draining |
+| `lab_agent/tenant.py` | Immutable process tenant scope: exact canvas allowlist and one credential-domain validation primitive |
+| `lab_agent/cli.py` | CLI commands including allowlisted `watch --canvas` / `--canvases`, local sanitized `health`, and artifact service |
+| `lab_agent/orchestrator.py` | Loop-decision, stable continuation identity, successor-Setup staging, and terminal-replay boundary; Result generation remains behind validation/approval/execution gates and distinct from Phase 8 7A |
 | `lab_agent/orchestrator_robot.py` / `approval_service.py` | Enforce current validation/scientist/lab-lead evidence before mock execution; persist hash-bound, credential-verified first-round manual activation |
 | `lab_agent/orchestrator_setup.py` | Idea/next-focus → setup entry point; creates a fresh `EvidenceLedger`, evaluates grounding with original idea text, writes setup only when executable, writes Needs Input for insufficient evidence/ambiguity, and leaves invalid citations retryable with no write |
 | `lab_agent/grounding.py` | Phase 4 grounding gate: evidence sufficiency, citation membership, dictionary-backed acronym boundary scan, durable grounding audit, and Needs Input dispatch |
@@ -193,7 +196,7 @@ The installed lab, Flywheel, and knowledge adapters are deterministic memory-onl
 
 Before a retry, the lifecycle authoritatively reconciles a submitted/ambiguous run by its idempotency key. A claimed submit intent is never duplicated; terminal recovery settles the matching intent and preserves append-only references. Execution still rechecks the exact current proposal hash, validation hash, ordered scientist/lab-lead approval, and manual first-round activation where required. Browser artifacts are projections only: they expose safe ids, hashes, roles, status, and dry-run label, deliberately omit `logical_uri`, and neither authorize nor schedule work. Canvus scan buckets are display/recovery buckets only, never authorization or scheduling evidence.
 
-The existing legacy multi-round synthetic mock loop remains compatible. It is distinct from the 7A dry-run lifecycle and does not establish real execution or measured scientific truth.
+The existing legacy multi-round synthetic loop remains compatible but is now gate-safe: each round evaluates one decision, stages only a successor Setup, and waits for fresh deterministic validation plus ordered approval before Result generation. It is distinct from the 7A dry-run lifecycle and does not establish real execution or measured scientific truth.
 
 **External child-plan gates:** 7B real Flywheel/HPC analysis; 7C real knowledge store; 7D real lab/robot integration; production identity/credential approval; retention/locality policy; and hosted integration. None are implemented or implied by 7A.
 
@@ -319,16 +322,16 @@ detect_experiment_loops resolves setup/result/robot/idea/RagCluster ids
 watcher invokes the governed single-decision loop boundary
         │
         ├─ STOP     → create `[EXP:Closed]`, terminal audit, and eligible outbox event
-        └─ CONTINUE → current legacy branch can ground/write successor Setup/Result in this call
+        └─ CONTINUE → ground/write successor Setup only; validate/approve before Result
 ```
 
-The legacy CONTINUE branch remains a synthetic mock-loop compatibility path. The Phase 8 7A lifecycle independently rechecks changed proposal/validation hashes, ordered approval, and mode-specific activation before its dry-run execution path. Neither path is a production-safe real-execution progression or measured-evidence source. Existing legacy forward edges remain readable but are filtered from actionable loop detection.
+The legacy CONTINUE branch is a staged mock-loop compatibility path. Each changed successor proposal re-enters deterministic validation and ordered approval before an enabled mock Result can be generated. The Phase 8 7A lifecycle independently rechecks the same current hashes and activation boundary before its dry-run execution path. Neither path is a real-execution progression or measured-evidence source. Existing legacy forward edges remain readable but are filtered from actionable loop detection.
 
 ## State and idempotency
 
 The canvas remains the source of *workflow* state — the agent treats connector presence as the state transition signal, and `scan_experiment_workflow`/`detect_experiment_loops` still derive "what needs doing" from the live canvas graph. What changed in Phase 2 is *how durably and safely* the agent acts on that signal:
 
-- An idea is processed only if it has no existing setup; a setup is run only if it has no existing result — as before, derived from the canvas graph.
+- An idea is processed only if it has no existing setup. A setup is runnable when it has no result or when its version is newer than the robot-connected result; this is scheduling metadata only and never authorization.
 - A detected loop connector, and every other derived trigger, now gets a durable `workflow_attempts` row (see "Durable harness core" below) instead of relying on an in-memory `processed_loops` set — processing state survives process restart, not just one watcher session.
 - Each canvas mutation (note/connector creation) is preceded by a persisted `side_effect_intents` row and a live-canvas probe, so a crash between "mutation landed" and "marked done" is recovered without a duplicate write, not just a retried write.
 - Writes happen one node at a time: canonical artifact row, Browser widget create/update, setup/result/closed connector.

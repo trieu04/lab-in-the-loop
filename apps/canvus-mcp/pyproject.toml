@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lap-in-the-loop-canvus-mcp"
+name = "lab-in-the-loop-canvus-mcp"
 version = "0.1.0"
 description = "MCP server exposing Canvus tools for Lab-in-the-Loop workflows: scan, content download, widget/connector creation, RagCluster checks, and experiment-loop detection."
 requires-python = ">=3.11"

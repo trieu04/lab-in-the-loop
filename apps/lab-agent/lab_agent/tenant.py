@@ -45,7 +45,11 @@ class TenantContext:
     def allows_canvas(self, canvas_id: object) -> bool:
         """Return whether a syntactically valid canvas id is exactly allowlisted."""
 
-        return isinstance(canvas_id, str) and bool(_IDENTIFIER.fullmatch(canvas_id)) and canvas_id in self.allowed_canvas_ids
+        return (
+            isinstance(canvas_id, str)
+            and bool(_IDENTIFIER.fullmatch(canvas_id))
+            and canvas_id in self.allowed_canvas_ids
+        )
 
     def require_canvas(self, canvas_id: object) -> None:
         """Fail closed unless ``canvas_id`` belongs to this immutable scope."""

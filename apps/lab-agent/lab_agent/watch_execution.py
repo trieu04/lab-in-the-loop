@@ -99,7 +99,7 @@ async def process_execution_triggers(
             setup_id, direct_mode = str(setup.get("widget_id", "")), _mode(setup)
             if not setup_id or ("execution_mode" in setup and direct_mode is None):
                 continue
-            source = ArtifactStore(store.conn).get_artifact_by_widget(
+            source = ArtifactStore(store.conn, tenant_context=store.tenant_context).get_artifact_by_widget(
                 canvas_id=canvas_id, widget_id=setup_id
             )
             source_id = source.provenance.source_widget_id if source else ""
@@ -151,7 +151,7 @@ async def process_execution_triggers(
         direct_mode = _mode(setup)
         if "execution_mode" in setup and direct_mode is None:
             continue
-        source = ArtifactStore(store.conn).get_artifact_by_widget(canvas_id=canvas_id, widget_id=setup_id)
+        source = ArtifactStore(store.conn, tenant_context=store.tenant_context).get_artifact_by_widget(canvas_id=canvas_id, widget_id=setup_id)
         source_id = source.provenance.source_widget_id if source else ""
         if source_id in invalid:
             continue

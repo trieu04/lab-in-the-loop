@@ -40,6 +40,8 @@ class TypedSetupArtifactError(RuntimeError):
 
 @dataclass(frozen=True)
 class ValidationOutcome:
+    tenant_id: str
+    canvas_id: str
     setup_id: str
     proposal_hash: str
     result_hash: str
@@ -51,7 +53,7 @@ class ValidationOutcome:
 def load_typed_setup(store: StateStore, canvas_id: str, setup_id: str) -> ExperimentSetup:
     """Load a Setup Browser's canonical payload, never its rendered Canvas text."""
 
-    document = ArtifactStore(store.conn).get_artifact_by_widget(
+    document = ArtifactStore(store.conn, tenant_context=store.tenant_context).get_artifact_by_widget(
         canvas_id=canvas_id, widget_id=setup_id
     )
     if document is None or document.artifact_type is not ArtifactType.SETUP:
@@ -76,11 +78,15 @@ def _target(result: InSilicoResult) -> DecisionState:
     return targets[result.decision]
 
 
-def _validate_result(value: object, proposal_hash: str) -> InSilicoResult:
+def _validate_result(
+    value: object, *, tenant_id: str, canvas_id: str, proposal_hash: str
+) -> InSilicoResult:
     if not isinstance(value, InSilicoResult):
         raise InSilicoSchemaError("adapter returned a non-InSilicoResult value")
     if value.proposal_hash != proposal_hash:
         raise InSilicoSchemaError("adapter result proposal hash does not match request")
+    if (value.tenant_id, value.canvas_id) != (tenant_id, canvas_id):
+        raise InSilicoSchemaError("adapter result scope does not match request")
     return value
 
 
@@ -90,9 +96,9 @@ def _existing_result(
     discriminator: str,
     proposal_hash: str,
 ) -> InSilicoResult | None:
-    artifact_key = artifact_compat.artifact_key(canvas_id, ArtifactType.IN_SILICO, discriminator)
+    artifact_key = artifact_compat.artifact_key(canvas_id, ArtifactType.IN_SILICO, discriminator, tenant_id=store.tenant_id)
     document = artifact_compat.find_existing_artifact(
-        ArtifactStore(store.conn),
+        ArtifactStore(store.conn, tenant_context=store.tenant_context),
         canvas_id=canvas_id,
         artifact_type=ArtifactType.IN_SILICO,
         keys=(artifact_key,),
@@ -180,6 +186,8 @@ async def run_in_silico_validation(
     result = _existing_result(store, canvas_id, discriminator, proposal_hash)
     if result is None:
         request = InSilicoRequest(
+            tenant_id=store.tenant_id,
+            canvas_id=canvas_id,
             request_id=request_id,
             setup_id=setup_id,
             setup=setup,
@@ -187,7 +195,12 @@ async def run_in_silico_validation(
             requested_at=datetime.now(UTC),
         )
         try:
-            result = _validate_result(await adapter.validate(request), proposal_hash)
+            result = _validate_result(
+                await adapter.validate(request),
+                tenant_id=store.tenant_id,
+                canvas_id=canvas_id,
+                proposal_hash=proposal_hash,
+            )
         except (InSilicoAdapterError, ValidationError) as exc:
             error = exc if isinstance(exc, InSilicoAdapterError) else InSilicoSchemaError(str(exc))
             _audit_failure(store, canvas_id, setup_id, proposal_hash, error, round_index)
@@ -219,7 +232,8 @@ async def run_in_silico_validation(
         edge_kind="setup_validation",
     )
     return ValidationOutcome(
-        setup_id, proposal_hash, hash_validation_result(result), widget_id, result, target
+        store.tenant_id, canvas_id, setup_id, proposal_hash, hash_validation_result(result),
+        widget_id, result, target,
     )
 
 

@@ -124,7 +124,7 @@ Fix both before applying the patch to `rag-canvus`.
 
 ## Test status
 
-`integrations/canvus-serving-experiment-prepare/apps/canvus-serving/tests/test_experiment_prepare.py` is preserved here as extracted source, alongside `integrations/canvus-serving-experiment-prepare/apps/canvus-serving/app/actions/experiment_prepare.py`. **It cannot run standalone in this repo** — it imports from `app.db.migrations`, `app.jobs.queue`, `app.scanner.engine`, and `app.scanner.parser`, which are part of the full `canvus-serving` app tree, not part of `lap-in-the-loop`. Validate it only after applying the patch to the parent `rag-canvus`/`canvus-serving` tree (see "Applying the patch" below) and running it from there. No test run has been performed against this extracted copy.
+`integrations/canvus-serving-experiment-prepare/apps/canvus-serving/tests/test_experiment_prepare.py` is preserved here as extracted source, alongside `integrations/canvus-serving-experiment-prepare/apps/canvus-serving/app/actions/experiment_prepare.py`. **It cannot run standalone in this repo** — it imports from `app.db.migrations`, `app.jobs.queue`, `app.scanner.engine`, and `app.scanner.parser`, which are part of the full `canvus-serving` app tree, not part of `lab-in-the-loop`. Validate it only after applying the patch to the parent `rag-canvus`/`canvus-serving` tree (see "Applying the patch" below) and running it from there. No test run has been performed against this extracted copy.
 
 ## Applying the patch
 
@@ -132,7 +132,7 @@ From the original `rag-canvus` repo:
 
 ```bash
 cd ~/dev/rag-canvus
-git apply ~/dev/lap-in-the-loop/integrations/canvus-serving-experiment-prepare/canvus-serving-experiment-prepare.patch
+git apply ~/dev/lab-in-the-loop/integrations/canvus-serving-experiment-prepare/canvus-serving-experiment-prepare.patch
 ```
 
 Then run:
@@ -159,3 +159,4 @@ Review the diff before staging. Do not commit `.env` or generated assets unless 
 | Canvas writes via MCP tools | No, direct serving client | Yes |
 
 Use the serving integration for quick experiment-prep demos. Use `lab-agent` for the actual Lab-in-the-Loop autonomous workflow.
+

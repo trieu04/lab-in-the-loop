@@ -89,6 +89,22 @@ class Settings(BaseSettings):
         description="Only dry_run is accepted by the Phase 8 factory; other modes fail closed.",
     )
 
+    # ── Process-scoped tenant boundary (Phase 9 single-host baseline) ───
+    tenant_id: str = Field(default="default", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
+    credential_domain: str = Field(default="default.local", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
+    allowed_canvas_ids: list[str] = Field(default_factory=list)
+    watch_max_concurrent_canvases: int = Field(default=1, ge=1, le=16)
+
+    @field_validator("allowed_canvas_ids")
+    @classmethod
+    def validate_allowed_canvas_ids(cls, value: list[str]) -> list[str]:
+        if any(not isinstance(canvas_id, str) or not canvas_id.strip() for canvas_id in value):
+            raise ValueError("allowed_canvas_ids must contain non-empty strings")
+        normalized = [canvas_id.strip() for canvas_id in value]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("allowed_canvas_ids must not contain duplicates")
+        return normalized
+
     # ── Durable harness (Phase 2: SQLite WAL ledger, single-host scope) ──
     state_db_path: str = Field(default=".state/lab_agent.db")
     canvas_lease_ttl_seconds: float = Field(default=180.0, gt=0)

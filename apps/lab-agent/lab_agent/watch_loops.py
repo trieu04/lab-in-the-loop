@@ -1,4 +1,4 @@
-"""Durable watcher dispatch for loop snapshots."""
+"""Durable watcher dispatch for round-qualified loop snapshots."""
 
 from __future__ import annotations
 
@@ -13,13 +13,22 @@ from lab_agent.state_store import StateStore
 from lab_agent.watch_attempts import process_trigger
 
 
-def _ids(loop: dict[str, object]) -> tuple[str, str, str] | None:
+def _round(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return 1
+    try:
+        return max(1, int(value or 1))
+    except ValueError:
+        return 1
+
+
+def _ids(loop: dict[str, object]) -> tuple[str, str, str, int] | None:
     setup_id, result_id = loop.get("setup_id"), loop.get("result_id")
     connector_id = loop.get("loop_connector_id")
     if not isinstance(setup_id, str) or not setup_id or not isinstance(result_id, str) or not result_id:
         return None
     scope = connector_id if isinstance(connector_id, str) and connector_id else result_id
-    return setup_id, result_id, scope
+    return setup_id, result_id, scope, _round(loop.get("round"))
 
 
 async def _run_loop(
@@ -34,11 +43,11 @@ async def _run_loop(
     identifiers = _ids(loop)
     if identifiers is None:
         return False, "schema_validation_failed"
-    _, _, scope = identifiers
-    trigger_id = f"loop:{scope}"
-    if gov is not None:
-        gov.start_run(trigger_id, [loop])
-    summary = await run_loop(mcp, adapter, settings, store, canvas_id=canvas_id, loop=loop, gov=gov)
+    summary = await run_loop(
+        mcp, adapter, settings, store, canvas_id=canvas_id, loop=loop, gov=gov,
+    )
+    if summary.stopped_reason == "successor_staged":
+        return True, ""
     if not summary.closed_id:
         return False, (summary.stopped_reason or "schema_validation_failed")[:200]
     completed = summary.terminal_notification_ready
@@ -56,19 +65,17 @@ async def process_loops(
     loops: list[dict[str, object]],
     gov: GovernanceContext | None,
 ) -> int:
-    """Run each valid loop through the fenced trigger lifecycle once."""
+    """Run each valid loop round through its own fenced attempt lifecycle."""
     completed = 0
     for loop in loops:
         identifiers = _ids(loop)
         if identifiers is None:
             continue
-        _, _, scope = identifiers
+        _, _, scope, round_index = identifiers
         if await process_trigger(
-            store,
-            canvas_id=canvas_id,
-            trigger_id=f"loop:{scope}",
-            runtime_instance_id=runtime_instance_id,
-            settings=settings,
+            store, canvas_id=canvas_id,
+            trigger_id=f"loop:{scope}:round:{round_index}",
+            runtime_instance_id=runtime_instance_id, settings=settings,
             work=partial(_run_loop, mcp, adapter, settings, store, canvas_id, loop, gov),
         ):
             completed += 1

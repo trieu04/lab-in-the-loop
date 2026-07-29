@@ -83,14 +83,14 @@ async def _reconcile_browser(
             created = True
         astore.map_widget(opaque_id, canvas_id=canvas_id, widget_id=widget_id)
     except Exception as exc:
-        store.mark_intent_failed(browser_key, error=str(exc)[:200])
+        store.mark_intent_failed(browser_key, canvas_id=canvas_id, error=str(exc)[:200])
         store.append_audit_event(canvas_id, "intent_failed", {"kind": "create_browser", "key": browser_key[:16], "error": str(exc)[:200]}, round=round_index)
         raise
     if created:
-        store.mark_intent_executed(browser_key, external_id=widget_id)
-    store.mark_intent_reconciled(browser_key, external_id=widget_id)
-    if found_key != browser_key and store.get_intent(found_key) is not None:
-        store.mark_intent_reconciled(found_key, external_id=widget_id)
+        store.mark_intent_executed(browser_key, canvas_id=canvas_id, external_id=widget_id)
+    store.mark_intent_reconciled(browser_key, canvas_id=canvas_id, external_id=widget_id)
+    if found_key != browser_key and store.get_intent(found_key, canvas_id=canvas_id) is not None:
+        store.mark_intent_reconciled(found_key, canvas_id=canvas_id, external_id=widget_id)
     store.append_audit_event(canvas_id, "intent_reconciled", {"kind": "create_browser", "key": browser_key[:16], "external_id": widget_id, "repaired": not created}, round=round_index)
     return widget_id
 
@@ -117,9 +117,9 @@ async def write_artifact_browser_durable(
     """Persist a canonical artifact, render it as a Browser widget, and connect it."""
     base = settings.artifact_public_base_url
     require_public_base(base)  # fail closed before any token/MCP mutation
-    astore = ArtifactStore(store.conn, clock=store.clock)
-    artifact_key = artifact_compat.artifact_key(canvas_id, artifact_type, discriminator)
-    legacy_artifact_keys = tuple(artifact_compat.artifact_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)
+    astore = ArtifactStore(store.conn, clock=store.clock, tenant_context=store.tenant_context)
+    artifact_key = artifact_compat.artifact_key(canvas_id, artifact_type, discriminator, tenant_id=store.tenant_id)
+    legacy_artifact_keys = artifact_compat.unique_keys((*(artifact_compat.artifact_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators), artifact_compat.legacy_artifact_key(canvas_id, artifact_type, discriminator), *(artifact_compat.legacy_artifact_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)))
     doc = artifact_compat.find_existing_artifact(astore, canvas_id=canvas_id, artifact_type=artifact_type, keys=(artifact_key, *legacy_artifact_keys), reuse_widget_id=reuse_artifact_widget_id)
     if doc is None:
         doc = astore.get_or_create_artifact(canvas_id=canvas_id, idempotency_key=artifact_key, artifact_type=artifact_type, state=state, payload=payload, provenance=provenance, round=round_index)
@@ -139,8 +139,8 @@ async def write_artifact_browser_durable(
     url = _capability_url(base, doc.opaque_id, token)
     fallback = fallback_layout(artifact_type, round_index)
     x, y = await artifact_layout.resolve_artifact_position(mcp, canvas_id=canvas_id, anchor_widget_id=layout_anchor_id or predecessor_id, artifact_type=artifact_type, fallback=fallback)
-    browser_key = artifact_compat.browser_key(canvas_id, artifact_type, discriminator)
-    legacy_browser_keys = tuple(artifact_compat.browser_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)
+    browser_key = artifact_compat.browser_key(canvas_id, artifact_type, discriminator, tenant_id=store.tenant_id)
+    legacy_browser_keys = artifact_compat.unique_keys((*(artifact_compat.browser_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators), artifact_compat.legacy_browser_key(canvas_id, artifact_type, discriminator), *(artifact_compat.legacy_browser_key(canvas_id, artifact_type, legacy) for legacy in legacy_discriminators)))
     tagged = canvas_probe.tagged_title(title, browser_key)
     legacy_grid_hash = artifact_compat.legacy_browser_intent_hash(opaque_id=doc.opaque_id, tagged_title=tagged, x=fallback[0], y=fallback[1])
     widget_id = await _reconcile_browser(mcp, store, astore, canvas_id=canvas_id, browser_key=browser_key, bucket=browser_bucket(artifact_type), opaque_id=doc.opaque_id, mapped_widget_id=doc.widget_id, tagged_title=tagged, url=url, x=x, y=y, round_index=round_index, legacy_browser_keys=legacy_browser_keys, legacy_intent_hashes=(legacy_grid_hash,))
@@ -153,7 +153,7 @@ async def read_stage_text(mcp: MCPClient, store: StateStore, canvas_id: str, wid
     """Return a setup/result stage's text for the model: the canonical artifact
     payload via the Browser widget mapping (never Browser HTML), falling back to
     :func:`lab_agent.nodes.read_note_text` for a legacy Note-based canvas."""
-    astore = ArtifactStore(store.conn, clock=store.clock)
+    astore = ArtifactStore(store.conn, clock=store.clock, tenant_context=store.tenant_context)
     doc = astore.get_artifact_by_widget(canvas_id=canvas_id, widget_id=widget_id)
     if doc is not None:
         rendered = doc.payload.get(RENDERED_TEXT_KEY)

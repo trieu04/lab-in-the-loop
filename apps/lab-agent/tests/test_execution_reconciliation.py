@@ -23,10 +23,8 @@ from lab_agent.state_store import IntentStatus, StateStore
 def _hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
-
 def _now() -> datetime:
     return datetime.now(UTC)
-
 
 def _execution_request() -> ExecutionRequest:
     return ExecutionRequest(
@@ -37,7 +35,6 @@ def _execution_request() -> ExecutionRequest:
         input_hash=_hash("execution-input"), requested_at=_now(),
     )
 
-
 def _analysis_request() -> AnalysisRequest:
     return AnalysisRequest(
         request_id="analysis-request", analysis_run_id="analysis-1", canvas_id="canvas-1",
@@ -45,7 +42,6 @@ def _analysis_request() -> AnalysisRequest:
         adapter_version="1", mode=RunMode.DRY_RUN, evidence_kind=EvidenceKind.MOCK_OR_DRY_RUN,
         submit_intent_key="analysis-intent", input_hash=_hash("analysis-input"), requested_at=_now(),
     )
-
 
 class _AbsentExecutionAdapter:
     reconciliation_supported = True
@@ -55,8 +51,8 @@ class _AbsentExecutionAdapter:
         self.submit_calls = 0
         self.both_looked_up = asyncio.Event()
 
-    async def find_by_idempotency_key(self, key: str) -> ExecutionRun | None:
-        del key
+    async def find_by_idempotency_key(self, tenant_id: str, key: str) -> ExecutionRun | None:
+        del tenant_id, key
         self.find_calls += 1
         if self.find_calls == 2:
             self.both_looked_up.set()
@@ -80,8 +76,8 @@ class _AbsentAnalysisAdapter:
         self.submit_calls = 0
         self.both_looked_up = asyncio.Event()
 
-    async def find_by_idempotency_key(self, key: str) -> AnalysisRun | None:
-        del key
+    async def find_by_idempotency_key(self, tenant_id: str, key: str) -> AnalysisRun | None:
+        del tenant_id, key
         self.find_calls += 1
         if self.find_calls == 2:
             self.both_looked_up.set()

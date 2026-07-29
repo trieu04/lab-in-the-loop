@@ -12,20 +12,36 @@ from collections.abc import Iterable
 from lab_agent.artifact_composition import _compose_document
 from lab_agent.artifact_store import ArtifactStore
 from lab_agent.models.artifact import ArtifactDocument, ArtifactType
-from lab_agent.recovery import idempotency_key, input_hash
+from lab_agent.recovery import idempotency_key, input_hash, legacy_idempotency_key
 from lab_agent.state import artifact_idempotency, artifact_widgets
 from lab_agent.state import artifacts as artifacts_repo
 from lab_agent.state_store import IntentHashMismatchError, StateStore
 
 
-def artifact_key(canvas_id: str, artifact_type: ArtifactType, discriminator: str) -> str:
-    """Return the canonical artifact idempotency key for one discriminator."""
-    return idempotency_key(canvas_id, f"artifact_{artifact_type.value}", discriminator)
+def artifact_key(
+    canvas_id: str, artifact_type: ArtifactType, discriminator: str, *, tenant_id: str = "default"
+) -> str:
+    """Return the canonical tenant-qualified artifact idempotency key."""
+    return idempotency_key(canvas_id, f"artifact_{artifact_type.value}", discriminator, tenant_id=tenant_id)
 
 
-def browser_key(canvas_id: str, artifact_type: ArtifactType, discriminator: str) -> str:
-    """Return the Browser-widget idempotency key for one discriminator."""
-    return idempotency_key(canvas_id, "create_browser", f"browser/{artifact_type.value}/{discriminator}")
+def browser_key(
+    canvas_id: str, artifact_type: ArtifactType, discriminator: str, *, tenant_id: str = "default"
+) -> str:
+    """Return the tenant-qualified Browser-widget idempotency key."""
+    return idempotency_key(
+        canvas_id, "create_browser", f"browser/{artifact_type.value}/{discriminator}", tenant_id=tenant_id
+    )
+
+
+def legacy_artifact_key(canvas_id: str, artifact_type: ArtifactType, discriminator: str) -> str:
+    """Return a pre-P7b artifact key for read-only recovery probes."""
+    return legacy_idempotency_key(canvas_id, f"artifact_{artifact_type.value}", discriminator)
+
+
+def legacy_browser_key(canvas_id: str, artifact_type: ArtifactType, discriminator: str) -> str:
+    """Return a pre-P7b Browser key for read-only recovery probes."""
+    return legacy_idempotency_key(canvas_id, "create_browser", f"browser/{artifact_type.value}/{discriminator}")
 
 
 def unique_keys(items: Iterable[str]) -> tuple[str, ...]:
@@ -42,8 +58,9 @@ def unique_keys(items: Iterable[str]) -> tuple[str, ...]:
 def _document_by_key(
     astore: ArtifactStore, *, canvas_id: str, key: str, artifact_type: ArtifactType
 ) -> ArtifactDocument | None:
+    astore._require_canvas_scope(canvas_id)
     record = artifact_idempotency.get_artifact_by_idempotency_key(
-        astore.conn, canvas_id=canvas_id, idempotency_key=key
+        astore.conn, tenant_id=astore.tenant_id, canvas_id=canvas_id, idempotency_key=key
     )
     if record is None:
         return None
@@ -52,9 +69,13 @@ def _document_by_key(
             f"idempotency_key {key!r} on canvas {canvas_id!r} is bound to "
             f"artifact_type {record.artifact_type!r}, not {artifact_type.value!r}"
         )
-    version = artifacts_repo.get_version(astore.conn, opaque_id=record.opaque_id, version=record.current_version)
+    version = artifacts_repo.get_version(
+        astore.conn, tenant_id=astore.tenant_id, opaque_id=record.opaque_id, version=record.current_version
+    )
     assert version is not None
-    widget = artifact_widgets.get_mapping(astore.conn, opaque_id=record.opaque_id)
+    widget = artifact_widgets.get_mapping(
+        astore.conn, tenant_id=astore.tenant_id, opaque_id=record.opaque_id
+    )
     return _compose_document(record, version, widget_id=widget.widget_id if widget else None)
 
 
@@ -109,7 +130,7 @@ def prepare_browser_intent(
 ) -> None:
     """Prepare a Browser intent while accepting known pre-migration hashes only."""
     digest = input_hash({"opaque_id": opaque_id})
-    existing = store.get_intent(browser_key_value)
+    existing = store.get_intent(browser_key_value, canvas_id=canvas_id)
     if existing is None:
         store.prepare_intent(
             idempotency_key=browser_key_value, canvas_id=canvas_id,
@@ -130,7 +151,7 @@ def prepare_browser_intent(
 __all__ = [
     "artifact_key",
     "browser_key",
-    "find_existing_artifact",
+    "find_existing_artifact", "legacy_artifact_key", "legacy_browser_key",
     "legacy_browser_intent_hash",
     "prepare_browser_intent",
     "unique_keys",

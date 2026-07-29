@@ -5,10 +5,10 @@
 | Field | Value |
 |---|---|
 | Status | Draft for review |
-| Version | 1.4 |
-| Date | 2026-07-23 |
+| Version | 1.5 |
+| Date | 2026-07-24 |
 | Source vision | [docs/notes/use-case-lab-in-the-loop.md](notes/use-case-lab-in-the-loop.md) (original meeting notes, excluded from normalization) |
-| Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lap-in-the-loop` repository |
+| Scope | Canonical (normalized) use case specification for the entire Lab-in-the-Loop vision, with annotations of current implementation status in the `lab-in-the-loop` repository |
 | Owner / Approver | Pending |
 | Status notation | `[MVP]` = code path exists in this repository and confirmed from source; local verification is complete where stated, while live Canvus E2E demo verification remains Phase 2; `[MVP partial]` = a safe local/source subset exists but external/live capability remains unavailable; `[Future]` = not implemented; `[Proposed]` = proposed direction (harness-first architecture), not yet ratified by owner |
 
@@ -116,7 +116,7 @@ Current system boundary `[MVP]` consists of the 2 runtime apps plus separate loc
 | ACT-LITL-10 | In-silico / digital-twin service | Validate design before wet lab | `[MVP partial]` deterministic local structural dry-run adapter only; real service disabled/unimplemented | Original UC §8; roadmap Phase 5 |
 | ACT-LITL-11 | Robotic/wet-lab system | Execute real experiments | `[Future]`; Phase 7 watcher is execution-disabled and no hardware/lab SDK exists | roadmap "Real robot integration: Future" |
 | ACT-LITL-12 | Flywheel / imaging analysis platform | Auto-run analysis gear (e.g., lung fibrosis quantification) | `[MVP partial]` deterministic memory-only dry-run adapter only, visibly not measured; real Flywheel/HPC integration is external gate 7B | Original UC §9.4; roadmap Phase 8 |
-| ACT-LITL-13 | Administrator / auditor | Audit log, quarantine reset/backup, observability, multi-user isolation | **`MVP partial / Future inferred`** — operator CLI and hash-chained audit exist; multi-user observability remains Future; actor is inferred, not explicitly listed in original UC | `lab_agent/admin.py`, roadmap Phase 7; no direct actor reference in vision |
+| ACT-LITL-13 | Administrator / auditor | Audit log, quarantine reset/backup, observability, tenant/canvas isolation | **`MVP partial / Future inferred`** — tenant-bound integrity, operator health, scoped reset, and global-authority backup boundary exist; dashboards and multi-host observability remain Future; actor is inferred, not explicitly listed in original UC | `lab_agent/admin.py`, roadmap Phase 7; no direct actor reference in vision |
 
 ---
 

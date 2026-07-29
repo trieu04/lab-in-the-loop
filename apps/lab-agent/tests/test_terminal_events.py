@@ -8,9 +8,11 @@ from lab_agent.config import Settings
 from lab_agent.loop_governance import close_with_reason
 from lab_agent.model_gateway import GovernedAdapter, build_context
 from lab_agent.models.governance import StopReason, TerminalStopEvent
+from lab_agent.notification_smtp import SMTPConfiguration
 from lab_agent.orchestrator import run_loop
 from lab_agent.orchestrator_support import LoopSummary
 from lab_agent.state_store import StateStore
+from lab_agent.trigger_governance import close_trigger_with_reason
 from tests.fakes import FakeMCP, ScriptedAdapter, grounded_setup
 
 
@@ -49,13 +51,17 @@ async def test_terminal_event_is_redacted_deterministic_and_reconciled(store, se
         reason=StopReason.MAX_ROUNDS,
     )
 
-    assert first == second == TerminalStopEvent(
-        canvas_id="canvas",
-        trigger_id="loop:loop-1",
-        predecessor_id="result1",
-        reason=StopReason.MAX_ROUNDS,
-        round_index=1,
-        closure_id=first.closure_id,
+    assert (
+        first
+        == second
+        == TerminalStopEvent(
+            canvas_id="canvas",
+            trigger_id="loop:loop-1",
+            predecessor_id="result1",
+            reason=StopReason.MAX_ROUNDS,
+            round_index=1,
+            closure_id=first.closure_id,
+        )
     )
     assert first.notification_eligible
     assert first.audit_payload == {
@@ -68,21 +74,62 @@ async def test_terminal_event_is_redacted_deterministic_and_reconciled(store, se
         "notification_eligible": True,
     }
     assert "sensitive" not in repr(first.audit_payload)
-    stopped = [event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"]
+    stopped = [
+        event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"
+    ]
     assert len(stopped) == 1
     assert stopped[0].payload == first.audit_payload
+
+
+async def test_pre_loop_governance_closure_emits_terminal_event_and_outbox(store, settings) -> None:
+    settings.notification_smtp = SMTPConfiguration(
+        enabled=True,
+        host="smtp.test",
+        port=587,
+        sender="lab@lab.test",
+        recipients=("operator@lab.test",),
+        sender_allowlist=("lab@lab.test",),
+        recipient_allowlist=("operator@lab.test",),
+    )
+
+    event, ready = await close_trigger_with_reason(
+        FakeMCP(),
+        settings,
+        store,
+        canvas_id="canvas",
+        predecessor_id="idea1",
+        round_index=1,
+        reason=StopReason.LOCALITY_DENIAL,
+        trigger_id="idea_setup:idea1",
+    )
+
+    assert ready and event.trigger_id == "idea_setup:idea1"
+    assert store.find_terminal_event("canvas", "idea_setup:idea1") is not None
+    records = store.list_notification_records(canvas_id="canvas")
+    assert len(records) == 1 and records[0].closure_metadata["reason"] == "locality_denial"
 
 
 async def test_locality_denial_closes_before_provider_or_follow_on_writes(store, settings) -> None:
     settings.provider_endpoints = {"openai": "https://api.openai.com/v1"}
     settings.provider_data_classifications = {"openai": ["public"]}
     inner = ScriptedAdapter({"LoopDecision": {"proceed": True, "reason": "continue"}})
-    gov = build_context(store, settings, "canvas", {"openai": inner}, [{"classification": "internal"}])
+    gov = build_context(
+        store, settings, "canvas", {"openai": inner}, [{"classification": "internal"}]
+    )
     mcp = FakeMCP(note_text={"setup1": "safe", "result1": "safe"})
 
     summary = await run_loop(
-        mcp, GovernedAdapter(gov), settings, store, canvas_id="canvas",
-        loop={"loop_connector_id": "loop-1", "setup_id": "setup1", "result_id": "result1", "round": 1},
+        mcp,
+        GovernedAdapter(gov),
+        settings,
+        store,
+        canvas_id="canvas",
+        loop={
+            "loop_connector_id": "loop-1",
+            "setup_id": "setup1",
+            "result_id": "result1",
+            "round": 1,
+        },
         gov=gov,
     )
 
@@ -90,57 +137,87 @@ async def test_locality_denial_closes_before_provider_or_follow_on_writes(store,
     assert inner.schema_calls == []
     assert len(mcp.notes) == 3
     assert len(mcp.connectors) == 1
-    stopped = [event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"]
+    stopped = [
+        event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"
+    ]
     assert len(stopped) == 1
     assert stopped[0].payload["reason"] == StopReason.LOCALITY_DENIAL.value
 
 
-async def test_schema_failure_is_not_a_notification_eligible_terminal_event(store, settings) -> None:
+async def test_schema_failure_is_not_a_notification_eligible_terminal_event(
+    store, settings
+) -> None:
     settings.provider_endpoints = {"openai": "https://api.openai.com/v1"}
     settings.model_pricing = {"gpt-4o-mini": {"input_per_1k": 1.0, "output_per_1k": 1.0}}
     settings.pricing_version = "test-v1"
     inner = ScriptedAdapter({"LoopDecision": {"next_focus": "invalid schema"}})
-    gov = build_context(store, settings, "canvas", {"openai": inner}, [{"classification": "internal"}])
+    gov = build_context(
+        store, settings, "canvas", {"openai": inner}, [{"classification": "internal"}]
+    )
     mcp = FakeMCP(note_text={"setup1": "safe", "result1": "safe"})
 
     summary = await run_loop(
-        mcp, GovernedAdapter(gov), settings, store, canvas_id="canvas",
-        loop={"loop_connector_id": "loop-1", "setup_id": "setup1", "result_id": "result1", "round": 1},
+        mcp,
+        GovernedAdapter(gov),
+        settings,
+        store,
+        canvas_id="canvas",
+        loop={
+            "loop_connector_id": "loop-1",
+            "setup_id": "setup1",
+            "result_id": "result1",
+            "round": 1,
+        },
         gov=gov,
     )
 
     assert summary.stopped_reason == "schema_validation_failed"
     assert inner.schema_calls == ["LoopDecision"]
     assert len(mcp.notes) == 2
-    assert not [event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"]
+    assert not [
+        event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"
+    ]
 
 
-async def test_continue_generates_successor_then_terminal_event(store, settings) -> None:
+async def test_continue_stages_successor_before_terminal_event(store, settings) -> None:
     mcp = FakeMCP(note_text={"setup1": "safe", "result1": "safe"})
-    adapter = ScriptedAdapter({
-        "ExperimentSetup": grounded_setup(),
-        "ExperimentResult": {"summary": "synthetic result", "metrics": ["signal=1"]},
-        "LoopDecision": [
-            {"proceed": True, "reason": "continue", "next_focus": "raise dose"},
-            {"proceed": False, "reason": "complete"},
-        ],
-    })
+    adapter = ScriptedAdapter(
+        {
+            "ExperimentSetup": grounded_setup(),
+            "ExperimentResult": {"summary": "synthetic result", "metrics": ["signal=1"]},
+            "LoopDecision": [
+                {"proceed": True, "reason": "continue", "next_focus": "raise dose"},
+                {"proceed": False, "reason": "complete"},
+            ],
+        }
+    )
     summary = await run_loop(
-        mcp, adapter, settings, store, canvas_id="canvas",
-        loop={"loop_connector_id": "loop-1", "setup_id": "setup1", "result_id": "result1", "round": 1},
+        mcp,
+        adapter,
+        settings,
+        store,
+        canvas_id="canvas",
+        loop={
+            "loop_connector_id": "loop-1",
+            "setup_id": "setup1",
+            "result_id": "result1",
+            "round": 1,
+        },
     )
 
-    assert summary.rounds == 2
-    assert len(summary.setup_ids) == len(summary.result_ids) == 2
-    assert summary.closed_id and summary.stopped_reason == StopReason.MODEL_DECISION.value
-    assert adapter.schema_calls == ["LoopDecision", "ExperimentSetup", "ExperimentResult", "LoopDecision"]
-    stopped = [event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"]
-    assert len(stopped) == 1
-    assert stopped[0].payload["reason"] == StopReason.MODEL_DECISION.value
-    assert stopped[0].payload["notification_eligible"] is True
+    assert summary.rounds == 1
+    assert len(summary.setup_ids) == 2
+    assert summary.result_ids == ["result1"]
+    assert not summary.closed_id and summary.stopped_reason == "successor_staged"
+    assert adapter.schema_calls == ["LoopDecision", "ExperimentSetup"]
+    assert not [
+        event for event in store.list_audit_events("canvas") if event.event == "loop_stopped"
+    ]
 
 
-async def test_model_stop_event_replays_without_provider_or_canvas_write(tmp_path, settings) -> None:
+async def test_model_stop_event_replays_without_provider_or_canvas_write(
+    tmp_path, settings
+) -> None:
     db_path = tmp_path / "terminal-replay.db"
     loop = {"loop_connector_id": "loop-1", "setup_id": "setup1", "result_id": "result1", "round": 1}
     settings.provider_endpoints = {"openai": "https://api.openai.com/v1"}
@@ -150,18 +227,52 @@ async def test_model_stop_event_replays_without_provider_or_canvas_write(tmp_pat
     mcp = FakeMCP(note_text={"setup1": "safe", "result1": "sensitive model result"})
     first_store = StateStore(db_path)
     try:
-        first_adapter = ScriptedAdapter({"LoopDecision": {"proceed": False, "reason": "secret stop"}})
-        first_gov = build_context(first_store, settings, "canvas", {"openai": first_adapter}, [{"classification": "internal"}])
-        first = await run_loop(mcp, GovernedAdapter(first_gov), settings, first_store, canvas_id="canvas", loop=loop, gov=first_gov)
+        first_adapter = ScriptedAdapter(
+            {"LoopDecision": {"proceed": False, "reason": "secret stop"}}
+        )
+        first_gov = build_context(
+            first_store,
+            settings,
+            "canvas",
+            {"openai": first_adapter},
+            [{"classification": "internal"}],
+        )
+        first = await run_loop(
+            mcp,
+            GovernedAdapter(first_gov),
+            settings,
+            first_store,
+            canvas_id="canvas",
+            loop=loop,
+            gov=first_gov,
+        )
     finally:
         first_store.close()
 
     replay_store = StateStore(db_path)
     try:
         replay_adapter = ScriptedAdapter({"LoopDecision": {"proceed": False, "reason": "unused"}})
-        replay_gov = build_context(replay_store, settings, "canvas", {"openai": replay_adapter}, [{"classification": "internal"}])
-        replay = await run_loop(mcp, GovernedAdapter(replay_gov), settings, replay_store, canvas_id="canvas", loop=loop, gov=replay_gov)
-        stopped = [event for event in replay_store.list_audit_events("canvas") if event.event == "loop_stopped"]
+        replay_gov = build_context(
+            replay_store,
+            settings,
+            "canvas",
+            {"openai": replay_adapter},
+            [{"classification": "internal"}],
+        )
+        replay = await run_loop(
+            mcp,
+            GovernedAdapter(replay_gov),
+            settings,
+            replay_store,
+            canvas_id="canvas",
+            loop=loop,
+            gov=replay_gov,
+        )
+        stopped = [
+            event
+            for event in replay_store.list_audit_events("canvas")
+            if event.event == "loop_stopped"
+        ]
     finally:
         replay_store.close()
 
@@ -174,5 +285,5 @@ async def test_model_stop_event_replays_without_provider_or_canvas_write(tmp_pat
     assert len(stopped) == 1
     assert stopped[0].payload["reason"] == StopReason.MODEL_DECISION.value
     assert stopped[0].payload["notification_eligible"] is True
-    assert stopped[0].payload["trigger_id"] == "loop:loop-1"
+    assert stopped[0].payload["trigger_id"].startswith("loop-terminal:loop-run:")
     assert "secret" not in repr(stopped[0].payload)

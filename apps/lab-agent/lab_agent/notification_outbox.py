@@ -14,7 +14,6 @@ from lab_agent.notifications import (
     SendDisposition,
     SendResult,
 )
-from lab_agent.state import notification_queries
 from lab_agent.state.notification_outbox import (
     FailureCategory,
     NotificationOutboxRecord,
@@ -90,11 +89,8 @@ class NotificationOutbox:
         if not self.enabled:
             return NotificationDrainCounts()
         counts = NotificationDrainCounts()
-        now = self._store.clock()
-        notification_queries.expire_stale(self._store.conn, now=now)
-        for logical_key in notification_queries.list_due_keys(
-            self._store.conn, now=now, limit=self._batch_size
-        ):
+        self._store.expire_stale_notifications()
+        for logical_key in self._store.list_due_notification_keys(limit=self._batch_size):
             leased = self._store.lease_due_notification(
                 logical_key,
                 lease_owner=self._runtime_instance_id,
@@ -102,28 +98,27 @@ class NotificationOutbox:
                 reconciliation_window_seconds=self._reconciliation_seconds,
             )
             if leased is not None:
-                counts = self._deliver(leased.logical_key, leased.lease_generation, counts)
+                counts = self._deliver(leased, counts)
         if counts.total:
             log.info("notification_outbox_drained", **counts.fields)
         return counts
 
-    def _deliver(self, logical_key: str, lease_generation: int, counts: NotificationDrainCounts) -> NotificationDrainCounts:
-        record = self._store.get_notification(logical_key)
-        if record is None:
-            return counts
+    def _deliver(
+        self, record: NotificationOutboxRecord, counts: NotificationDrainCounts
+    ) -> NotificationDrainCounts:
         envelope = _envelope_from(record)
         if envelope is None:
             self._store.quarantine_notification(
                 record.logical_key,
                 self._runtime_instance_id,
-                lease_generation,
+                record.lease_generation,
                 FailureCategory.IDEMPOTENCY_CONFLICT,
             )
             log.warning("notification_metadata_invalid", failure_category=FailureCategory.IDEMPOTENCY_CONFLICT.value)
             return replace(counts, quarantined=counts.quarantined + 1)
         result = self._send(envelope)
         try:
-            return self._settle(record, lease_generation, result, counts)
+            return self._settle(record, record.lease_generation, result, counts)
         except StaleNotificationLeaseError:
             log.info("notification_lease_lost")
             return counts
@@ -179,6 +174,7 @@ def _envelope_from(record: NotificationOutboxRecord) -> NotificationEnvelope | N
         closure_id=closure_id,
         round_index=round_index,
         reason=reason,
+        tenant_id=record.tenant_id,
     )
 
 

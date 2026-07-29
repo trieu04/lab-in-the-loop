@@ -2,7 +2,7 @@
 
 Lab-in-the-Loop is a connector-driven Canvus workflow for turning internal knowledge into experiment plans, running mock robot/lab rounds, interpreting results, and deciding whether to continue or close the loop.
 
-The repository was split out from `rag-canvus` into `~/dev/lap-in-the-loop` so the experiment-loop system can evolve independently from the base RAG serving application.
+The repository was split out from `rag-canvus` into `~/dev/lab-in-the-loop` so the experiment-loop system can evolve independently from the base RAG serving application.
 
 ## Architecture direction (proposed, pending owner confirmation)
 
@@ -19,6 +19,7 @@ What exists today is an MVP, not the target production harness:
 - Loop/trigger idempotency, retry, quarantine, single-writer canvas leasing, model-call intents, durable budget reservations, the audit trail, and canonical generated-artifact records survive restarts via a local SQLite ledger (`.state/lab_agent.db`). Run envelopes reset for each trigger; canvas totals and active reservations reconstruct after restart. This is local-disk, single-host scoped; a shared/replicated store for multi-host or multi-writer deployment is still future work.
 - The typed validation/approval gate, execution modes, terminal-stop outbox, and SMTP delivery plumbing exist locally. The default validation adapter is a deterministic structural dry run, execution remains disabled unless explicitly enabled, and the legacy path remains a model-generated `MOCK_RESULT`.
 - Phase 8 is complete only for milestone **7A**: typed dry-run execution/analysis/knowledge contracts and append-only local persistence, deterministic memory-only lab/Flywheel/knowledge adapters, approval-bound restart-safe orchestration, and safe Browser projections. `LAB_AGENT_PHASE8_EXECUTION_ENABLED` remains `false` by default; this milestone produces **DRY RUN / MOCK — NOT MEASURED** evidence only. It has no provider API, network, robot, wet-lab, raw provider body, credential, capability URL, or measured-scientific-evidence path. Real Flywheel/HPC (7B), knowledge store (7C), lab/robot (7D), production identity/credential approval, retention/locality policy, and hosted integration remain external gates.
+
 
 ## What this repo contains
 
@@ -68,7 +69,7 @@ docs / knowledge ─► RAGCluster_ ─► {idea: ...} | {idea+auto: ...}
 ### 1. Start the Canvus MCP server
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/canvus-mcp
+cd ~/dev/lab-in-the-loop/apps/canvus-mcp
 cp .env.example .env
 # Fill CANVUS_API_URL and CANVUS_API_KEY
 uv sync --extra dev
@@ -92,7 +93,7 @@ Use user scope so the server is available from every project. Restart Claude Cod
 ### 3. Run the lab agent
 
 ```bash
-cd ~/dev/lap-in-the-loop/apps/lab-agent
+cd ~/dev/lab-in-the-loop/apps/lab-agent
 cp .env.example .env
 # Fill LAB_AGENT_MCP_URL, a model API key, LAB_AGENT_ARTIFACT_PUBLIC_BASE_URL,
 # provider endpoint/locality approval, and versioned model pricing.
@@ -159,7 +160,7 @@ uv run mypy lab_agent
 
 ## Current status
 
-- Files extracted to `~/dev/lap-in-the-loop`: `apps/canvus-mcp` and `apps/lab-agent` migrated from `rag-canvus`.
+- Files extracted to `~/dev/lab-in-the-loop`: `apps/canvus-mcp` and `apps/lab-agent` migrated from `rag-canvus`.
 - Documentation initialized from the Lab-in-the-Loop use case and existing app READMEs.
 - `integrations/canvus-serving-experiment-prepare` preserves the serving-side `{exp:}` trigger/action work for optional re-application to `rag-canvus`.
 - The local git repository has committed history (`git log` shows the extraction commit and subsequent work) — this is no longer an uncommitted extraction. New work lands as conventional commits (`feat:`/`fix:`/`docs:`/`test:`/...); see [changelog](docs/project-changelog.md) for what has shipped.

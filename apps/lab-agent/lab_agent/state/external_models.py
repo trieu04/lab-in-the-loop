@@ -33,7 +33,7 @@ def load_json(value: str) -> object:
 
 def execution_from_row(row: sqlite3.Row) -> ExecutionRun:
     return ExecutionRun.model_validate({
-        "request_id": row["request_id"], "execution_run_id": row["execution_run_id"],
+        "tenant_id": row["tenant_id"], "request_id": row["request_id"], "execution_run_id": row["execution_run_id"],
         "canvas_id": row["canvas_id"], "setup_id": row["setup_id"], "round": row["round_index"],
         "proposal_hash": row["proposal_hash"], "validation_result_hash": row["validation_result_hash"],
         "adapter_name": row["adapter_name"], "adapter_version": row["adapter_version"],
@@ -48,7 +48,7 @@ def execution_from_row(row: sqlite3.Row) -> ExecutionRun:
 
 def analysis_from_row(row: sqlite3.Row) -> AnalysisRun:
     return AnalysisRun.model_validate({
-        "request_id": row["request_id"], "analysis_run_id": row["analysis_run_id"],
+        "tenant_id": row["tenant_id"], "request_id": row["request_id"], "analysis_run_id": row["analysis_run_id"],
         "canvas_id": row["canvas_id"], "execution_run_id": row["execution_run_id"],
         "source_artifact_ref_ids": load_json(row["source_artifact_ref_ids_json"]),
         "adapter_name": row["adapter_name"], "adapter_version": row["adapter_version"],
@@ -64,7 +64,7 @@ def analysis_from_row(row: sqlite3.Row) -> AnalysisRun:
 def artifact_from_row(row: sqlite3.Row) -> ArtifactRef:
     receipt = row["measured_receipt_json"]
     return ArtifactRef.model_validate({
-        "artifact_ref_id": row["artifact_ref_id"], "canvas_id": row["canvas_id"],
+        "tenant_id": row["tenant_id"], "artifact_ref_id": row["artifact_ref_id"], "canvas_id": row["canvas_id"],
         "execution_run_id": row["execution_run_id"], "analysis_run_id": row["analysis_run_id"],
         "content_hash": row["content_hash"], "logical_uri": row["logical_uri"],
         "media_type": row["media_type"], "classification": row["classification"],
@@ -76,7 +76,7 @@ def artifact_from_row(row: sqlite3.Row) -> ArtifactRef:
 
 def knowledge_from_row(row: sqlite3.Row) -> KnowledgeVersion:
     return KnowledgeVersion.model_validate({
-        "knowledge_version_id": row["knowledge_version_id"], "canvas_id": row["canvas_id"],
+        "tenant_id": row["tenant_id"], "knowledge_version_id": row["knowledge_version_id"], "canvas_id": row["canvas_id"],
         "execution_run_id": row["execution_run_id"], "analysis_run_id": row["analysis_run_id"],
         "proposal_hash": row["proposal_hash"], "hypothesis": row["hypothesis"],
         "hypothesis_hash": row["hypothesis_hash"], "evidence_kind": row["evidence_kind"],
@@ -88,7 +88,7 @@ def knowledge_from_row(row: sqlite3.Row) -> KnowledgeVersion:
 
 def conflict_from_row(row: sqlite3.Row) -> ConflictRecord:
     return ConflictRecord.model_validate({
-        "conflict_id": row["conflict_id"], "canvas_id": row["canvas_id"],
+        "tenant_id": row["tenant_id"], "conflict_id": row["conflict_id"], "canvas_id": row["canvas_id"],
         "prior_knowledge_version_id": row["prior_knowledge_version_id"],
         "proposed_knowledge_version_id": row["proposed_knowledge_version_id"],
         "old_hypothesis_hash": row["old_hypothesis_hash"], "new_hypothesis_hash": row["new_hypothesis_hash"],

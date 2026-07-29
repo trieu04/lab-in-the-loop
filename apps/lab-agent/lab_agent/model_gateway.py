@@ -63,7 +63,7 @@ async def governed_generate(
     adapter = ctx.adapters[decision.provider]
     digest = request_digest(messages, tools, response_schema, schema_name)
     call_scope = f"model_call:{ctx.run_id}:{stage.value}:round:{ctx.round_index}"
-    key = idempotency_key(ctx.canvas_id, call_scope, digest)
+    key = idempotency_key(ctx.canvas_id, call_scope, digest, tenant_id=ctx.store.tenant_id)
     intent = ctx.store.prepare_intent(
         idempotency_key=key, canvas_id=ctx.canvas_id, kind="model_call", input_hash=digest
     )
@@ -88,9 +88,9 @@ async def governed_generate(
                 )
                 external_id = usage.request_id or intent.external_id or ""
                 if intent.status is IntentStatus.SUBMITTED:
-                    ctx.store.mark_intent_executed(key, external_id=external_id)
+                    ctx.store.mark_intent_executed(key, canvas_id=ctx.canvas_id, external_id=external_id)
                 ctx.budget.commit(reservation, usage, cost)
-                ctx.store.mark_intent_reconciled(key, external_id=external_id)
+                ctx.store.mark_intent_reconciled(key, canvas_id=ctx.canvas_id, external_id=external_id)
                 ctx.budget.raise_if_exhausted()
                 return recovered
         ctx.store.append_audit_event(
@@ -128,31 +128,31 @@ async def governed_generate(
         estimated_tokens, estimated_cost,
         reservation_id=f"{key}:{intent.attempt_count + 1}", intent_key=f"{key}:{intent.attempt_count + 1}",
     )
-    ctx.store.mark_intent_submitted(key)
+    ctx.store.mark_intent_submitted(key, canvas_id=ctx.canvas_id)
     try:
         response = await adapter.generate(messages, tools=tools, response_schema=response_schema, schema_name=schema_name)
     except (BudgetExceededError, LocalityDeniedError):
         raise
     except DeterministicProviderError:
         ctx.budget.release(reservation)
-        ctx.store.mark_intent_failed(key, error="provider_error")
+        ctx.store.mark_intent_failed(key, canvas_id=ctx.canvas_id, error="provider_error")
         raise
     except TransientProviderError:
         ctx.budget.release(reservation)
         ctx.store.mark_intent_failed(
-            key, error="provider_error",
+            key, canvas_id=ctx.canvas_id, error="provider_error",
             next_retry_at=_backoff_at(ctx.settings, ctx.store.clock(), intent.attempt_count + 1),
         )
         raise
     except ProviderCallError as exc:
-        ctx.store.mark_intent_ambiguous(key, error="ambiguous:provider_error", external_id=exc.request_id)
+        ctx.store.mark_intent_ambiguous(key, canvas_id=ctx.canvas_id, error="ambiguous:provider_error", external_id=exc.request_id)
         ctx.store.append_audit_event(
             ctx.canvas_id, "model_call_ambiguous", {"key": key[:16], "stage": stage.value},
             round=ctx.round_index,
         )
         raise
     except Exception:  # noqa: BLE001 - untyped provider errors are ambiguous
-        ctx.store.mark_intent_ambiguous(key, error="ambiguous:provider_error", external_id=None)
+        ctx.store.mark_intent_ambiguous(key, canvas_id=ctx.canvas_id, error="ambiguous:provider_error", external_id=None)
         raise
     ctx.routed_models[stage] = decision
     usage = response.usage or estimated_usage
@@ -160,9 +160,9 @@ async def governed_generate(
         usage = ctx.estimate_usage(decision.provider, decision.model, messages, tools, response_schema, schema_name, response, usage.request_id)
     cost = estimate_cost(usage, ctx.settings.model_pricing, ctx.settings.pricing_version)
     external_id = usage.request_id or ""
-    ctx.store.mark_intent_executed(key, external_id=external_id)
+    ctx.store.mark_intent_executed(key, canvas_id=ctx.canvas_id, external_id=external_id)
     ctx.budget.commit(reservation, usage, cost)
-    ctx.store.mark_intent_reconciled(key, external_id=external_id)
+    ctx.store.mark_intent_reconciled(key, canvas_id=ctx.canvas_id, external_id=external_id)
     ctx.store.append_audit_event(
         ctx.canvas_id, "model_call",
         {**decision.audit_metadata, **usage.audit_metadata,

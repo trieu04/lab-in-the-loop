@@ -27,7 +27,7 @@ class CrashAdapter(SpyAdapter):
 
 
 class ReconcileCrashStore(StateStore):
-    def mark_intent_reconciled(self, idempotency_key: str, *, external_id: str | None = None):
+    def mark_intent_reconciled(self, idempotency_key: str, *, canvas_id: str | None = None, external_id: str | None = None):
         raise ProviderCrash("process terminated before reconciliation")
 
 

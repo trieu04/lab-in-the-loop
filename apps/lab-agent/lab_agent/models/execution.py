@@ -6,10 +6,10 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validato
 
 _HASH = r"^[0-9a-f]{64}$"
 _ID = Field(min_length=1, max_length=200)
+_TENANT_ID = Field(default="default", min_length=1, max_length=128)
 _SHORT = Field(min_length=1, max_length=100)
 _SAFE_TEXT = Field(min_length=1, max_length=2000)
 _LOGICAL_REF = re.compile(r"^(?:mock|opaque)://[a-z0-9][a-z0-9._-]{0,63}/[A-Za-z0-9][A-Za-z0-9._/-]{0,399}$")
-
 
 def _is_opaque_logical_ref(value: str) -> bool:
     return bool(_LOGICAL_REF.fullmatch(value))
@@ -57,6 +57,7 @@ class MeasuredEvidenceReceipt(_Contract):
     captured_at: AwareDatetime
 
 class ArtifactRef(_Contract):
+    tenant_id: str = _TENANT_ID
     artifact_ref_id: str = _ID
     canvas_id: str = _ID
     execution_run_id: str | None = Field(default=None, min_length=1, max_length=200)
@@ -86,6 +87,7 @@ class ArtifactRef(_Contract):
         return self
 
 class ExecutionRequest(_Contract):
+    tenant_id: str = _TENANT_ID
     request_id: str = _ID
     execution_run_id: str = _ID
     canvas_id: str = _ID
@@ -115,6 +117,7 @@ class ExecutionRun(ExecutionRequest):
     failure_code: ExternalFailureCode | None = None
 
 class AnalysisRequest(_Contract):
+    tenant_id: str = _TENANT_ID
     request_id: str = _ID
     analysis_run_id: str = _ID
     canvas_id: str = _ID
@@ -142,6 +145,7 @@ class AnalysisRun(AnalysisRequest):
     failure_code: ExternalFailureCode | None = None
 
 class InterpretationResult(_Contract):
+    tenant_id: str = _TENANT_ID
     interpretation_id: str = _ID
     canvas_id: str = _ID
     execution_run_id: str = _ID
@@ -164,6 +168,7 @@ class InterpretationResult(_Contract):
         return self
 
 class KnowledgeVersion(_Contract):
+    tenant_id: str = _TENANT_ID
     knowledge_version_id: str = _ID
     canvas_id: str = _ID
     execution_run_id: str = _ID
@@ -179,6 +184,7 @@ class KnowledgeVersion(_Contract):
     created_at: AwareDatetime
 
 class ConflictRecord(_Contract):
+    tenant_id: str = _TENANT_ID
     conflict_id: str = _ID
     canvas_id: str = _ID
     prior_knowledge_version_id: str = _ID

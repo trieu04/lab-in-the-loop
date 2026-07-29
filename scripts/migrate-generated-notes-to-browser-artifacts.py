@@ -96,6 +96,7 @@ def _print_text(summary: migration.MigrationSummary) -> None:
 
 async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
+    tenant_context = migration.require_migration_scope(settings, args.canvas)
     if not args.apply:
         async with MCPClient(settings.mcp_url) as mcp:
             summary = await migration.run_migration(
@@ -108,7 +109,7 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"ABORTED before writes: {exc}", file=sys.stderr)
             return 2
         try:
-            ctx = build_runtime_context(settings)
+            ctx = build_runtime_context(settings, tenant_context=tenant_context)
         except RuntimeStartupError as exc:
             print(f"STARTUP FAILED: {exc}", file=sys.stderr)
             return 1

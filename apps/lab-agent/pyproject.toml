@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lap-in-the-loop-lab-agent"
+name = "lab-in-the-loop-lab-agent"
 version = "0.1.0"
 description = "Lab-in-the-Loop agent: model-agnostic agentic loop over the canvus-mcp tools that designs experiments, interprets results, and versions knowledge on a Canvus canvas."
 requires-python = ">=3.11"

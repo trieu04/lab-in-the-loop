@@ -11,6 +11,8 @@ from __future__ import annotations
 import pytest
 
 from lab_agent.config import Settings
+from lab_agent.loop_governance import reconcile_terminal_event
+from lab_agent.models.governance import StopReason, TerminalStopEvent
 from lab_agent.orchestrator import run_loop
 from lab_agent.state_store import StateStore
 from lab_agent.watch import process_once
@@ -21,7 +23,6 @@ RUNTIME_ID = "test-runtime"
 # Generated Setup/Result/Closed nodes are now capability-protected Browser
 # widgets backed by the ArtifactStore, so a public base URL must be configured
 # or the write fails closed (see test_browser_artifacts.py for that path).
-
 
 def _settings(**kw):
     return Settings(artifact_public_base_url="https://lab.test", **kw)  # type: ignore[call-arg]
@@ -44,34 +45,28 @@ SEED = {
     "result1": "marker reduced",
 }
 
-
 @pytest.fixture
 def store(tmp_path):
     s = StateStore(tmp_path / "state.db")
     yield s
     s.close()
 
-
 def _structured(decisions):
     return {"ExperimentSetup": SETUP, "ExperimentResult": RESULT, "LoopDecision": decisions}
 
-
-async def test_loop_continues_with_grounded_mock_successor_then_closes(store):
+async def test_loop_stages_grounded_mock_successor_then_waits_for_result(store):
     mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter(_structured([
         {"proceed": True, "reason": "promising", "next_focus": "raise dose"},
-        {"proceed": False, "reason": "plateau detected"},
     ]))
     summary = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))  # type: ignore[arg-type]
 
-    assert summary.rounds == 2
-    assert summary.stopped_reason == "model_decision"
-    assert summary.closed_id
-    assert len(summary.setup_ids) == len(summary.result_ids) == 2
-    assert adapter.schema_calls == ["LoopDecision", "ExperimentSetup", "ExperimentResult", "LoopDecision"]
+    assert summary.rounds == 1 and summary.stopped_reason == "successor_staged"
+    assert not summary.closed_id and len(summary.setup_ids) == 2
+    assert summary.result_ids == ["result1"]
+    assert adapter.schema_calls == ["LoopDecision", "ExperimentSetup"]
     assert ("result1", summary.setup_ids[-1]) in mcp.connectors
-    assert ("robot1", summary.result_ids[-1]) in mcp.connectors
-
+    assert not any(src == "robot1" for src, _ in mcp.connectors)
 
 async def test_loop_backstop_forces_terminal_stop(store):
     """Ungoverned mode: max_rounds backstop creates a terminal closure, but still
@@ -88,7 +83,6 @@ async def test_loop_backstop_forces_terminal_stop(store):
     assert "max_rounds" in summary.stopped_reason
     assert len(summary.setup_ids) == 1  # No successor setup generated
     assert len(summary.result_ids) == 1  # No successor result generated
-
 
 async def test_loop_model_decision_creates_terminal_closure(store):
     """Model decision to STOP (proceed=False) creates a terminal Closed node
@@ -107,24 +101,33 @@ async def test_loop_model_decision_creates_terminal_closure(store):
     assert len(summary.setup_ids) == 1  # No successor
     assert len(summary.result_ids) == 1  # No successor
 
-
-async def test_loop_replays_multi_round_terminal_event_without_side_effects(store):
+async def test_loop_replays_staged_successor_without_side_effects(store):
     mcp = FakeMCP(note_text=dict(SEED))
     adapter = ScriptedAdapter(_structured([
         {"proceed": True, "reason": "continue", "next_focus": "raise dose"},
-        {"proceed": False, "reason": "plateau"},
     ]))
     first = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))
     calls, notes, connectors = list(adapter.schema_calls), len(mcp.notes), len(mcp.connectors)
 
     replay = await run_loop(mcp, adapter, _settings(), store, canvas_id="c", loop=dict(LOOP))
 
-    assert replay.closed_id == first.closed_id
-    assert replay.stopped_reason == first.stopped_reason == "model_decision"
+    assert replay.stopped_reason == first.stopped_reason == "successor_staged"
+    assert replay.setup_ids[-1] == first.setup_ids[-1]
     assert adapter.schema_calls == calls
-    assert len(mcp.notes) == notes
-    assert len(mcp.connectors) == connectors
+    assert len(mcp.notes) == notes and len(mcp.connectors) == connectors
 
+async def test_legacy_terminal_audit_prevents_round_trigger_reopening(store):
+    event = TerminalStopEvent(
+        canvas_id="c", trigger_id="loop:c5", predecessor_id="result1",
+        reason=StopReason.MODEL_DECISION, round_index=1, closure_id="closed-legacy",
+    )
+    assert reconcile_terminal_event(store, _settings(), event)
+    adapter = ScriptedAdapter(_structured([{"proceed": True, "reason": "must not run"}]))
+    summary = await run_loop(
+        FakeMCP(note_text=dict(SEED)), adapter, _settings(), store,
+        canvas_id="c", loop=dict(LOOP),
+    )
+    assert summary.closed_id == "closed-legacy" and adapter.schema_calls == []
 
 async def test_process_once_generates_setup_from_idea(store):
     workflow = {
@@ -139,7 +142,6 @@ async def test_process_once_generates_setup_from_idea(store):
     assert counts["setups"] == 1
     # idea1 -> newly created setup note connector exists.
     assert any(src == "idea1" for src, _ in mcp.connectors)
-
 
 async def test_process_once_does_not_run_robot_connected_setup(store):
     workflow = {
@@ -156,7 +158,6 @@ async def test_process_once_does_not_run_robot_connected_setup(store):
     assert counts["runs"] == 0
     assert not any(src == "robot1" for src, _ in mcp.connectors)
 
-
 async def test_process_once_leaves_loops_for_phase_eight(store):
     workflow = {"ideas_needing_setup": [], "setups_needing_run": [], "loops": [dict(LOOP)]}
     mcp = FakeMCP(note_text=dict(SEED), workflow=workflow)
@@ -165,7 +166,6 @@ async def test_process_once_leaves_loops_for_phase_eight(store):
     second = await process_once(mcp, adapter, _settings(), store, RUNTIME_ID, "c")
     assert first["loops"] == second["loops"] == 0
     assert store.get_attempt("c", "loop:c5") is None
-
 
 async def test_live_rescan_does_not_process_legacy_robot_loop(store):
     """Phase 7 observes Canvas topology but never turns it into execution."""

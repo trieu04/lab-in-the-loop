@@ -25,7 +25,7 @@ from lab_agent import canvas_probe, nodes
 from lab_agent.intent_audit import connect_durable, reconcile_with_audit
 from lab_agent.mcp_client import MCPClient
 from lab_agent.models.states import DecisionState
-from lab_agent.recovery import idempotency_key
+from lab_agent.recovery import idempotency_key, legacy_idempotency_key
 from lab_agent.state_store import StateStore
 
 # Canvas layout: setups left, results right, closed between; one row per round.
@@ -55,12 +55,13 @@ async def write_setup_node_durable(
     collide.
     """
     discriminator = f"setup/predecessor:{predecessor_id}/round:{round_index}"
-    key = idempotency_key(canvas_id, "create_note_setup", discriminator)
+    key = idempotency_key(canvas_id, "create_note_setup", discriminator, tenant_id=store.tenant_id)
+    legacy_key = legacy_idempotency_key(canvas_id, "create_note_setup", discriminator)
     tagged_title = canvas_probe.tagged_title(title, key)
     x, y = _SETUP_X, round_index * _ROW
 
     async def probe() -> str | None:
-        return await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="setups", idempotency_key=key)
+        return await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="setups", idempotency_key=key) or await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="setups", idempotency_key=legacy_key)
 
     async def execute() -> str:
         return await nodes.create_node(mcp, canvas_id, tagged_title, body, x, y, state=DecisionState.RUNNING)
@@ -95,12 +96,13 @@ async def write_result_node_durable(
     rounds must not collide with a prior round's result under the same key.
     """
     discriminator = f"result/setup:{setup_id}/round:{round_index}"
-    key = idempotency_key(canvas_id, "create_note_result", discriminator)
+    key = idempotency_key(canvas_id, "create_note_result", discriminator, tenant_id=store.tenant_id)
+    legacy_key = legacy_idempotency_key(canvas_id, "create_note_result", discriminator)
     tagged_title = canvas_probe.tagged_title(title, key)
     x, y = _RESULT_X, round_index * _ROW
 
     async def probe() -> str | None:
-        return await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="results", idempotency_key=key)
+        return await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="results", idempotency_key=key) or await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="results", idempotency_key=legacy_key)
 
     async def execute() -> str:
         return await nodes.create_node(
@@ -138,12 +140,13 @@ async def write_closed_node_durable(
     ``result -> closed`` connector having been drawn yet.
     """
     discriminator = f"closed/result:{result_id}/round:{round_index}"
-    key = idempotency_key(canvas_id, "create_note_closed", discriminator)
+    key = idempotency_key(canvas_id, "create_note_closed", discriminator, tenant_id=store.tenant_id)
+    legacy_key = legacy_idempotency_key(canvas_id, "create_note_closed", discriminator)
     tagged_title = canvas_probe.tagged_title(title, key)
     x, y = _CLOSED_X, (round_index + 1) * _ROW
 
     async def probe() -> str | None:
-        return await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="closeds", idempotency_key=key)
+        return await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="closeds", idempotency_key=key) or await canvas_probe.probe_note_by_tag(mcp, canvas_id=canvas_id, bucket="closeds", idempotency_key=legacy_key)
 
     async def execute() -> str:
         return await nodes.create_node(mcp, canvas_id, tagged_title, body, x, y, state=DecisionState.CLOSED)

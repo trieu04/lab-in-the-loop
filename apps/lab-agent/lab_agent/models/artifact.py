@@ -72,9 +72,15 @@ class TabDefinition(BaseModel):
 class ArtifactProvenance(BaseModel):
     """Lineage of one artifact version -- which model/trigger produced it."""
 
-    provider: str = Field(..., description="Model provider/adapter name, e.g. 'claude' or 'openai'.")
-    model_name: str = Field(default="", description="Model identifier used to produce this version.")
-    trigger_id: str = Field(default="", description="Workflow trigger id that produced this version.")
+    provider: str = Field(
+        ..., description="Model provider/adapter name, e.g. 'claude' or 'openai'."
+    )
+    model_name: str = Field(
+        default="", description="Model identifier used to produce this version."
+    )
+    trigger_id: str = Field(
+        default="", description="Workflow trigger id that produced this version."
+    )
     source_widget_id: str = Field(
         default="", description="Upstream widget id this artifact was derived from, if any."
     )
@@ -93,9 +99,13 @@ class ArtifactMetadata(BaseModel):
 class ArtifactVersion(BaseModel):
     """One immutable, append-only version of an artifact's payload."""
 
+    tenant_id: str = "default"
+    canvas_id: str = "default"
     opaque_id: str
     version: int = Field(..., ge=1)
-    payload: dict[str, Any] = Field(default_factory=dict, description="Canonical structured payload.")
+    payload: dict[str, Any] = Field(
+        default_factory=dict, description="Canonical structured payload."
+    )
     metadata: ArtifactMetadata = Field(default_factory=ArtifactMetadata)
     provenance: ArtifactProvenance
     content_hash: str
@@ -114,6 +124,7 @@ class ArtifactDocument(BaseModel):
     see ``ArtifactStore.issue_token``/``verify_token`` for capability access.
     """
 
+    tenant_id: str = "default"
     opaque_id: str
     canvas_id: str
     artifact_type: ArtifactType
@@ -124,7 +135,9 @@ class ArtifactDocument(BaseModel):
     metadata: ArtifactMetadata = Field(default_factory=ArtifactMetadata)
     provenance: ArtifactProvenance
     content_hash: str
-    widget_id: str | None = Field(default=None, description="Mapped Browser widget id, if created yet.")
+    widget_id: str | None = Field(
+        default=None, description="Mapped Browser widget id, if created yet."
+    )
     created_at: float
     updated_at: float
 

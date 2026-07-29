@@ -39,6 +39,7 @@ def _key(prefix: str, *parts: str) -> str:
 
 def interpret_dry_run(
     *,
+    tenant_id: str,
     canvas_id: str,
     execution_run_id: str,
     analysis_run_id: str,
@@ -50,8 +51,8 @@ def interpret_dry_run(
 
     if not original_hypothesis.strip() or len(original_hypothesis) > 2000:
         raise KnowledgeUpdateError("a bounded original hypothesis is required")
-    if not refs or any(ref.canvas_id != canvas_id for ref in refs):
-        raise KnowledgeUpdateError("interpretation references must be current-canvas evidence")
+    if not refs or any(ref.tenant_id != tenant_id or ref.canvas_id != canvas_id for ref in refs):
+        raise KnowledgeUpdateError("interpretation references must be current-tenant canvas evidence")
     if any(ref.evidence_kind is not EvidenceKind.MOCK_OR_DRY_RUN for ref in refs):
         raise KnowledgeUpdateError("mixed or measured evidence is unavailable in dry-run interpretation")
     ref_ids = tuple(ref.artifact_ref_id for ref in refs)
@@ -66,7 +67,8 @@ def interpret_dry_run(
         f"({len(ref_ids)}); no scientific conclusion or conflict resolution is claimed."
     )
     return InterpretationResult(
-        interpretation_id=_key("interpretation", execution_run_id, analysis_run_id, *ref_ids),
+        interpretation_id=_key("interpretation", tenant_id, execution_run_id, analysis_run_id, *ref_ids),
+        tenant_id=tenant_id,
         canvas_id=canvas_id,
         execution_run_id=execution_run_id,
         analysis_run_id=analysis_run_id,
@@ -90,6 +92,8 @@ async def append_interpretation(
 ) -> KnowledgeUpdateOutcome:
     """Append canonical version/conflict records before adapter or Browser projection."""
 
+    if interpretation.tenant_id != store.tenant_id:
+        raise KnowledgeUpdateError("interpretation tenant does not match StateStore tenant")
     if interpretation.evidence_kind is not EvidenceKind.MOCK_OR_DRY_RUN:
         raise KnowledgeUpdateError("Phase 8 knowledge accepts mock_or_dry_run evidence only")
     now = datetime.now(UTC)
@@ -99,6 +103,7 @@ async def append_interpretation(
     if version is None:
         version = KnowledgeVersion(
             knowledge_version_id=version_id,
+            tenant_id=interpretation.tenant_id,
             canvas_id=interpretation.canvas_id,
             execution_run_id=interpretation.execution_run_id,
             analysis_run_id=interpretation.analysis_run_id,
@@ -144,6 +149,7 @@ def _conflict(
     key = _key("knowledge-conflict", prior.knowledge_version_id, version.knowledge_version_id)
     return ConflictRecord(
         conflict_id=_key("conflict", key),
+        tenant_id=interpretation.tenant_id,
         canvas_id=interpretation.canvas_id,
         prior_knowledge_version_id=prior.knowledge_version_id,
         proposed_knowledge_version_id=version.knowledge_version_id,

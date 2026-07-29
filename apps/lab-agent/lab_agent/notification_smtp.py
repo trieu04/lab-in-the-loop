@@ -134,7 +134,9 @@ class SMTPNotificationSink:
             self._authenticate(client)
             send_started = True
             refused = client.send_message(self._message(envelope))
-            return SendResult.rejected() if refused else SendResult.accepted()
+            # A refusal mapping means at least one recipient was accepted; retrying
+            # the whole message could duplicate delivery for those recipients.
+            return SendResult.ambiguous() if refused else SendResult.accepted()
         except Exception as error:
             return self._map_exception(error, send_started=send_started)
         finally:

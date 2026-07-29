@@ -107,14 +107,14 @@ Agent action:
 1. Read current setup and result.
 2. Ask model for `LoopDecision`.
 3. If STOP **and** at least `loop_min_rounds` experiments exist: create `[EXP:Closed]`, connect result → closed, and emit the terminal audit/outbox event. An early STOP before the minimum is overridden so the loop biases toward more than one experiment; a governance or max-rounds backstop is never overridden and stops immediately.
-4. If CONTINUE (or an early STOP was overridden), the preserved legacy synthetic mock-loop branch may ground and write a successor Setup/Result in the same call. It remains a compatibility path only and produces no measured scientific truth.
-5. The Phase 8 7A lifecycle is separate: it rechecks current proposal/validation/approval hashes and manual activation before dry-run work, then records only mock/dry-run lineage. Do not treat either branch as real execution, real Flywheel/HPC analysis, a real knowledge-store update, or a substitute for the external child-plan gates.
+4. If CONTINUE (or an early STOP was overridden), the legacy compatibility branch grounds and writes only the successor Setup. It never synthesizes the successor Result in the same call. The next watcher cycle recomputes the canonical proposal hash, runs deterministic validation, projects the ordered scientist/lab-lead approvals, and only then routes authorized Result generation through the existing execution boundary.
+5. The Phase 8 7A lifecycle is separate: it rechecks current proposal/validation/approval hashes and manual activation before dry-run work, then records only mock/dry-run lineage. Neither branch is real execution, real Flywheel/HPC analysis, a real knowledge-store update, or a substitute for the external child-plan gates.
 
 ### Terminal closures and notifications
 
 A notification is eligible only after a genuine terminal closure has a durable `[EXP:Closed]` artifact id and a matching durable `loop_stopped` event. Eligible reasons are the model decision and the distinct maximum-rounds, token-budget, cost-budget, wall-time, no-progress, locality-denial, or reservation-denial closures. Setup validation, pending approval, invalid execution mode, disabled execution, a failed model call, and a non-terminal loop iteration are not notification events.
 
-When SMTP is enabled, the closure enqueues one metadata-only durable outbox row keyed by canvas, trigger, closure, round, and reason. Delivery runs after workflow processing and after the canvas lease is released; it does not reopen or mutate a closed workflow. The logical key and deterministic SMTP `Message-ID` suppress duplicate logical sends across replay. Delivery is best-effort and logically deduplicated: only known pre-submit/transient failures retry automatically. A partial-recipient refusal or uncertain post-lease/post-submit result is held for reconciliation and never automatically resent; it becomes quarantined when its reconciliation window expires. Neither exactly-once nor at-least-once inbox delivery is guaranteed.
+When SMTP is enabled, the closure enqueues one metadata-only durable outbox row keyed within the tenant by canvas, trigger, closure, round, and reason. Delivery runs after workflow processing and after the canvas lease is released; it does not reopen or mutate a closed workflow. The logical key and deterministic SMTP `Message-ID` suppress duplicate logical sends across replay. Pending delivery is leased with a generation fence, and a stale worker cannot settle a newer lease. Delivery is best-effort and logically deduplicated: only known pre-submit/transient failures retry automatically. A partial-recipient refusal or uncertain post-lease/post-submit result is held for reconciliation and never automatically resent; it becomes quarantined when its reconciliation window expires. Neither exactly-once nor at-least-once inbox delivery is guaranteed.
 
 ## Generated artifact payload markers
 
@@ -235,6 +235,10 @@ LAB_AGENT_WATCH_POLL_SECONDS=30
 ```
 
 Use `lab-agent once` for smoke tests or scripted operation.
+
+### Watcher canvas scope
+
+For a production-like single-host watcher, configure one tenant id, one credential domain, and an exact `LAB_AGENT_ALLOWED_CANVAS_IDS` list. `TenantContext` freezes that scope at startup; `watch --canvas <id>` and `watch --canvases <id>...` may only narrow it, and cannot be combined. With no argument, `watch` uses the configured list and never discovers canvases. A configured allowlist rejects other ids. `LAB_AGENT_WATCH_MAX_CONCURRENT_CANVASES` bounds active local canvas cycles from 1 to 16 (default 1), isolates one failed cycle from the others, and does not replace the durable per-canvas writer lease. A process pair has exactly one credential domain; start another pair for another domain. This does not support multi-host sharing, HA, or mixed credential domains in one process pair.
 
 ## Failure handling
 
