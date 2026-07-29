@@ -138,7 +138,7 @@ The enforcement path is `lab_agent/orchestrator_support.py:coerce_or_fail` plus 
 ## Grounding and scientific caution
 
 - Do not invent domain facts.
-- Do not guess acronym meanings; only an approved acronym dictionary can resolve a term.
+- Do not guess acronym meanings. A detected term clears only through a unique approved dictionary entry or exactly one strict, non-conflicting setup-local alphabetic `long form (ACRONYM)` definition within a single field/list item.
 - Setup generation must use a bounded, per-run evidence ledger with deterministic source ids derived from read tool, canonical arguments, and content hash.
 - Validate evidence before writes: `evidence_status` must be `sufficient`, every citation must resolve in the current ledger, and unresolved acronym-like terms across original idea text, emitted setup fields, and all bounded retrieved evidence excerpts must produce Needs Input.
 - Invalid citations are fail-closed: write no setup/connector, keep the durable attempt retryable/backoff/quarantine-eligible.

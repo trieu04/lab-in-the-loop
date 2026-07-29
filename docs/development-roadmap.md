@@ -162,7 +162,7 @@ Completed:
 - Wrapped retrieved content in an explicit `untrusted_data` envelope and kept model-facing tools read-only; writes remain orchestrator-owned.
 - Extended `ExperimentSetup` additively with `hypothesis`, `success_criteria`, `constraints`, `confidence`, citations, evidence status, and ambiguity flags while preserving legacy parsing defaults.
 - Validated evidence before setup writes: insufficient evidence becomes Needs Input; invalid/fabricated citations write nothing and remain retryable.
-- Scanned original idea text, emitted setup fields, and all bounded evidence excerpts against an approved acronym dictionary; unknown/colliding terms are surfaced instead of guessed.
+- Scanned original idea text, emitted setup fields, and all bounded evidence excerpts against an approved acronym dictionary; unknown/colliding terms are surfaced instead of guessed. A later bug fix permits an unknown alphabetic initialism only when one setup field/list item supplies exactly one matching `long form (ACRONYM)` definition; conflicts and cross-field/evidence-only definitions remain blocking.
 - Wrote explicit insufficient-evidence/ambiguity `[EXP:Needs Input]` Browser artifacts deduplicated by predecessor plus reason hash.
 - Kept durable audit metadata-only (decision/reason/source ids/tool/hash), capped to the store's 4096-byte payload limit by trimming evidence rows.
 
@@ -174,7 +174,7 @@ Deferred/future:
 Success criteria (met):
 
 - Setups either cite internal notes/PDFs/widgets through valid ledger source ids or produce an explicit Needs Input/invalid-citation outcome before any setup write.
-- Ambiguous terms are visible through Needs Input, not silently guessed.
+- Ambiguous terms are visible through Needs Input, not silently guessed; only a unique approved dictionary entry or one strict, non-conflicting setup-local alphabetic definition clears a detected initialism.
 
 ## Phase 4b — Token/resource governance and model routing
 

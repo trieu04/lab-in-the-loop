@@ -1,20 +1,18 @@
-"""The Phase 4 grounding gate: decide whether a generated setup is executable.
+"""Decide whether a setup is executable: evidence, ambiguity, then citations.
 
-Precedence (plan item 7): an explicit ``insufficient``/missing evidence
-status, or a blocking (unresolved) acronym-like term, always yields
-NEEDS_INPUT -- even if citations happen to be valid, a human should be asked
-rather than the loop silently degrading. Only once evidence is claimed
-sufficient AND no term is blocking do citations get checked; a claim of
-sufficiency with zero, fabricated, or mixed-invalid citations is
-INVALID_CITATION, handled exactly like a schema failure (no write, durable
-failed attempt eligible for retry/quarantine -- see ``lab_agent.watch``).
+Failures yield Needs Input or a retryable no-write invalid-citation outcome.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lab_agent.acronyms import AcronymDictionary, detect_acronym_terms, load_acronym_dictionary
+from lab_agent.acronyms import (
+    AcronymDictionary,
+    detect_acronym_terms,
+    detect_inline_acronym_definitions,
+    load_acronym_dictionary,
+)
 from lab_agent.config import Settings
 from lab_agent.evidence import EvidenceLedger
 from lab_agent.mcp_client import MCPClient
@@ -43,8 +41,8 @@ class SetupOutcome:
     reason: str = ""
 
 
-def _source_text(setup: ExperimentSetup) -> str:
-    return " ".join([
+def _source_parts(setup: ExperimentSetup) -> list[str]:
+    return [
         setup.rationale,
         setup.hypothesis,
         *setup.steps,
@@ -54,7 +52,11 @@ def _source_text(setup: ExperimentSetup) -> str:
         *setup.parameters,
         *setup.expected_readouts,
         *setup.constraints,
-    ])
+    ]
+
+
+def _source_text(setup: ExperimentSetup) -> str:
+    return " ".join(_source_parts(setup))
 
 
 def _boundary_text(setup: ExperimentSetup, idea_text: str, ledger: EvidenceLedger) -> str:
@@ -72,18 +74,37 @@ def _boundary_text(setup: ExperimentSetup, idea_text: str, ledger: EvidenceLedge
 def _blocking_terms(
     setup: ExperimentSetup, idea_text: str, ledger: EvidenceLedger, dictionary: AcronymDictionary,
 ) -> tuple[str, ...]:
-    """Terms that stay unresolved against the approved dictionary.
+    """Return terms unresolved by the dictionary or one local definition.
 
-    Re-verifies both the model's self-reported ``ambiguity_flags`` and any
-    acronym-like term the model didn't flag at all, across the full boundary
-    (idea + setup + retrieved evidence) -- the dictionary is the ground
-    truth, never the model's own ``resolved`` claim or its choice of what to
-    quote into the setup.
+    Explicit flags remain blocking unless dictionary-approved; conflicting,
+    idea-only, and evidence-only definitions never clear detected terms.
     """
-    detected = set(detect_acronym_terms(_boundary_text(setup, idea_text, ledger)))
-    candidates = {flag.term for flag in setup.ambiguity_flags} | detected
-    blocking = {term for term in candidates if not dictionary.resolve(term)[0]}
-    return tuple(sorted(blocking))
+    detected = detect_acronym_terms(_boundary_text(setup, idea_text, ledger))
+    detected_by_key = {term.casefold(): term for term in detected}
+    inline_definitions: dict[str, set[str]] = {}
+    for part in _source_parts(setup):
+        for term, expansions in detect_inline_acronym_definitions(part).items():
+            inline_definitions.setdefault(term.upper(), set()).update(
+                expansion.casefold() for expansion in expansions
+            )
+    blocking: dict[str, str] = {}
+
+    for flag in setup.ambiguity_flags:
+        term = flag.term.strip() or "<unspecified>"
+        if not dictionary.resolve(term)[0]:
+            key = term.casefold()
+            blocking.setdefault(key, detected_by_key.get(key, term))
+
+    for term in detected:
+        definitions = inline_definitions.get(term.upper(), set())
+        if len(definitions) > 1:
+            blocking.setdefault(term.casefold(), term)
+            continue
+        if dictionary.resolve(term)[0] or len(definitions) == 1:
+            continue
+        blocking.setdefault(term.casefold(), term)
+
+    return tuple(display for _key, display in sorted(blocking.items()))
 
 
 def evaluate_grounding(

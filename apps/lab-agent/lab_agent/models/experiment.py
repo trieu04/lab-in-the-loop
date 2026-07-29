@@ -51,7 +51,8 @@ class ExperimentSetup(BaseModel):
         default=None, description="Explicit sufficiency assertion; None is never treated as sufficient."
     )
     ambiguity_flags: list[AcronymFlag] = Field(
-        default_factory=list, description="Acronym-like terms flagged, resolved or not."
+        default_factory=list,
+        description="Unresolved terms whose alternatives materially affect the experiment setup.",
     )
 
 

@@ -16,7 +16,7 @@ from lab_agent.models.evidence import GroundingDecision
 from lab_agent.orchestrator import generate_setup
 from lab_agent.state_store import AttemptStatus, StateStore
 from lab_agent.watch import process_once
-from tests.fakes import FakeMCP, ScriptedAdapter
+from tests.fakes import FakeMCP, ScriptedAdapter, grounded_setup
 
 RUNTIME_ID = "test-runtime"
 
@@ -101,3 +101,46 @@ async def test_needs_input_setup_converges_on_restart_same_reason(store):
     needs_input = [w for w in mcp.notes.values() if "Needs Input" in w["title"]]
     assert len(needs_input) == 1
     assert mcp.connectors.count(("idea1", needs_input[0]["id"])) == 1
+
+
+async def test_self_contained_sd_and_signal_setup_writes_without_needs_input(store):
+    mcp = FakeMCP()
+    payload = grounded_setup({
+        "rationale": "Compare groups using standard deviation (SD).",
+        "expected_readouts": [
+            "Signal is normalized fluorescence intensity in arbitrary units, averaged "
+            "across three wells at 30 minutes."
+        ],
+        "parameters": ["Assume three replicate wells; this reversible default may be adjusted."],
+    })
+
+    outcome = await generate_setup(
+        mcp, ScriptedAdapter({"ExperimentSetup": payload}), _settings(), store,
+        canvas_id="c", idea_text="compare SD of the signal", idea_id="idea1",
+        ragcluster_id="rag1", round_index=1,
+    )
+
+    assert outcome.decision is GroundingDecision.EXECUTABLE
+    assert any("Setup" in widget["title"] for widget in mcp.notes.values())
+    assert not any("Needs Input" in widget["title"] for widget in mcp.notes.values())
+
+
+async def test_material_ambiguity_still_writes_needs_input(store):
+    mcp = FakeMCP()
+    payload = grounded_setup({
+        "rationale": "Compare groups using standard deviation (SD).",
+        "ambiguity_flags": [{"term": "signal", "resolved": False}],
+    })
+
+    outcome = await generate_setup(
+        mcp, ScriptedAdapter({"ExperimentSetup": payload}), _settings(), store,
+        canvas_id="c", idea_text="compare SD of the signal", idea_id="idea1",
+        ragcluster_id="rag1", round_index=1,
+    )
+
+    assert outcome.decision is GroundingDecision.NEEDS_INPUT
+    assert any("Needs Input" in widget["title"] for widget in mcp.notes.values())
+    assert not any(
+        "Setup" in widget["title"] and "Needs Input" not in widget["title"]
+        for widget in mcp.notes.values()
+    )

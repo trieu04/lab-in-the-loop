@@ -57,7 +57,7 @@ Agent action:
 1. Read idea note.
 2. Check RagCluster feeders and outputs.
 3. Let the model use only read tools for grounding; successful reads are captured in a per-run `EvidenceLedger` with deterministic source ids.
-4. Validate the emitted setup before any write: evidence must be `sufficient`, citations must resolve to the current ledger, and the approved acronym dictionary must clear the original idea text, emitted setup fields, and all bounded evidence excerpts.
+4. Validate the emitted setup before any write: evidence must be `sufficient`, citations must resolve to the current ledger, and deterministic full-boundary acronym scanning covers the original idea text, emitted setup fields, and all bounded evidence excerpts. An unknown alphabetic initialism clears only through exactly one strict setup-local `long form (ACRONYM)` definition or one unique approved-dictionary entry; conflicting, cross-field, evidence-only, or idea-only definitions do not clear it. An explicit unresolved ambiguity flag remains blocking unless the dictionary uniquely resolves it.
 5. If executable, create `[EXP:Setup v001]` as a generated Browser artifact backed by `ArtifactStore` and connect idea → setup.
 6. If evidence is insufficient or ambiguity remains, create one deduplicated `[EXP:Needs Input]` Browser artifact instead; invalid citations write nothing and stay retryable.
 
@@ -194,8 +194,9 @@ The worker/cache/ledger are single-host local state. A stale lease generation ca
 - Ground setups in retrieved internal knowledge: RagCluster feeders, notes, PDFs, widget context, and authorized completed ingestion chunks. Future wiki/KG/vector sources are adapters or external gates, not current hard dependencies.
 - Successful model-facing read-tool results are wrapped as `untrusted_data` and recorded in a bounded, per-run `EvidenceLedger`; the model never receives write tools.
 - Setups may be written only after citation ids resolve against the current ledger; fabricated, missing, or mixed-invalid citations write nothing and remain retryable.
-- Do not invent domain-specific meanings for ambiguous acronyms. The deterministic scan checks the original idea, emitted setup fields, and every bounded retrieved evidence excerpt against the approved dictionary.
-- If evidence is insufficient or ambiguity remains, create an explicit Needs Input artifact; do not silently lower confidence and proceed.
+- The setup prompt asks the model to expand inferable abbreviations on first use, operationalize vague readouts (for example, `signal`), and record conservative, reversible defaults when omitted detail does not materially affect the experiment. These are model-facing quality instructions, not a separate deterministic semantic validator. `ambiguity_flags` are reserved for unresolved choices that materially affect safety, feasibility, resources, experimental design, or interpretation.
+- Do not invent domain-specific meanings for ambiguous acronyms. Deterministic full-boundary scanning checks the original idea, emitted setup fields, and every bounded retrieved evidence excerpt. An unknown alphabetic initialism clears only through exactly one strict setup-local `long form (ACRONYM)` definition within a single setup field/list item or a unique approved-dictionary entry; conflicting, cross-field, idea-only, and evidence-only definitions do not clear it. Alphanumeric/hyphenated terms still require the approved dictionary, and an explicit unresolved flag overrides an inline definition.
+- If evidence is insufficient or ambiguity remains, create an explicit Needs Input artifact; do not silently lower confidence and proceed. Evidence-sufficiency and ledger-citation validation are unchanged and fail closed.
 - Internet/general knowledge is not a substitute for internal context.
 - Mock robot results must be labelled as mock and remain consistent with the setup.
 

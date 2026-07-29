@@ -21,6 +21,10 @@ _DEFAULT_RESOURCE = Path(__file__).resolve().parent / "resources" / "acronyms.js
 #: hyphenated suffix (e.g. "PCR", "IL-6"). Single letters (placeholders like
 #: "A"/"B" used throughout fixtures/tests) never match.
 _TERM_RE = re.compile(r"\b[A-Z][A-Z0-9]{1,9}(?:-[A-Z0-9]+)?\b")
+_INLINE_DEFINITION_RE = re.compile(
+    r"(?P<long>(?:[A-Za-z][A-Za-z-]*[ \t]+){1,7}[A-Za-z][A-Za-z-]*)"
+    r"[ \t]*\((?P<term>[A-Z][A-Z0-9]{1,9}(?:-[A-Z0-9]+)?)\)"
+)
 
 
 @dataclass(frozen=True)
@@ -73,4 +77,33 @@ def detect_acronym_terms(text: str) -> list[str]:
     return list(seen)
 
 
-__all__ = ["AcronymDictionary", "detect_acronym_terms", "load_acronym_dictionary"]
+def detect_inline_acronym_definitions(text: str) -> dict[str, tuple[str, ...]]:
+    """Return validated long-form-first definitions declared in one text field.
+
+    Only a short alphabetic long form immediately followed by ``(ACRONYM)``
+    qualifies. Every distinct matching expansion is retained so a conflicting
+    setup-local definition remains ambiguous instead of being cleared by its
+    first occurrence.
+    """
+    definitions: dict[str, dict[str, str]] = {}
+    for match in _INLINE_DEFINITION_RE.finditer(text):
+        term = match.group("term")
+        if not term.isalpha():
+            continue
+        words = match.group("long").split()
+        if len(words) < len(term):
+            continue
+        definition_words = words[-len(term):]
+        initials = "".join(word[0] for word in definition_words).upper()
+        if initials == term:
+            expansion = " ".join(definition_words)
+            definitions.setdefault(term, {}).setdefault(expansion.casefold(), expansion)
+    return {term: tuple(expansions.values()) for term, expansions in definitions.items()}
+
+
+__all__ = [
+    "AcronymDictionary",
+    "detect_acronym_terms",
+    "detect_inline_acronym_definitions",
+    "load_acronym_dictionary",
+]

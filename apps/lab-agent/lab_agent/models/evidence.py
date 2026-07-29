@@ -38,17 +38,17 @@ class EvidenceCitation(BaseModel):
 
 
 class AcronymFlag(BaseModel):
-    """An acronym-like term detected in the idea/evidence and its resolution.
+    """A materially consequential term whose meaning still needs resolution.
 
-    ``resolved`` is only ``True`` when an approved, versioned dictionary supplied
-    the ``expansion``; unknown or colliding terms stay unresolved with an empty
-    expansion and are surfaced, never guessed.
+    New setup emissions should include only unresolved choices that require
+    human review. The resolution fields remain for backward compatibility and
+    are trusted only when the approved dictionary independently agrees.
     """
 
-    term: str = Field(..., description="The detected acronym-like term (verbatim).")
-    resolved: bool = Field(default=False, description="True only if an approved dictionary resolved it.")
-    expansion: str = Field(default="", description="Approved expansion, empty when unresolved.")
-    source: str = Field(default="", description="Dictionary source/version that resolved the term.")
+    term: str = Field(..., description="Unresolved term whose alternatives materially affect the setup.")
+    resolved: bool = Field(default=False, description="Legacy hint; verified against the approved dictionary.")
+    expansion: str = Field(default="", description="Legacy approved expansion, empty when unresolved.")
+    source: str = Field(default="", description="Legacy dictionary source/version for the expansion.")
 
 
 class CitationCheck(BaseModel):

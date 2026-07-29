@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from lab_agent.acronyms import AcronymDictionary, detect_acronym_terms, load_acronym_dictionary
+from lab_agent.acronyms import (
+    AcronymDictionary,
+    detect_acronym_terms,
+    detect_inline_acronym_definitions,
+    load_acronym_dictionary,
+)
 
 
 def test_load_acronym_dictionary_reads_packaged_resource():
@@ -84,3 +89,37 @@ def test_resolve_case_variants_all_match_same_entry(term):
     dictionary = load_acronym_dictionary()
     resolved, expansion = dictionary.resolve(term)
     assert resolved is True and expansion == "Polymerase Chain Reaction"
+
+
+def test_detect_inline_definition_uses_matching_long_form_suffix():
+    definitions = detect_inline_acronym_definitions(
+        "Compare groups using standard deviation (SD), then report SD."
+    )
+    assert definitions == {"SD": ("standard deviation",)}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Report SD for each group.",
+        "Use the SD signal.",
+        "sample density (SDX)",
+        "standard deviation (SD-1)",
+    ],
+)
+def test_detect_inline_definition_rejects_unvalidated_forms(text):
+    assert detect_inline_acronym_definitions(text) == {}
+
+
+def test_detect_inline_definition_deduplicates_repeated_definitions():
+    definitions = detect_inline_acronym_definitions(
+        "standard deviation (SD) is reported; standard deviation (SD) is plotted."
+    )
+    assert definitions == {"SD": ("standard deviation",)}
+
+
+def test_detect_inline_definition_retains_conflicting_expansions():
+    definitions = detect_inline_acronym_definitions(
+        "standard deviation (SD) differs from sudden death (SD)."
+    )
+    assert definitions == {"SD": ("standard deviation", "sudden death")}

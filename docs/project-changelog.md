@@ -1,5 +1,17 @@
 # Project Changelog
 
+## 2026-07-30 — Setup ambiguity gate repair
+
+### Fixed
+
+- Refined setup-generation instructions to expand inferable abbreviations on first use, operationalize vague readouts such as `signal`, and record conservative, reversible defaults when an omitted detail does not materially affect the experiment. These remain model-facing quality instructions; `ambiguity_flags` now describe unresolved choices that materially affect safety, feasibility, resources, experimental design, or interpretation.
+- The grounding gate retains deterministic full-boundary acronym scanning across the original idea, emitted setup, and bounded evidence excerpts. An unknown alphabetic initialism can clear only through exactly one strict setup-local `long form (ACRONYM)` definition in a single field/list item or a unique approved-dictionary entry. Conflicting, cross-field, idea/evidence-only definitions remain blocking; explicit unresolved flags override inline definitions unless the dictionary uniquely resolves them.
+- Evidence sufficiency and current-ledger citation validation are unchanged and continue to fail closed.
+
+### Verified
+
+- **805 tests passed**. Ruff, mypy, and compileall were clean; four existing dependency warnings remain.
+
 ## 2026-07-30 — Governed dispatch and optional-runtime configuration clarified
 
 ### Changed

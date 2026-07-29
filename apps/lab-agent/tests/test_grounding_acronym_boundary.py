@@ -30,7 +30,7 @@ def test_needs_input_when_unresolved_acronym_only_in_idea_text():
     real_id = ledger.add("get_note", {"note_id": "n1"}, "evidence text")
     setup = _setup(
         evidence_status=EvidenceStatus.SUFFICIENT, citations=[EvidenceCitation(source_id=real_id)],
-    )  # setup itself never mentions BIA
+    )
     verdict = evaluate_grounding(
         setup, ledger, EMPTY_DICT, idea_text="{idea: optimize BIA response in assay}",
     )
@@ -43,19 +43,17 @@ def test_needs_input_when_unresolved_acronym_only_in_retrieved_evidence():
     real_id = ledger.add("get_note", {"note_id": "n1"}, "Internal note mentions BIA without expansion")
     setup = _setup(
         evidence_status=EvidenceStatus.SUFFICIENT, citations=[EvidenceCitation(source_id=real_id)],
-    )  # setup itself never mentions BIA, and the idea doesn't either
+    )
     verdict = evaluate_grounding(setup, ledger, EMPTY_DICT, idea_text="optimize response in assay")
     assert verdict.decision is GroundingDecision.NEEDS_INPUT
     assert "BIA" in verdict.blocking_terms
 
 
 def test_unresolved_acronym_in_uncited_evidence_still_blocks():
-    """Retrieved evidence is scanned whether or not the model cited it --
-    the gate must not trust the model's own choice of what to cite as the
-    boundary of what it "saw"."""
+    """Retrieved evidence is scanned even when the model does not cite it."""
     ledger = EvidenceLedger()
     cited_id = ledger.add("get_note", {"note_id": "n1"}, "clean evidence")
-    ledger.add("get_note", {"note_id": "n2"}, "aside note referencing BIA")  # never cited
+    ledger.add("get_note", {"note_id": "n2"}, "aside note referencing BIA")
     setup = _setup(
         evidence_status=EvidenceStatus.SUFFICIENT, citations=[EvidenceCitation(source_id=cited_id)],
     )
@@ -78,8 +76,6 @@ def test_approved_acronym_in_idea_and_evidence_does_not_block():
 
 
 def test_no_idea_text_given_falls_back_to_setup_and_evidence_only():
-    """``idea_text`` is optional (keyword-only, defaulted) -- omitting it
-    must not change existing setup/evidence scanning behavior."""
     ledger = EvidenceLedger()
     real_id = ledger.add("get_note", {"note_id": "n1"}, "evidence text")
     setup = _setup(

@@ -493,7 +493,7 @@ DRAFT → NEEDS_REVIEW → APPROVED_FOR_IN_SILICO → IN_SILICO_RUNNING
 | `confidence` | `float | None` | No | Model self-reported confidence, bounded 0.0–1.0 when present |
 | `citations` | `list[EvidenceCitation]` | No (gate requires for executable writes) | Ledger source ids supporting setup claims |
 | `evidence_status` | `EvidenceStatus | None` | No (gate treats `None` as not sufficient) | Explicit sufficiency assertion; only `sufficient` can pass |
-| `ambiguity_flags` | `list[AcronymFlag]` | No | Acronym-like terms and dictionary resolution status |
+| `ambiguity_flags` | `list[AcronymFlag]` | No | Unresolved terms whose alternatives materially affect safety, feasibility, resources, experimental design, or interpretation; legacy dictionary-resolution metadata remains accepted for compatibility |
 
 Additive Phase 4 fields are defaulted for legacy parsing. Defaults do not make a setup executable; `lab_agent/grounding.py` must validate evidence sufficiency, citations, and ambiguity before writes.
 
