@@ -36,9 +36,11 @@ SETUP_SYSTEM = (
     "missing detail does not materially alter the experiment, choose a conservative, "
     "reversible default and record the assumption in the setup. Use ambiguity_flags only "
     "for unresolved alternatives that could materially change safety, feasibility, "
-    "required resources, experimental design, or result interpretation. Do not use "
-    "ambiguity_flags as a glossary. An approved dictionary lookup may resolve a globally "
-    "unique acronym; otherwise state the chosen setup-local meaning explicitly."
+    "required resources, experimental design, or result interpretation. For a "
+    "non-acronym ambiguity, include at least two concrete alternatives and explain "
+    "the material impact; otherwise choose a conservative, reversible default. Do "
+    "not use ambiguity_flags as a glossary. An approved dictionary lookup may resolve "
+    "a globally unique acronym; otherwise state the chosen setup-local meaning explicitly."
 )
 
 RESULT_SYSTEM = (

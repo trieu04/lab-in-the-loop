@@ -139,6 +139,7 @@ The enforcement path is `lab_agent/orchestrator_support.py:coerce_or_fail` plus 
 
 - Do not invent domain facts.
 - Do not guess acronym meanings. A detected term clears only through a unique approved dictionary entry or exactly one strict, non-conflicting setup-local alphabetic `long form (ACRONYM)` definition within a single field/list item.
+- Treat glossary-like non-acronym flags as advisory: they must not create a Needs Input artifact. A non-acronym flag is blocking only when it records concrete material impact and at least two distinct alternatives. Acronym blocking is deterministic: uppercase tokens, mixed-case compact tokens, and case-insensitive approved-dictionary terms are acronym-like; unknown all-lowercase words and compounds are advisory unless independently detected in the setup boundary.
 - Setup generation must use a bounded, per-run evidence ledger with deterministic source ids derived from read tool, canonical arguments, and content hash.
 - Validate evidence before writes: `evidence_status` must be `sufficient`, every citation must resolve in the current ledger, and unresolved acronym-like terms across original idea text, emitted setup fields, and all bounded retrieved evidence excerpts must produce Needs Input.
 - Invalid citations are fail-closed: write no setup/connector, keep the durable attempt retryable/backoff/quarantine-eligible.

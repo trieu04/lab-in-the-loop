@@ -112,6 +112,12 @@ async def test_self_contained_sd_and_signal_setup_writes_without_needs_input(sto
             "across three wells at 30 minutes."
         ],
         "parameters": ["Assume three replicate wells; this reversible default may be adjusted."],
+        "ambiguity_flags": [
+            {"term": "candidate alpha"},
+            {"term": "lung stiffness score"},
+            {"term": "synthetic"},
+            {"term": "signal"},
+        ],
     })
 
     outcome = await generate_setup(
@@ -129,7 +135,14 @@ async def test_material_ambiguity_still_writes_needs_input(store):
     mcp = FakeMCP()
     payload = grounded_setup({
         "rationale": "Compare groups using standard deviation (SD).",
-        "ambiguity_flags": [{"term": "signal", "resolved": False}],
+        "ambiguity_flags": [
+            {
+                "term": "signal",
+                "resolved": False,
+                "material_impact": "Changes the assay interpretation.",
+                "alternatives": ["fluorescence", "luminescence"],
+            }
+        ],
     })
 
     outcome = await generate_setup(

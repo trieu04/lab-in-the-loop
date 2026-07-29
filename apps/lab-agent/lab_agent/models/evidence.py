@@ -38,17 +38,26 @@ class EvidenceCitation(BaseModel):
 
 
 class AcronymFlag(BaseModel):
-    """A materially consequential term whose meaning still needs resolution.
+    """A term or choice that may materially affect setup generation.
 
-    New setup emissions should include only unresolved choices that require
-    human review. The resolution fields remain for backward compatibility and
-    are trusted only when the approved dictionary independently agrees.
+    ``material_impact`` and ``alternatives`` make a non-acronym ambiguity
+    actionable instead of allowing glossary-like flags to block a setup. The
+    legacy resolution fields remain for backward compatibility and are trusted
+    only when the approved dictionary independently agrees.
     """
 
-    term: str = Field(..., description="Unresolved term whose alternatives materially affect the setup.")
+    term: str = Field(..., description="Unresolved term or choice under review.")
     resolved: bool = Field(default=False, description="Legacy hint; verified against the approved dictionary.")
     expansion: str = Field(default="", description="Legacy approved expansion, empty when unresolved.")
     source: str = Field(default="", description="Legacy dictionary source/version for the expansion.")
+    material_impact: str = Field(
+        default="",
+        description="Concrete safety, feasibility, resource, design, or interpretation impact.",
+    )
+    alternatives: list[str] = Field(
+        default_factory=list,
+        description="At least two concrete unresolved choices for a material ambiguity.",
+    )
 
 
 class CitationCheck(BaseModel):

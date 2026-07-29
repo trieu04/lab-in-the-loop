@@ -16,7 +16,7 @@ from lab_agent.acronyms import (
 from lab_agent.config import Settings
 from lab_agent.evidence import EvidenceLedger
 from lab_agent.mcp_client import MCPClient
-from lab_agent.models.evidence import EvidenceStatus, GroundingDecision
+from lab_agent.models.evidence import AcronymFlag, EvidenceStatus, GroundingDecision
 from lab_agent.models.experiment import ExperimentSetup
 from lab_agent.orchestrator_needs_input import write_needs_input_node
 from lab_agent.state_store import MAX_PAYLOAD_BYTES, StateStore, payload_size_bytes
@@ -71,13 +71,40 @@ def _boundary_text(setup: ExperimentSetup, idea_text: str, ledger: EvidenceLedge
     return " ".join([idea_text, _source_text(setup), *ledger.excerpts()])
 
 
+def _has_material_ambiguity(flag: AcronymFlag) -> bool:
+    """Require explicit impact and two distinct choices for a non-acronym flag."""
+    if not flag.material_impact.strip():
+        return False
+    alternatives = {
+        alternative.strip().casefold()
+        for alternative in flag.alternatives
+        if alternative.strip()
+    }
+    return len(alternatives) >= 2
+
+
+def _flag_acronym_terms(term: str, dictionary: AcronymDictionary) -> tuple[str, ...]:
+    """Recognize explicit acronym flags without guessing from short lowercase words."""
+    detected = detect_acronym_terms(term)
+    if detected:
+        return tuple(detected)
+    normalized = term.upper()
+    if normalized in dictionary.entries:
+        return (normalized,)
+    if any(character.isupper() for character in term[1:]) and term.isalnum():
+        return (term,)
+    return ()
+
+
 def _blocking_terms(
     setup: ExperimentSetup, idea_text: str, ledger: EvidenceLedger, dictionary: AcronymDictionary,
 ) -> tuple[str, ...]:
     """Return terms unresolved by the dictionary or one local definition.
 
-    Explicit flags remain blocking unless dictionary-approved; conflicting,
-    idea-only, and evidence-only definitions never clear detected terms.
+    Acronym-like terms remain governed by the deterministic boundary scan.
+    Non-acronym flags block only when the provider supplies explicit material
+    impact and at least two distinct alternatives; glossary-like flags are
+    advisory and do not create a human-input dead end.
     """
     detected = detect_acronym_terms(_boundary_text(setup, idea_text, ledger))
     detected_by_key = {term.casefold(): term for term in detected}
@@ -91,7 +118,14 @@ def _blocking_terms(
 
     for flag in setup.ambiguity_flags:
         term = flag.term.strip() or "<unspecified>"
-        if not dictionary.resolve(term)[0]:
+        flag_acronyms = _flag_acronym_terms(term, dictionary)
+        if flag_acronyms:
+            for acronym in flag_acronyms:
+                if not dictionary.resolve(acronym)[0]:
+                    key = acronym.casefold()
+                    blocking.setdefault(key, detected_by_key.get(key, acronym))
+            continue
+        if _has_material_ambiguity(flag) and not dictionary.resolve(term)[0]:
             key = term.casefold()
             blocking.setdefault(key, detected_by_key.get(key, term))
 
