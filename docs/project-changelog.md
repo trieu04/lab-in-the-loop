@@ -1,5 +1,21 @@
 # Project Changelog
 
+## 2026-07-30 — Governed dispatch and optional-runtime configuration clarified
+
+### Changed
+
+- Classified Lab Agent configuration as mandatory governed dispatch gates, core runtime, optional numeric limits, and optional extensions. Every `once`/`watch` model call continues to require data-locality/classification authorization, an approved HTTPS endpoint, complete versioned input/output pricing, a durable intent/reservation, pre-dispatch-only routing fallback, and bounded MCP/model data. No bypass flag is introduced.
+- Hardened pricing configuration so every configured model must define finite, nonnegative input and output rates; missing, malformed, negative, NaN, and infinite values now fail at settings load, while complete zero rates remain valid for explicitly approved free/local models.
+- Documented that the empty pricing template intentionally blocks governed dispatch, omitted numeric budgets leave only that dimension uncapped, and usage/cost estimates are not provider invoices. Local OpenAI-compatible deployments require an approved HTTPS/TLS endpoint.
+- Documented default-on, newly disable-able deterministic in-silico scheduling; default-off legacy mock execution, Phase 8 dry-run lifecycle, and SMTP; and the separate/optional ingestion worker and unavailable LightRAG, real lab, Flywheel, and knowledge integrations.
+- Clarified that disabling in-silico validation skips only new validation scheduling. Existing durable evidence remains available to independent approval and execution reconciliation; deterministic structural validation is not scientific simulation or measured evidence.
+- Added production guidance for a named tenant and explicit canvas allowlist, retaining the default tenant with an empty allowlist as legacy development behavior. Loops and approval reconciliation remain ungated; `canvus-mcp` still initializes ingestion storage/cache without a worker.
+- Recorded the prerequisite that execution authorization must enforce production eligibility before any real or sandbox adapter is introduced. Current reachable adapters remain mock or dry-run only.
+
+### Not claimed
+
+- These documentation and configuration-classification changes do not make a real/sandbox lab adapter, real scientific validator, production identity provider, LightRAG, Flywheel/HPC, or knowledge-store integration available.
+
 ## 2026-07-23 — Phase 8 milestone 7A: typed dry-run execution, analysis, and knowledge contracts
 
 ### Added

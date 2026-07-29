@@ -27,7 +27,11 @@ async def test_canonical_openai_endpoint_requests_v1_chat_completions() -> None:
             request=request,
         )
 
-    settings = Settings(openai_api_key="test-key")
+    settings = Settings(
+        _env_file=None,
+        _env_prefix="__TEST_NO_ENV__",
+        openai_api_key="test-key",
+    )
     async with httpx.AsyncClient(transport=httpx.MockTransport(capture_request)) as transport:
         client = AsyncOpenAI(
             api_key="test-key",

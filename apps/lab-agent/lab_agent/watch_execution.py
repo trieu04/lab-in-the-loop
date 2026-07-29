@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
-from typing import Literal
 
 from lab_agent import durable_browser
 from lab_agent.adapters.base import ModelAdapter
@@ -26,18 +25,7 @@ from lab_agent.runtime import build_phase8_orchestrator
 from lab_agent.state_store import StateStore
 from lab_agent.trigger_governance import close_trigger_governance_error
 from lab_agent.watch_attempts import process_trigger
-
-ExecutionMode = Literal["manual", "auto"]
-
-
-def _items(snapshot: dict[str, object], key: str) -> list[dict[str, object]]:
-    value = snapshot.get(key, [])
-    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
-
-
-def _mode(item: dict[str, object]) -> ExecutionMode | None:
-    value = item.get("execution_mode", "manual")
-    return value if value in ("manual", "auto") else None
+from lab_agent.watch_snapshot import ExecutionMode, _items, _mode
 
 
 def _mode_context(snapshot: dict[str, object]) -> tuple[dict[str, ExecutionMode], set[str]]:

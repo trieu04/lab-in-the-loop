@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -76,6 +77,10 @@ class Settings(BaseSettings):
     # until at least this many experiment rounds exist. Governance backstops
     # (budget/wall-time/no-progress/max-rounds) are never overridden.
     loop_min_rounds: int = Field(default=2, ge=1)
+    in_silico_validation_enabled: bool = Field(
+        default=True,
+        description="Schedule new in-silico validation for eligible setups.",
+    )
     wet_lab_execution_enabled: bool = Field(
         default=False,
         description="Legacy mock robot path gate; it never selects a real laboratory adapter.",
@@ -142,6 +147,23 @@ class Settings(BaseSettings):
     # ── Governance: pricing (versioned; estimates are labelled, never billed) ──
     pricing_version: str = Field(default="unset")
     model_pricing: dict[str, dict[str, float]] = Field(default_factory=dict)
+
+    @field_validator("model_pricing")
+    @classmethod
+    def validate_model_pricing(
+        cls, value: dict[str, dict[str, float]]
+    ) -> dict[str, dict[str, float]]:
+        required_rates = ("input_per_1k", "output_per_1k")
+        for model, rates in value.items():
+            for rate_name in required_rates:
+                if rate_name not in rates:
+                    raise ValueError(f"model_pricing[{model!r}] must define {rate_name}")
+                rate = rates[rate_name]
+                if not math.isfinite(rate) or rate < 0:
+                    raise ValueError(
+                        f"model_pricing[{model!r}][{rate_name!r}] must be finite and nonnegative"
+                    )
+        return value
 
     # ── Governance: stop policy (FR-LITL-013) ───────────────────────
     wall_time_budget_seconds: float | None = Field(default=None)

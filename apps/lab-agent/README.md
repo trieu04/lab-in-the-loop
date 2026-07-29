@@ -40,7 +40,9 @@ RAGCluster_ ─► {idea:…}     user's idea note
 
 ## Configure
 
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env`. The MCP URL below is suitable for a local
+`canvus-mcp` development server; governed **model-provider** endpoints are a
+separate authorization boundary and must use approved HTTPS URLs.
 
 ```bash
 LAB_AGENT_MCP_URL=http://127.0.0.1:8931/mcp   # a running canvus-mcp server
@@ -48,6 +50,71 @@ LAB_AGENT_MODEL_PROVIDER=openai               # or "claude"
 LAB_AGENT_OPENAI_API_KEY=sk-...
 LAB_AGENT_OPENAI_MODEL=gpt-4o-mini
 ```
+
+For a governed model dispatch, also configure the exact canvas classification,
+an approved HTTPS provider endpoint, the provider's permitted classifications,
+and a complete versioned price entry for the selected model. The shipped empty
+pricing table is intentional: it blocks dispatch rather than treating calls as
+free. A local OpenAI-compatible server is supported only through an HTTPS/TLS
+endpoint configured consistently as both `LAB_AGENT_OPENAI_BASE_URL` and the
+`openai` entry in `LAB_AGENT_PROVIDER_ENDPOINTS`.
+
+## Runtime classification
+
+### Mandatory governed dispatch gates — no bypass
+
+Every model call from `once` or `watch` uses the governed adapter. Before any
+provider receives content, the runtime requires all of the following:
+
+- classified canvas/source evidence authorized for the selected provider;
+- an explicitly approved HTTPS provider endpoint;
+- complete, known input/output pricing under a versioned rate table;
+- a durable model-call intent and token/cost reservation; and
+- deterministic task-stage routing, with fallback only before submission.
+
+MCP results and arguments, model tool calls, transcripts, and evidence are
+bounded. Durable retries and reconciliation avoid blind redispatch after an
+uncertain submission. Numeric token, cost, and wall-time budgets are optional
+limits, not overrides: omitting one means no limit for that dimension, but
+never bypasses locality, endpoint, pricing, intent, or reservation checks.
+Pricing estimates support reservations and later reconciliation; they are not
+provider invoices.
+
+### Core runtime
+
+The core runtime is Canvus plus `canvus-mcp`, a governed OpenAI or Claude
+provider, `lab-agent once` or `watch`, and the single-host SQLite ledger
+(leases, attempts, intents, audit, and generated-artifact records). Generated
+Browser artifacts also require a reachable public artifact URL and the artifact
+server when clients must view them. In authenticated deployments, MCP writes
+need appropriately scoped trusted-service authorization.
+
+For production, configure a named `LAB_AGENT_TENANT_ID` and an explicit
+`LAB_AGENT_ALLOWED_CANVAS_IDS` allowlist. The `default` tenant with an empty
+allowlist is retained only as legacy, unbound development behavior.
+
+### Optional limits and extensions
+
+Routing preferences, loop/concurrency tuning, lease/retry tuning, and numeric
+run/canvas token, cost, or wall-time ceilings are optional limits or runtime
+tuning. Extensions are independent:
+
+- deterministic in-silico structural validation is **on by default** and may
+  be disabled for new scheduling with `LAB_AGENT_IN_SILICO_VALIDATION_ENABLED=false`;
+- legacy mock-result execution is off by default;
+- the Phase 8 lifecycle is off by default and supports only deterministic
+  `dry_run` mode;
+- SMTP is off by default; and
+- the separate ingestion worker, LightRAG, and real lab, Flywheel, and
+  knowledge-store integrations are optional or unavailable as noted below.
+
+Disabling in-silico validation skips only new validation scheduling. Existing
+validation and approval evidence stays durable and can reconcile or proceed
+through the independent approval and execution gates. The deterministic adapter
+checks proposal structure (for example, steps, readouts, and review fields); it
+is neither scientific simulation nor measured evidence. Loops and approval
+reconciliation have no feature flag. `canvus-mcp` initializes ingestion storage
+and cache even if no separate ingestion worker is running.
 
 ## Run
 
@@ -80,7 +147,15 @@ Write (orchestrator-only): `create_note`, `create_connector`.
 uv run pytest && uv run ruff check lab_agent && uv run mypy lab_agent
 ```
 
-## Out of scope (future rounds)
+## Out of scope / unavailable extensions
 
-Real robot/lab integration (currently mock), real vector/graph RAG retrieval,
-Flywheel/in-silico gates, Ollama/vLLM adapters.
+Real robot/lab execution, real scientific or digital-twin in-silico validation,
+real vector/graph RAG retrieval (including LightRAG), Flywheel/HPC analysis,
+and a real knowledge-store integration are not installed. Ollama/vLLM have no
+dedicated adapters; an OpenAI-compatible deployment uses the governed `openai`
+adapter and therefore still requires its approved HTTPS/TLS endpoint.
+
+Before any real or sandbox execution adapter is introduced, production
+eligibility must be enforced by execution authorization. Current reachable
+execution adapters remain legacy mock or Phase 8 dry-run only; neither creates
+measured evidence.

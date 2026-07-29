@@ -108,7 +108,7 @@ async def test_watcher_validates_typed_setup_and_never_runs_robot_or_loop(store:
     assert not any(widget["title"].startswith("[EXP:Result") for widget in mcp.notes.values())
 
 
-async def test_approved_gate_and_robot_topology_never_dispatch_by_default(
+async def test_approved_gate_reconciles_when_new_validation_is_disabled(
     store: StateStore,
 ) -> None:
     _persist_setup(store, _setup())
@@ -127,8 +127,13 @@ async def test_approved_gate_and_robot_topology_never_dispatch_by_default(
         validations=[{"widget_id": widget_id} for widget_id in validation_ids]
     )
 
-    counts = await process_once(mcp, model_adapter, SETTINGS, store, "runtime", CANVAS)
+    disabled = Settings(
+        artifact_public_base_url="https://lab.test",
+        in_silico_validation_enabled=False,
+    )
+    counts = await process_once(mcp, model_adapter, disabled, store, "runtime", CANVAS)
 
+    assert counts["validations"] == 0
     assert counts["runs"] == 0
     assert counts["loops"] == 0
     assert model_adapter.schema_calls == []

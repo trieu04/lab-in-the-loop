@@ -150,7 +150,7 @@ LAB_AGENT_OPENAI_MODEL=gpt-4o-mini
 LAB_AGENT_OPENAI_BASE_URL=
 ```
 
-`LAB_AGENT_OPENAI_BASE_URL` can point at any OpenAI-compatible endpoint (e.g. a local Ollama or vLLM server exposing an OpenAI-compatible API) while keeping `LAB_AGENT_MODEL_PROVIDER=openai` — this is provider-neutral operation via the existing `openai` adapter, not a separate named adapter.
+`LAB_AGENT_OPENAI_BASE_URL` can point at any OpenAI-compatible endpoint (e.g. a local Ollama or vLLM server exposing an OpenAI-compatible API) while keeping `LAB_AGENT_MODEL_PROVIDER=openai` — this is provider-neutral operation via the existing `openai` adapter, not a separate named adapter. For governed dispatch, including a local deployment, that endpoint must be approved and served over HTTPS/TLS; configure the same HTTPS URL in `LAB_AGENT_PROVIDER_ENDPOINTS["openai"]`, which is the SDK-authoritative destination.
 
 For Claude:
 
@@ -161,6 +161,67 @@ LAB_AGENT_ANTHROPIC_API_KEY=sk-ant-...
 LAB_AGENT_ANTHROPIC_MODEL=claude-sonnet-4-5
 ```
 
+### Runtime categories
+
+#### Mandatory governed dispatch gates — no bypass
+
+Every `once` and `watch` model call is governed. Dispatch requires classified
+canvas/source evidence that the selected provider may receive, an approved HTTPS
+provider endpoint, a complete input/output rate entry in a versioned pricing
+table, a durable intent, and a durable reservation. Stage routing is
+deterministic; a later provider is eligible only as a **pre-dispatch** fallback,
+never after submission. MCP results/arguments and model tool calls,
+transcripts, and evidence are bounded, while retry/reconciliation rules prevent
+blind redispatch. Missing, empty, unknown, or unauthorized values fail closed;
+there are no switches to bypass these controls.
+
+The empty `LAB_AGENT_MODEL_PRICING={}` template intentionally makes governed
+dispatch unavailable. It does not mean zero-cost use. Every configured model
+must provide finite, nonnegative `input_per_1k` and `output_per_1k` rates;
+missing, malformed, negative, NaN, or infinite rates are rejected when settings
+load. Explicit zero rates remain valid for an approved free/local model. Prices
+calculate estimates for reservation and accounting only, and estimates are not
+invoices.
+
+#### Core runtime
+
+Core operation requires Canvus and `canvus-mcp`, a governed named provider,
+`lab-agent once` or `watch`, and the single-host SQLite ledger for leases,
+attempts, intents, audit, gate evidence, and generated artifacts. Generated
+Browser artifacts additionally need a valid public artifact URL and the
+artifact server when users must view them. In authenticated MCP deployments,
+orchestrator writes require a scoped trusted-service credential.
+
+For production, set a named `LAB_AGENT_TENANT_ID` and explicit
+`LAB_AGENT_ALLOWED_CANVAS_IDS`. The default tenant with no allowlist remains
+legacy, unbound development behavior; a named tenant without an allowlist fails
+at startup.
+
+#### Optional limits
+
+Run/canvas token and cost budgets and the wall-time ceiling are optional
+numeric limits. Omit them to leave that particular dimension uncapped; pricing,
+locality, endpoint authorization, durable intent, and reservation still remain
+mandatory. Routing customization, loop policy, concurrency, and lease/retry
+tuning are optional runtime controls.
+
+#### Optional extensions
+
+- `LAB_AGENT_IN_SILICO_VALIDATION_ENABLED=true` by default schedules
+  deterministic validation for new eligible setups; setting it false disables
+  only that new scheduling.
+- `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` keeps the legacy mock-result
+  path off by default.
+- `LAB_AGENT_PHASE8_EXECUTION_ENABLED=false` keeps the deterministic Phase 8
+  dry-run lifecycle off by default.
+- SMTP is disabled until fully configured.
+- The ingestion worker is separate and optional; LightRAG and real lab,
+  Flywheel, and knowledge integrations are unavailable in this runtime.
+
+Loops and approval-status reconciliation have no feature flag. `canvus-mcp`
+still initializes its ingestion storage/cache when its server starts, even if
+no worker is running.
+
 Runtime bounds:
 
 ```bash
@@ -168,6 +229,8 @@ LAB_AGENT_MAX_TOOL_STEPS=8
 LAB_AGENT_MODEL_MAX_OUTPUT_TOKENS=4096  # Settings default; optional in .env
 LAB_AGENT_WATCH_POLL_SECONDS=30
 LAB_AGENT_LOOP_MAX_ROUNDS=25
+# Default-on deterministic structural validation; false skips only new scheduling.
+LAB_AGENT_IN_SILICO_VALIDATION_ENABLED=true
 # Safe default: watcher will not dispatch a setup-to-robot mock-result path.
 LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false
 # Phase 8 milestone 7A is also default-off and accepts dry_run only.
@@ -179,7 +242,9 @@ LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run
 
 ### Phase 7 approval gates and Phase 8 7A dry-run lifecycle safety
 
-Every canonical Setup Browser artifact is eligible for a typed in-silico validation pass. The default local `DeterministicInSilicoAdapter` is a deterministic structural dry run, visibly rendered as **not scientific validation**. It calls no real scientific simulator or external provider. The real adapter boundary remains disabled/unimplemented and fails closed.
+Every canonical Setup Browser artifact is eligible for a typed in-silico validation pass. The default local `DeterministicInSilicoAdapter` is a deterministic structural dry run: it checks whether required proposal and review fields are present, is visibly rendered as **not scientific validation**, and calls no scientific simulator or external provider. It produces neither scientific validity nor measured evidence. The real adapter boundary remains disabled/unimplemented and fails closed.
+
+`LAB_AGENT_IN_SILICO_VALIDATION_ENABLED=false` skips only new validation scheduling: it creates no new adapter call, validation attempt, result, projection, connector, retry, or synthetic decision. It does not erase or invalidate existing durable validation/approval evidence, and it does not disable loop processing, approval reconciliation, or execution reconciliation. Existing evidence may still reconcile or be considered by the independent approval and execution gates.
 
 Validation and approvals are append-only records in `LAB_AGENT_STATE_DB_PATH`, scoped to the canvas. Proposal and result identity use canonical SHA-256 (`litl-canonical-json-v1`). A current validation `proceed` decision must be followed by credential-verified **scientist** approval and then credential-verified **lab-lead** approval. Approval submissions require an `IdentityProvider`; development providers are explicitly non-production and the production provider is deliberately disabled until readiness requirements are implemented. Credentials are verification inputs only and are never stored in SQLite, Browser artifacts, logs, prompts, or audit records.
 
@@ -190,6 +255,8 @@ A Canvas Note, title, connector, author field, or Browser widget cannot approve 
 `LAB_AGENT_PHASE8_EXECUTION_ENABLED` also defaults to `false`. If an operator explicitly enables it, the 7A factory accepts only `LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run` and constructs deterministic memory-only lab, Flywheel, and knowledge adapters. The lifecycle rechecks the exact current proposal/result hashes, validation `proceed`, credential-verified scientist approval, and credential-verified lab-lead approval. It writes only **DRY RUN / MOCK — NOT MEASURED** execution, analysis, knowledge, and possible conflict projections. It performs no real provider API or network call, robot/wet-lab action, Flywheel/HPC job, knowledge-store write, credential handling, raw-provider-text retention, capability-URL projection, or measured-evidence production. `sandbox` and `real` modes fail closed.
 
 Execution mode belongs in the user-authored idea Note: `{idea: ...}` is the backward-compatible manual mode, and `{idea+auto: ...}` is automatic mode. Any other `{idea+<mode>: ...}` fails closed and creates a deduplicated Needs Input request. In manual mode, the first round additionally requires a credential-verified, durable activation bound to the exact canvas/setup/proposal/validation hashes; an approval/activation service must supply it. There is no approval or activation CLI and Canvas topology/text cannot substitute for verified identity.
+
+Before a real or sandbox execution adapter is introduced, execution authorization must enforce production eligibility. Current reachable adapters are legacy mock or Phase 8 dry-run only, so this is a prerequisite for extending—not a claim that real or sandbox execution is presently available.
 
 ### Authenticated bounded MCP reads
 
@@ -212,7 +279,7 @@ Implementation-plan Phase 6 (roadmap Phase 4c) adds the following `LAB_AGENT_*` 
 | `LAB_AGENT_MODEL_EVIDENCE_MAX_BYTES` | `131072`; `1024`–`4194304` | per-run evidence-ledger byte cap |
 | `LAB_AGENT_MODEL_EVIDENCE_MAX_ITEMS` | `64`; `1`–`4096` | per-run evidence-ledger item cap |
 
-`LAB_AGENT_MCP_BEARER_TOKEN` is deliberately blank in `.env.example`. Configure it with the reader token for model-facing ingestion status/chunk reads; `lab-agent` never receives ingestion mutation authority. It exact-matches only `get_ingestion_status` and `read_ingestion_chunks` (bare or under the configured namespace), rejects `enqueue_ingestion`/`retry_ingestion`/`cancel_ingestion`, and turns malformed, unsafe, or over-bound results into a fixed sanitized error without reflecting paths, credentials, capability URLs, or diagnostics. Status is operational/non-citeable; completed chunks are bounded untrusted evidence carrying only scalar provenance/classification and become model-citeable only after the ledger retains them. The Phase 5 locality policy is evaluated before every subsequent provider call.
+`LAB_AGENT_MCP_BEARER_TOKEN` is deliberately blank in `.env.example`. The standard Lab Agent CLI uses one MCP session for both bounded reads and orchestrator-owned canvas writes, so an authenticated deployment must configure a canvas-scoped trusted-service credential that authorizes that combined session. A reader credential is appropriate only for a separately restricted read-only client; using it with the standard CLI makes `create_note`, `create_browser`, and `create_connector` fail authorization. The model-facing tool bridge still exposes only exact-matched `get_ingestion_status` and `read_ingestion_chunks` reads (bare or under the configured namespace), rejects `enqueue_ingestion`/`retry_ingestion`/`cancel_ingestion`, and turns malformed, unsafe, or over-bound results into a fixed sanitized error without reflecting paths, credentials, capability URLs, or diagnostics. Status is operational/non-citeable; completed chunks are bounded untrusted evidence carrying only scalar provenance/classification and become model-citeable only after the ledger retains them. The Phase 5 locality policy is evaluated before every subsequent provider call.
 
 ### Governance and model routing
 

@@ -155,6 +155,34 @@ async def test_auto_runs_only_after_current_ordered_approval(store: StateStore) 
     assert len([n for n in mcp.notes.values() if n["title"].startswith("[EXP:Result")]) == 1
 
 
+async def test_existing_validation_evidence_executes_when_new_validation_is_disabled(
+    store: StateStore,
+) -> None:
+    _persist_setup(store)
+    mcp = FakeMCP(workflow=_workflow("auto"))
+    await run_in_silico_validation(
+        mcp, SETTINGS, store, DeterministicInSilicoAdapter(), CANVAS, "setup", 1
+    )
+    await _approve(store)
+    settings = Settings(
+        artifact_public_base_url="https://lab.test",
+        in_silico_validation_enabled=False,
+        wet_lab_execution_enabled=True,
+    )
+
+    counts = await process_once(
+        mcp,
+        ScriptedAdapter({"ExperimentResult": {"summary": "ok", "metrics": ["signal=1"]}}),
+        settings,
+        store,
+        "one",
+        CANVAS,
+    )
+
+    assert counts["validations"] == 0
+    assert counts["runs"] == 1
+
+
 async def test_direct_robot_dispatch_respects_disabled_execution_gate(store: StateStore) -> None:
     _persist_setup(store)
     mcp = FakeMCP(workflow=_workflow("auto"))
