@@ -32,25 +32,27 @@ _ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 class SchemaValidationError(Exception):
-    """Raised when structured output fails schema validation.
+    """Raised when structured output fails schema validation without payloads."""
 
-    Fail-closed policy (docs/code-standards.md § Structured output): never
-    fabricate missing required fields. Callers log a structured warning and skip
-    the write, leaving the canvas pending for the next poll.
-    """
-
-    def __init__(self, model_name: str, payload: dict[str, Any]) -> None:
+    def __init__(self, model_name: str, error_class: str) -> None:
         super().__init__(f"{model_name} failed schema validation")
         self.model_name = model_name
-        self.payload = payload
+        self.error_class = error_class
 
 
-def coerce_or_fail(model_cls: type[BaseModel], parsed: dict[str, Any]) -> Any:
-    """Validate model output; raise SchemaValidationError instead of filling gaps."""
+def coerce_or_fail(model_cls: type[_ModelT], parsed: Any) -> _ModelT:
+    """Validate object output; reject malformed shapes without retaining payloads."""
+    if not isinstance(parsed, dict):
+        raise SchemaValidationError(model_cls.__name__, "invalid_structure")
+
     try:
-        return model_cls.model_validate(parsed)
-    except ValidationError as exc:
-        raise SchemaValidationError(model_cls.__name__, dict(parsed)) from exc
+        validated = model_cls.model_validate(parsed)
+    except ValidationError:
+        pass
+    else:
+        return validated
+
+    raise SchemaValidationError(model_cls.__name__, "schema_mismatch")
 
 
 async def _emit_validated(
@@ -68,7 +70,12 @@ async def _emit_validated(
             ),
         )
     except SchemaValidationError as exc:
-        log.warning("schema_validation_failed", stage=stage, model=exc.model_name, payload=exc.payload)
+        log.warning(
+            "schema_validation_failed",
+            stage=stage,
+            model=exc.model_name,
+            error_class=exc.error_class,
+        )
         return None
 
 

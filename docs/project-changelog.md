@@ -1,5 +1,12 @@
 # Project Changelog
 
+## 2026-07-30 — Structured-output and durable demo-seed repair
+
+### Fixed
+
+- Structured-output emission now fails closed on any non-object payload. Schema-validation warnings retain only the stage, model name, and error class; model payloads are neither retained nor logged.
+- The durable demo seeder now accepts `{idea+auto: ...}` automatic-mode ideas as well as `{idea: ...}` manual-mode ideas.
+
 ## 2026-07-30 — OpenAI endpoint scheme validation
 
 ### Fixed

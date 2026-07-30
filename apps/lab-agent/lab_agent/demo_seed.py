@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from lab_agent.state_store import StateStore
 
 _KEY = re.compile(r"^[A-Za-z0-9_.-]+$")
+_IDEA_MARKERS = ("{idea:", "{idea+auto:")
 
 
 class SeedError(RuntimeError):
@@ -24,8 +25,8 @@ class SeedError(RuntimeError):
 
 def build_seed_title(args: Any, tenant_id: str) -> str:
     """Validate operator input and return a tenant-qualified idea title."""
-    if "{idea:" not in args.idea_text:
-        raise SeedError("--idea-text must contain the {idea: marker")
+    if not any(marker in args.idea_text for marker in _IDEA_MARKERS):
+        raise SeedError("--idea-text must contain a supported {idea: or {idea+auto: marker")
     if not isinstance(args.idea_key, str) or not _KEY.fullmatch(args.idea_key):
         raise SeedError("--idea-key contains unsupported characters")
     base = args.title or f"[EXP:Idea] {args.idea_key}"

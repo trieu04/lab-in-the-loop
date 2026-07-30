@@ -11,10 +11,13 @@ configured; the fail-closed paths here stop *before* any write anyway.
 from __future__ import annotations
 
 import pytest
+from structlog.testing import capture_logs
 
 from lab_agent.config import Settings
 from lab_agent.models.evidence import GroundingDecision
+from lab_agent.models.experiment import ExperimentResult
 from lab_agent.orchestrator import generate_setup, run_loop
+from lab_agent.orchestrator_emit import SchemaValidationError, coerce_or_fail
 from lab_agent.orchestrator_support import emit_result
 from lab_agent.state_store import StateStore
 from lab_agent.watch import process_once
@@ -28,6 +31,7 @@ SETUP = grounded_setup()
 MALFORMED_SETUP = {"steps": ["mix A and B"]}
 MALFORMED_RESULT = {"observations": ["looked fine"]}
 MALFORMED_DECISION = {"next_focus": "raise dose"}
+MODEL_OUTPUT_SENTINEL = "MODEL_OUTPUT_SECRET_SENTINEL"
 
 LOOP = {
     "loop_connector_id": "c5", "setup_id": "setup1", "result_id": "result1",
@@ -72,6 +76,51 @@ async def test_emit_result_fails_closed_on_malformed_output():
 
     assert result is None
     assert adapter.schema_calls == ["ExperimentResult"]
+
+
+@pytest.mark.parametrize(
+    "parsed",
+    [None, True, 42, MODEL_OUTPUT_SENTINEL, [[{"secret": MODEL_OUTPUT_SENTINEL}]]],
+)
+def test_coerce_or_fail_rejects_non_object_without_retaining_payload(parsed):
+    with pytest.raises(SchemaValidationError) as caught:
+        coerce_or_fail(ExperimentResult, parsed)
+
+    error = caught.value
+    assert error.error_class == "invalid_structure"
+    assert not hasattr(error, "payload")
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert MODEL_OUTPUT_SENTINEL not in repr(error.__dict__)
+    assert MODEL_OUTPUT_SENTINEL not in repr(error)
+
+
+def test_coerce_or_fail_sanitizes_dictionary_schema_mismatch():
+    with pytest.raises(SchemaValidationError) as caught:
+        coerce_or_fail(ExperimentResult, {"secret": MODEL_OUTPUT_SENTINEL})
+
+    error = caught.value
+    assert error.error_class == "schema_mismatch"
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert MODEL_OUTPUT_SENTINEL not in repr(error.__dict__)
+
+
+async def test_schema_validation_log_omits_model_payload():
+    adapter = ScriptedAdapter({"ExperimentResult": MODEL_OUTPUT_SENTINEL})
+
+    with capture_logs() as logs:
+        result = await emit_result(adapter, "mix A and B", settings=_settings())
+
+    assert result is None
+    assert logs == [{
+        "event": "schema_validation_failed",
+        "stage": "result",
+        "model": "ExperimentResult",
+        "error_class": "invalid_structure",
+        "log_level": "warning",
+    }]
+    assert MODEL_OUTPUT_SENTINEL not in repr(logs)
 
 
 async def test_run_loop_decision_fails_closed_returns_deferred(store):

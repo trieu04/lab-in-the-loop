@@ -12,7 +12,7 @@ import pytest
 
 from lab_agent import artifact_migration as migration
 from lab_agent.config import Settings
-from lab_agent.demo_seed import build_seed_title, seed_demo
+from lab_agent.demo_seed import SeedError, build_seed_title, seed_demo
 from lab_agent.state_store import StateStore
 from lab_agent.tenant import CanvasAccessDeniedError, TenantContext
 from tests.fakes import FakeMCP
@@ -86,6 +86,21 @@ def test_seed_lock_paths_are_tenant_qualified() -> None:
     args = argparse.Namespace(canvas="canvas", ragcluster_widget_id="cluster", idea_key="demo")
 
     assert seed._seed_lock_path(args, "tenant-a") != seed._seed_lock_path(args, "tenant-b")
+
+
+@pytest.mark.parametrize("marker", ["{idea: demo}", "{idea+auto: demo}"])
+def test_seed_title_accepts_supported_idea_markers(marker: str) -> None:
+    args = argparse.Namespace(idea_text=marker, idea_key="demo", title=None)
+
+    assert build_seed_title(args, "tenant-a") == "[EXP:Idea] demo [tenant:tenant-a]"
+
+
+@pytest.mark.parametrize("text", ["plain text", "{idea+batch: demo}"])
+def test_seed_title_rejects_unsupported_idea_markers(text: str) -> None:
+    args = argparse.Namespace(idea_text=text, idea_key="demo", title=None)
+
+    with pytest.raises(SeedError, match="supported"):
+        build_seed_title(args, "tenant-a")
 
 
 class SeedMCP(FakeMCP):

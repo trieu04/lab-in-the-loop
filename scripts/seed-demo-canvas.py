@@ -39,7 +39,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--canvas", required=True, help="Existing canvas id.")
     parser.add_argument("--ragcluster-widget-id", required=True, help="Existing RagCluster Image widget id.")
-    parser.add_argument("--idea-text", required=True, help="Complete Note text containing the {idea: marker.")
+    parser.add_argument(
+        "--idea-text",
+        required=True,
+        help="Complete Note text containing a supported {idea: or {idea+auto: marker.",
+    )
     parser.add_argument("--idea-key", default="phase9-demo", help="Stable idempotency key.")
     parser.add_argument("--title", default=None, help="Optional Note title.")
     parser.add_argument("--x", type=float, default=0.0, help="Note x coordinate.")
