@@ -69,8 +69,6 @@ def test_env_example_documents_required_gates_and_optional_extensions() -> None:
     expected_lines = {
         "LAB_AGENT_IN_SILICO_VALIDATION_ENABLED=true",
         "LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false",
-        "LAB_AGENT_PHASE8_EXECUTION_ENABLED=false",
-        "LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run",
         "LAB_AGENT_NOTIFICATION_SMTP__ENABLED=false",
         "LAB_AGENT_MODEL_PRICING={}",
         "LAB_AGENT_PRICING_VERSION=unset",
@@ -79,6 +77,9 @@ def test_env_example_documents_required_gates_and_optional_extensions() -> None:
     }
     for line in expected_lines:
         assert line in env_example
+
+    removed_prefix = "LAB_AGENT_" "PHASE8_EXECUTION_"
+    assert removed_prefix not in env_example
 
     assert "intentionally blocks governed model dispatch" in env_example
     assert "no governance bypass" in env_example.lower()

@@ -150,7 +150,7 @@ LAB_AGENT_OPENAI_MODEL=gpt-4o-mini
 LAB_AGENT_OPENAI_BASE_URL=
 ```
 
-`LAB_AGENT_OPENAI_BASE_URL` can point at any OpenAI-compatible endpoint (e.g. a local Ollama or vLLM server exposing an OpenAI-compatible API) while keeping `LAB_AGENT_MODEL_PROVIDER=openai` — this is provider-neutral operation via the existing `openai` adapter, not a separate named adapter. For governed dispatch, including a local deployment, that endpoint must be approved and served over HTTPS/TLS; configure the same HTTPS URL in `LAB_AGENT_PROVIDER_ENDPOINTS["openai"]`, which is the SDK-authoritative destination.
+`LAB_AGENT_OPENAI_BASE_URL` can point at any OpenAI-compatible endpoint (e.g. a local Ollama or vLLM server exposing an OpenAI-compatible API) while keeping `LAB_AGENT_MODEL_PROVIDER=openai` — this is provider-neutral operation via the existing `openai` adapter, not a separate named adapter. For governed dispatch, that endpoint must be approved; HTTP is allowed for trusted local OpenAI-compatible deployments, while other providers require HTTPS. Configure the same URL in `LAB_AGENT_PROVIDER_ENDPOINTS["openai"]`, which is the SDK-authoritative destination.
 
 For Claude:
 
@@ -166,8 +166,8 @@ LAB_AGENT_ANTHROPIC_MODEL=claude-sonnet-4-5
 #### Mandatory governed dispatch gates — no bypass
 
 Every `once` and `watch` model call is governed. Dispatch requires classified
-canvas/source evidence that the selected provider may receive, an approved HTTPS
-provider endpoint, a complete input/output rate entry in a versioned pricing
+canvas/source evidence that the selected provider may receive, an approved
+provider endpoint (OpenAI HTTP(S), other providers HTTPS), a complete input/output rate entry in a versioned pricing
 table, a durable intent, and a durable reservation. Stage routing is
 deterministic; a later provider is eligible only as a **pre-dispatch** fallback,
 never after submission. MCP results/arguments and model tool calls,
@@ -212,8 +212,6 @@ tuning are optional runtime controls.
   only that new scheduling.
 - `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` keeps the legacy mock-result
   path off by default.
-- `LAB_AGENT_PHASE8_EXECUTION_ENABLED=false` keeps the deterministic Phase 8
-  dry-run lifecycle off by default.
 - SMTP is disabled until fully configured.
 - The ingestion worker is separate and optional; LightRAG and real lab,
   Flywheel, and knowledge integrations are unavailable in this runtime.
@@ -233,9 +231,6 @@ LAB_AGENT_LOOP_MAX_ROUNDS=25
 LAB_AGENT_IN_SILICO_VALIDATION_ENABLED=true
 # Safe default: watcher will not dispatch a setup-to-robot mock-result path.
 LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false
-# Phase 8 milestone 7A is also default-off and accepts dry_run only.
-LAB_AGENT_PHASE8_EXECUTION_ENABLED=false
-LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run
 ```
 
 `LAB_AGENT_LOOP_MAX_ROUNDS` is one governance backstop. Terminal closure can also come from model decision, token/cost budget, wall time, no progress, locality denial, or reservation denial.
@@ -252,7 +247,7 @@ A Canvas Note, title, connector, author field, or Browser widget cannot approve 
 
 `LAB_AGENT_WET_LAB_EXECUTION_ENABLED` defaults to `false`. With that default, the legacy watcher does not process `setups_needing_run` through `run_on_robot`. Loop continuation may still stage a grounded successor Setup, but Result generation waits for fresh deterministic validation, ordered approval, and explicit execution enablement; no path establishes real execution or measured scientific truth.
 
-`LAB_AGENT_PHASE8_EXECUTION_ENABLED` also defaults to `false`. If an operator explicitly enables it, the 7A factory accepts only `LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run` and constructs deterministic memory-only lab, Flywheel, and knowledge adapters. The lifecycle rechecks the exact current proposal/result hashes, validation `proceed`, credential-verified scientist approval, and credential-verified lab-lead approval. It writes only **DRY RUN / MOCK — NOT MEASURED** execution, analysis, knowledge, and possible conflict projections. It performs no real provider API or network call, robot/wet-lab action, Flywheel/HPC job, knowledge-store write, credential handling, raw-provider-text retention, capability-URL projection, or measured-evidence production. `sandbox` and `real` modes fail closed.
+When the Phase 8 milestone 7A lifecycle is explicitly enabled, it constructs deterministic memory-only lab, Flywheel, and knowledge adapters. It rechecks the exact current proposal/result hashes, validation `proceed`, credential-verified scientist approval, and credential-verified lab-lead approval. It writes only **DRY RUN / MOCK — NOT MEASURED** execution, analysis, knowledge, and possible conflict projections. It performs no real provider API or network call, robot/wet-lab action, Flywheel/HPC job, knowledge-store write, credential handling, raw-provider-text retention, capability-URL projection, or measured-evidence production. `sandbox` and `real` modes fail closed.
 
 Execution mode belongs in the user-authored idea Note: `{idea: ...}` is the backward-compatible manual mode, and `{idea+auto: ...}` is automatic mode. Any other `{idea+<mode>: ...}` fails closed and creates a deduplicated Needs Input request. In manual mode, the first round additionally requires a credential-verified, durable activation bound to the exact canvas/setup/proposal/validation hashes; an approval/activation service must supply it. There is no approval or activation CLI and Canvas topology/text cannot substitute for verified identity.
 
@@ -289,7 +284,8 @@ Implementation-plan Phase 6 (roadmap Phase 4c) adds the following `LAB_AGENT_*` 
 # Optional task-stage provider order (JSON). Omitted stage -> LAB_AGENT_MODEL_PROVIDER.
 LAB_AGENT_ROUTING_TABLE={"setup":["claude","openai"],"mock_result":["openai"],"loop_decision":["openai"]}
 
-# Provider -> approved HTTPS endpoint and permitted classifications (JSON).
+# Provider -> approved endpoint and permitted classifications (JSON).
+# OpenAI accepts HTTP(S); other providers require HTTPS.
 # The current .env.example supplies these explicit values.
 LAB_AGENT_PROVIDER_ENDPOINTS={"openai":"https://api.openai.com/v1","claude":"https://api.anthropic.com"}
 LAB_AGENT_PROVIDER_DATA_CLASSIFICATIONS={"openai":["public","internal"],"claude":["public","internal"]}
@@ -609,7 +605,7 @@ and check the audit log (or wait for the first instance's lease to expire/releas
 - Never commit `.env` or downloaded internal data.
 - Treat every canvas write as user-visible.
 - Use `once` first on a demo canvas before `watch` on an active canvas.
-- Keep `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` and `LAB_AGENT_PHASE8_EXECUTION_ENABLED=false` unless operating the reviewed local 7A dry-run milestone. The deterministic validation/approval infrastructure is a gate, and 7A outputs are **DRY RUN / MOCK — NOT MEASURED**; neither claims scientific validation, measured evidence, or real-lab authorization.
+- Keep `LAB_AGENT_WET_LAB_EXECUTION_ENABLED=false` unless operating a reviewed execution path. The deterministic validation/approval infrastructure is a gate, and 7A outputs are **DRY RUN / MOCK — NOT MEASURED**; neither claims scientific validation, measured evidence, or real-lab authorization.
 - Do not treat Canvas topology or Browser projections as approval evidence. Verify credentials through an `IdentityProvider`; credentials must never be persisted.
 - For real execution, complete the external child plans: 7B real Flywheel/HPC analysis, 7C real knowledge store, 7D real lab/robot integration, production identity/credential approval, retention/locality policy, and hosted integration. Do not infer any of those from 7A contracts or deterministic adapters.
 - Never commit the durable ledger (`LAB_AGENT_STATE_DB_PATH` and its `-wal`/`-shm` siblings, or any `*.db`/backup file) — it is git-ignored by default; if you must inspect it, treat it as operational data, not a document to paste elsewhere. Its audit log stores only ids/hashes/reasons/counts by design (never note text, model payloads, or credentials), but attempt/lease metadata can still reveal canvas ids and timing.

@@ -355,7 +355,6 @@ Completed in 7A:
 - Added deterministic memory-only lab, Flywheel, and knowledge adapters plus disabled-real sentinels. All 7A outputs are visibly **DRY RUN / MOCK — NOT MEASURED**. No real provider API, network, robot, wet-lab, Flywheel/HPC, knowledge store, credential, raw provider text, capability URL, or measured evidence is implemented.
 - Added approval-bound, restart-safe orchestration: exact current proposal/validation hashes and ordered approvals are rechecked, first-round manual mode stays hash-bound, a durable atomic claim prevents duplicate concurrent submit, and submitted/ambiguous runs reconcile authoritatively before retry. Terminal recovery settles the matching intent without rewriting append-only history.
 - Added safe Browser projections for execution, analysis, knowledge, and conflict records. They expose safe ids/hashes/status/lineage and omit `logical_uri`; Canvus buckets remain display-only and never authorize or schedule work. The legacy multi-round synthetic mock loop remains compatible.
-- Kept `LAB_AGENT_PHASE8_EXECUTION_ENABLED=false` and `LAB_AGENT_PHASE8_EXECUTION_MODE=dry_run` as the safety defaults; `sandbox` and `real` fail closed.
 - Before any real or sandbox adapter is introduced, execution authorization must enforce production eligibility. The current reachable adapters remain mock/dry-run only.
 
 Verification:

@@ -88,6 +88,16 @@ class IntentStoreMixin:
             idempotency_key=idempotency_key, error=error, next_retry_at=next_retry_at,
         )
 
+    def reset_failed_model_intent(
+        self, idempotency_key: str, *, canvas_id: str
+    ) -> SideEffectIntent:
+        """Return a strictly eligible terminal model failure to pending."""
+        self._require_canvas_scope(canvas_id)
+        return intents.reset_failed_model_intent(
+            self.conn, clock=self.clock, tenant_id=self.tenant_id, canvas_id=canvas_id,
+            idempotency_key=idempotency_key,
+        )
+
     def get_intent(
         self, idempotency_key: str, *, canvas_id: str | None = None
     ) -> SideEffectIntent | None:

@@ -15,6 +15,10 @@ class IntentAlreadyClaimedError(RuntimeError):
     """Another worker owns or terminally settled this provider dispatch."""
 
 
+class ModelIntentNotEligibleForRetryError(RuntimeError):
+    """A model intent cannot be safely returned to pending."""
+
+
 def _tenant(value: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("tenant_id must be non-empty")
@@ -133,6 +137,35 @@ def mark_failed(
                  "status='failed', last_error=?, next_retry_at=?, attempt_count=attempt_count+CASE WHEN status='submitted' THEN 0 ELSE 1 END", (error, next_retry_at))
 
 
+def reset_failed_model_intent(
+    conn: sqlite3.Connection, *, clock: Clock, idempotency_key: str, canvas_id: str,
+    tenant_id: str = "default",
+) -> SideEffectIntent:
+    """Return one proven-unsubmitted terminal provider failure to pending.
+
+    The predicate intentionally excludes every state or marker that could mean
+    a provider request was accepted, executed, or reconciled.
+    """
+    tenant, canvas = _tenant(tenant_id), _canvas(canvas_id)
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        changed = conn.execute(
+            "UPDATE side_effect_intents SET status='pending', attempt_count=0, "
+            "next_retry_at=NULL, last_error=NULL, updated_at=? "
+            "WHERE tenant_id=? AND canvas_id=? AND idempotency_key=? "
+            "AND kind='model_call' AND status='failed' AND last_error='provider_error' "
+            "AND next_retry_at IS NULL AND external_id IS NULL AND reconciled_at IS NULL",
+            (clock(), tenant, canvas, idempotency_key),
+        ).rowcount
+        if changed != 1:
+            raise ModelIntentNotEligibleForRetryError("model intent is not eligible for retry")
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    return _require_intent(conn, idempotency_key, canvas, tenant)
+
+
 def list_incomplete(
     conn: sqlite3.Connection, *, canvas_id: str | None = None, tenant_id: str = "default",
 ) -> list[SideEffectIntent]:
@@ -173,7 +206,7 @@ def _require_intent(
 
 
 __all__ = [
-    "IntentAlreadyClaimedError", "IntentHashMismatchError", "get_intent", "list_incomplete",
-    "mark_ambiguous", "mark_executed", "mark_failed", "mark_reconciled", "mark_submitted",
-    "prepare_intent",
+    "IntentAlreadyClaimedError", "IntentHashMismatchError", "ModelIntentNotEligibleForRetryError",
+    "get_intent", "list_incomplete", "mark_ambiguous", "mark_executed", "mark_failed",
+    "mark_reconciled", "mark_submitted", "prepare_intent", "reset_failed_model_intent",
 ]

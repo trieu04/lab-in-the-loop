@@ -10,6 +10,7 @@ from lab_agent.adapters import claude_adapter, openai_adapter
 from lab_agent.adapters.factory import build_provider_adapter
 from lab_agent.config import Settings
 from lab_agent.policy import build_locality_policy
+from lab_agent.provider_endpoints import is_valid_provider_endpoint
 
 
 def build_isolated_settings(**values: object) -> Settings:
@@ -33,8 +34,25 @@ def test_no_key_configuration_has_no_implicit_provider_endpoint() -> None:
     settings = build_isolated_settings()
 
     assert settings.provider_endpoints == {}
-    with pytest.raises(ValueError, match="HTTPS endpoint"):
+    with pytest.raises(ValueError, match=r"HTTP\(S\) endpoint"):
         build_provider_adapter("openai", settings)
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "http://example.com:bad",
+        "http://example.com:99999",
+        "http://example.com:",
+        "http://exa mple.com",
+        "http://example.com\\evil",
+        "http://example.com/%zz",
+        "http://.",
+        "https://[::1",
+    ],
+)
+def test_malformed_provider_endpoints_are_rejected(endpoint: str) -> None:
+    assert not is_valid_provider_endpoint(endpoint, provider="openai")
 
 
 def test_explicit_endpoint_overrides_defaults_and_invalid_endpoint_is_denied(monkeypatch) -> None:
@@ -61,14 +79,15 @@ def test_explicit_endpoint_overrides_defaults_and_invalid_endpoint_is_denied(mon
         anthropic_api_key="anthropic-key",
         model_max_output_tokens=73,
         openai_base_url="https://legacy.example",
-        provider_endpoints={"openai": "https://proxy.example", "claude": "https://claude.example"},
+        provider_endpoints={"openai": "http://proxy.example", "claude": "https://claude.example"},
     )
 
+    assert build_locality_policy(settings).authorize("openai", []).allowed
     build_provider_adapter("openai", settings)
     build_provider_adapter("claude", settings)
 
     assert captured == {
-        "openai": "https://proxy.example",
+        "openai": "http://proxy.example",
         "openai_limit": 73,
         "claude": "https://claude.example",
         "claude_limit": 73,
@@ -78,12 +97,19 @@ def test_explicit_endpoint_overrides_defaults_and_invalid_endpoint_is_denied(mon
     )
     assert not build_locality_policy(invalid).authorize("openai", []).allowed
     assert not build_locality_policy(invalid).authorize("custom", []).allowed
-    with pytest.raises(ValueError, match="HTTPS endpoint"):
+    with pytest.raises(ValueError, match=r"HTTP\(S\) endpoint"):
         build_provider_adapter("openai", invalid)
 
     missing = build_isolated_settings(openai_api_key="openai-key", provider_endpoints={})
-    with pytest.raises(ValueError, match="HTTPS endpoint"):
+    with pytest.raises(ValueError, match=r"HTTP\(S\) endpoint"):
         build_provider_adapter("openai", missing)
+
+    insecure_claude = build_isolated_settings(
+        anthropic_api_key="anthropic-key", provider_endpoints={"claude": "http://claude.example"}
+    )
+    assert not build_locality_policy(insecure_claude).authorize("claude", []).allowed
+    with pytest.raises(ValueError, match="HTTPS endpoint"):
+        build_provider_adapter("claude", insecure_claude)
 
     legacy_base_url = build_isolated_settings(
         openai_api_key="openai-key", openai_base_url="https://legacy.example"

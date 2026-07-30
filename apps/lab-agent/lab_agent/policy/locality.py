@@ -28,7 +28,7 @@ class LocalityPolicy:
         self._endpoints = {
             provider: endpoint
             for provider, endpoint in provider_endpoints.items()
-            if is_valid_provider_endpoint(endpoint)
+            if is_valid_provider_endpoint(endpoint, provider=provider)
         }
 
     def authorize(

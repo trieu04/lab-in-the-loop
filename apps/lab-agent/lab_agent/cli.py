@@ -5,6 +5,7 @@
     lab-agent integrity                                        # verify DB + audit chain
     lab-agent list-quarantined [--canvas <id>]                 # show quarantined attempts
     lab-agent reset --canvas <id> --trigger <trigger_id>       # un-quarantine one attempt
+    lab-agent retry-model-intent --canvas <id> --intent <id>   # retry one safe model failure
     lab-agent backup --to <path>                               # consistent hot backup
     lab-agent serve-artifacts [--host <host>] [--port <port>]  # run the artifact HTTP service
 
@@ -72,6 +73,12 @@ def _port(value: str) -> int:
     return port
 
 
+def _intent_id(value: str) -> str:
+    if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+        raise argparse.ArgumentTypeError("intent must be a full 64-character lowercase hex id")
+    return value
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="lab-agent", description="Lab-in-the-Loop experiment agent.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -96,6 +103,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("reset", help="Reset one quarantined attempt back to pending.")
     p.add_argument("--canvas", required=True, help="Canvas id of the attempt.")
     p.add_argument("--trigger", required=True, help="Trigger id of the attempt (e.g. idea_setup:<id>).")
+
+    p = sub.add_parser("retry-model-intent", help="Retry one safe terminal model provider failure.")
+    p.add_argument("--canvas", required=True, help="Canvas id of the model intent.")
+    p.add_argument("--intent", required=True, type=_intent_id, help="Full model intent id.")
 
     p = sub.add_parser("backup", help="Write a consistent hot backup of the durable ledger.")
     p.add_argument("--to", required=True, dest="destination", help="Backup destination file path.")
@@ -212,7 +223,7 @@ async def _run(args: argparse.Namespace) -> int:
             canvases = [args.canvas]
             requested_canvases = canvases
         elif args.command in {
-            "list-quarantined", "reset", "notification-status",
+            "list-quarantined", "reset", "retry-model-intent", "notification-status",
             "list-notification-quarantined", "retry-notification", "quarantine-notification",
         }:
             requested_canvases = (
@@ -245,6 +256,8 @@ async def _run(args: argparse.Namespace) -> int:
             return admin.list_quarantined(ctx, args.canvas)
         if args.command == "reset":
             return admin.reset_attempt(ctx, args.canvas, args.trigger)
+        if args.command == "retry-model-intent":
+            return admin.retry_model_intent(ctx, args.canvas, args.intent)
         if args.command == "backup":
             return admin.backup(
                 ctx, args.destination, global_authority=getattr(args, "global_authority", False)

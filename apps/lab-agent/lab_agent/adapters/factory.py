@@ -16,8 +16,11 @@ from lab_agent.provider_endpoints import is_valid_provider_endpoint
 def build_provider_adapter(provider: str, settings: Settings) -> ModelAdapter:
     """Build the adapter for an explicit ``provider`` (raises if misconfigured)."""
     endpoint = settings.provider_endpoints.get(provider)
-    if not is_valid_provider_endpoint(endpoint):
-        raise ValueError(f"LAB_AGENT_PROVIDER_ENDPOINTS requires an HTTPS endpoint for {provider!r}")
+    if not is_valid_provider_endpoint(endpoint, provider=provider):
+        scheme_requirement = "an HTTP(S)" if provider == "openai" else "an HTTPS"
+        raise ValueError(
+            f"LAB_AGENT_PROVIDER_ENDPOINTS requires {scheme_requirement} endpoint for {provider!r}"
+        )
     if provider == "openai":
         from lab_agent.adapters.openai_adapter import OpenAIAdapter
 

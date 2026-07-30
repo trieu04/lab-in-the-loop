@@ -15,6 +15,7 @@ from collections import Counter
 from pathlib import Path
 
 from lab_agent.runtime import RuntimeContext
+from lab_agent.state.intents import ModelIntentNotEligibleForRetryError
 from lab_agent.state.notification_outbox import (
     FailureCategory,
     NotificationNotQuarantinedError,
@@ -84,6 +85,20 @@ def reset_attempt(ctx: RuntimeContext, canvas_id: str, trigger_id: str) -> int:
         return 1
     ctx.store.append_audit_event(canvas_id, "operator_reset", {"trigger_id": trigger_id})
     print(f"Reset {canvas_id}/{trigger_id} to pending.")
+    return 0
+
+
+def retry_model_intent(ctx: RuntimeContext, canvas_id: str, intent_key: str) -> int:
+    """Queue one safely retryable terminal provider failure for redispatch."""
+    try:
+        ctx.store.reset_failed_model_intent(intent_key, canvas_id=canvas_id)
+    except ModelIntentNotEligibleForRetryError:
+        print("ERROR: model intent is not eligible for retry.")
+        return 1
+    ctx.store.append_audit_event(
+        canvas_id, "operator_model_intent_retry", {"intent_key_prefix": intent_key[:16]}
+    )
+    print("Model intent retry queued.")
     return 0
 
 
@@ -160,4 +175,4 @@ def quarantine_notification(ctx: RuntimeContext, logical_key: str) -> int:
     return 0
 
 
-__all__ = ["GLOBAL_CANVAS", "backup", "check_integrity", "list_notification_quarantined", "list_quarantined", "notification_status", "quarantine_notification", "reset_attempt", "retry_notification"]
+__all__ = ["GLOBAL_CANVAS", "backup", "check_integrity", "list_notification_quarantined", "list_quarantined", "notification_status", "quarantine_notification", "reset_attempt", "retry_model_intent", "retry_notification"]

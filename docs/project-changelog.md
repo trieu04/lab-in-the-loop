@@ -1,5 +1,15 @@
 # Project Changelog
 
+## 2026-07-30 — OpenAI endpoint scheme validation
+
+### Fixed
+
+- OpenAI entries in `LAB_AGENT_PROVIDER_ENDPOINTS` now accept approved HTTP or HTTPS endpoints, while Claude remains HTTPS-only. Malformed endpoint URLs are rejected safely and covered by regression tests.
+
+### Verified
+
+- Focused endpoint/locality/adapter tests: 47 passed. Ruff, mypy, and compileall were clean.
+
 ## 2026-07-30 — Setup ambiguity gate repair
 
 ### Fixed

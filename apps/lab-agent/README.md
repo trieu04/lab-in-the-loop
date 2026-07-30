@@ -42,7 +42,8 @@ RAGCluster_ ─► {idea:…}     user's idea note
 
 Copy `.env.example` to `.env`. The MCP URL below is suitable for a local
 `canvus-mcp` development server; governed **model-provider** endpoints are a
-separate authorization boundary and must use approved HTTPS URLs.
+separate authorization boundary. OpenAI permits approved HTTP(S) URLs, while
+other providers require HTTPS.
 
 ```bash
 LAB_AGENT_MCP_URL=http://127.0.0.1:8931/mcp   # a running canvus-mcp server
@@ -52,12 +53,12 @@ LAB_AGENT_OPENAI_MODEL=gpt-4o-mini
 ```
 
 For a governed model dispatch, also configure the exact canvas classification,
-an approved HTTPS provider endpoint, the provider's permitted classifications,
-and a complete versioned price entry for the selected model. The shipped empty
-pricing table is intentional: it blocks dispatch rather than treating calls as
-free. A local OpenAI-compatible server is supported only through an HTTPS/TLS
-endpoint configured consistently as both `LAB_AGENT_OPENAI_BASE_URL` and the
-`openai` entry in `LAB_AGENT_PROVIDER_ENDPOINTS`.
+an approved provider endpoint, the provider's permitted classifications, and a
+complete versioned price entry for the selected model. The shipped empty pricing
+table is intentional: it blocks dispatch rather than treating calls as free. A
+local OpenAI-compatible server may use HTTP or HTTPS; configure the same URL in
+both `LAB_AGENT_OPENAI_BASE_URL` and the `openai` entry in
+`LAB_AGENT_PROVIDER_ENDPOINTS`, and keep plain HTTP on a trusted network.
 
 ## Runtime classification
 
@@ -67,7 +68,7 @@ Every model call from `once` or `watch` uses the governed adapter. Before any
 provider receives content, the runtime requires all of the following:
 
 - classified canvas/source evidence authorized for the selected provider;
-- an explicitly approved HTTPS provider endpoint;
+- an explicitly approved provider endpoint (OpenAI HTTP(S), other providers HTTPS);
 - complete, known input/output pricing under a versioned rate table;
 - a durable model-call intent and token/cost reservation; and
 - deterministic task-stage routing, with fallback only before submission.
@@ -153,7 +154,7 @@ Real robot/lab execution, real scientific or digital-twin in-silico validation,
 real vector/graph RAG retrieval (including LightRAG), Flywheel/HPC analysis,
 and a real knowledge-store integration are not installed. Ollama/vLLM have no
 dedicated adapters; an OpenAI-compatible deployment uses the governed `openai`
-adapter and therefore still requires its approved HTTPS/TLS endpoint.
+adapter and therefore accepts an approved HTTP(S) endpoint for OpenAI.
 
 Before any real or sandbox execution adapter is introduced, production
 eligibility must be enforced by execution authorization. Current reachable
